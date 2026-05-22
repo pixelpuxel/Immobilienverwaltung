@@ -1,0 +1,34 @@
+import { z } from "zod";
+
+const optionalNumber = z.preprocess((value) => {
+  if (value === "" || value === null || value === undefined) return null;
+  return value;
+}, z.coerce.number().optional().nullable());
+
+const optionalInt = z.preprocess((value) => {
+  if (value === "" || value === null || value === undefined) return null;
+  return value;
+}, z.coerce.number().int().optional().nullable());
+
+export const propertySchema = z.object({
+  name: z.string().min(1),
+  address: z.string().min(1),
+  objectType: z.string().optional(),
+  constructionYear: optionalInt,
+  livingArea: optionalNumber,
+  usableArea: optionalNumber,
+  plotArea: optionalNumber,
+  rooms: optionalNumber,
+  unitCount: z.preprocess((value) => value === "" || value === undefined ? 0 : value, z.coerce.number().int().default(0)),
+  floor: z.string().optional(),
+  parkingSpaces: optionalInt,
+  energyCertificate: z.string().optional(),
+  heatingType: z.string().optional(),
+  condition: z.string().optional(),
+  modernizations: z.string().optional(),
+  rentalStatus: z.string().optional(),
+  expectedPurchasePrice: optionalNumber,
+  internalNotes: z.string().optional()
+});
+
+export const propertyUpdateSchema = propertySchema.partial();

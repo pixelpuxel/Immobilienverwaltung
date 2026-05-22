@@ -1,0 +1,208 @@
+import { AuditAction, DocumentScope, DocumentStatus } from "@prisma/client";
+import fs from "fs/promises";
+import path from "path";
+import { env } from "./env";
+import { safeFilename } from "./files";
+import { prisma } from "./prisma";
+
+export async function generateWohnungsgeberbestaetigung(input: { tenantProfileId: string; actorUserId: string }) {
+  const tenant = await prisma.tenantProfile.findUniqueOrThrow({
+    where: { id: input.tenantProfileId },
+    include: { user: true, unit: { include: { property: true } } }
+  });
+  if (!tenant.unit) throw new Error("Dem Mieter ist keine Einheit zugeordnet.");
+
+  const owner = await prisma.user.findFirst({ where: { role: "ADMIN", active: true }, orderBy: { createdAt: "asc" } });
+  const category = await prisma.documentCategory.upsert({
+    where: { name: "Wohnungsgeberbestätigung" },
+    update: { group: "Vermietung" },
+    create: { group: "Vermietung", name: "Wohnungsgeberbestätigung" }
+  });
+  const existing = await prisma.document.findFirst({
+    where: {
+      categoryId: category.id,
+      permissions: { some: { userId: tenant.userId } }
+    }
+  });
+  if (existing) {
+    throw new Error("Es existiert bereits eine Wohnungsgeberbestaetigung. Bitte zuerst die alte Datei loeschen.");
+  }
+
+  await fs.mkdir(env.contractsPath, { recursive: true });
+  const baseName = safeFilename(`Wohnungsgeberbestaetigung-${tenant.lastName}-${tenant.unit.unitNumber}-${Date.now()}`);
+  const storagePath = path.join(env.contractsPath, `${baseName}.pdf`);
+  await fs.writeFile(storagePath, createWohnungsgeberPdf({
+    tenantName: `${tenant.firstName} ${tenant.lastName}`,
+    address: tenant.unit.property.address,
+    unitDescription: tenant.unit.unitNumber,
+    moveInDate: formatDate(tenant.moveInDate),
+    ownerName: owner?.name || "Eigentuemer / Verwaltung",
+    ownerAddress: owner?.email || "",
+    city: "Musterstadt"
+  }), { flag: "wx" });
+  const stat = await fs.stat(storagePath);
+  const document = await prisma.document.create({
+    data: {
+      title: `Wohnungsgeberbestaetigung ${tenant.firstName} ${tenant.lastName}`,
+      filename: path.basename(storagePath),
+      mimeType: "application/pdf",
+      size: stat.size,
+      storagePath,
+      status: DocumentStatus.AVAILABLE,
+      scope: DocumentScope.TENANT,
+      propertyId: tenant.unit.propertyId,
+      unitId: tenant.unitId,
+      categoryId: category.id,
+      uploadedById: input.actorUserId,
+      permissions: {
+        create: { userId: tenant.userId, canView: true, canDownload: true }
+      }
+    }
+  });
+  await prisma.auditLog.create({
+    data: {
+      userId: input.actorUserId,
+      action: AuditAction.CONTRACT_GENERATED,
+      entity: "Document",
+      entityId: document.id,
+      detail: { type: "Wohnungsgeberbestaetigung", tenantProfileId: tenant.id }
+    }
+  });
+  return document;
+}
+
+function formatDate(value?: Date | null) {
+  if (!value) return "";
+  return new Intl.DateTimeFormat("de-DE").format(value);
+}
+
+function createWohnungsgeberPdf(values: {
+  tenantName: string;
+  address: string;
+  unitDescription: string;
+  moveInDate: string;
+  ownerName: string;
+  ownerAddress: string;
+  city: string;
+}) {
+  const page1 = [
+    line("Wohnungsgeberbestätigung nach § 19 des Bundesmeldegesetzes", 42, 800, 13, true),
+    line("Hiermit wird ein Einzug in bzw. Auszug aus folgender Wohnung bestätigt:", 42, 760),
+    field(values.address, 42, 736),
+    line("Postleitzahl, Ort, Straße, Hausnummer mit Zusatz", 42, 721, 8),
+    field(values.unitDescription, 42, 695),
+    line("Stockwerk, Wohnungsnummer bzw. Lagebeschreibung der Wohnung im Haus", 42, 680, 8),
+    line(`In die vorher genannte Wohnung ist/sind am ${values.moveInDate || "______________"} folgende Person/en`, 42, 640),
+    line("eingezogen bzw. ausgezogen:", 42, 622),
+    field(`1. ${values.tenantName}`, 42, 596),
+    field("2.", 42, 570),
+    field("3.", 42, 544),
+    field("4.", 42, 518),
+    line("5. weitere Personen siehe Rückseite", 42, 493),
+    line("Name und Anschrift des Wohnungsgebers lauten:", 42, 458),
+    field(values.ownerName, 42, 434),
+    line("Name des Wohnungsgebers", 42, 419, 8),
+    field(values.ownerAddress, 42, 393),
+    line("Postleitzahl, Ort, Straße und Hausnummer, des Wohnungsgebers", 42, 378, 8),
+    field("", 42, 352),
+    line("Ggf. Name der durch den Wohnungsgeber beauftragten Person", 42, 337, 8),
+    line("[x] Der Wohnungsgeber ist gleichzeitig Eigentümer der Wohnung oder", 58, 306),
+    line("[ ] Der Wohnungsgeber ist nicht Eigentümer der Wohnung", 58, 286),
+    line("Name und Anschrift des Eigentümers lauten:", 42, 256),
+    field(values.ownerName, 42, 232),
+    line("Name des Eigentümers der Wohnung", 42, 217, 8),
+    field(values.ownerAddress, 42, 191),
+    line("Postleitzahl, Ort, Straße und Hausnummer, des Eigentümers der Wohnung", 42, 176, 8),
+    line("Ich bestätige mit meiner Unterschrift, dass die oben gemachten Angaben den Tatsachen", 42, 136, 9),
+    line("entsprechen. Mir ist bekannt, dass es verboten ist, eine Wohnanschrift für eine Anmeldung einem", 42, 122, 9),
+    line("Dritten anzubieten oder zur Verfügung zu stellen, obwohl kein tatsächlicher Bezug besteht.", 42, 108, 9),
+    line("Ein Verstoß stellt eine Ordnungswidrigkeit dar (§ 54 i.V.m. § 19 BMG).", 42, 94, 9),
+    field(`${values.city}, ${new Intl.DateTimeFormat("de-DE").format(new Date())}`, 42, 58, 10),
+    line("Ort, Datum", 42, 43, 8),
+    field("", 310, 58, 10),
+    line("Unterschrift des Wohnungsgebers oder der beauftragten Person", 310, 43, 8)
+  ].join("\n");
+  const page2 = legalPage("§ 19 Mitwirkung des Wohnungsgebers", [
+    "(1) Der Wohnungsgeber ist verpflichtet, bei der Anmeldung mitzuwirken. Hierzu hat der Wohnungsgeber",
+    "oder eine von ihm beauftragte Person der meldepflichtigen Person den Einzug schriftlich oder gegenüber",
+    "der Meldebehörde elektronisch innerhalb der gesetzlichen Frist zu bestätigen.",
+    "",
+    "(2) Verweigert der Wohnungsgeber die Bestätigung oder erhält die meldepflichtige Person sie nicht",
+    "rechtzeitig, so hat die meldepflichtige Person dies der Meldebehörde unverzüglich mitzuteilen.",
+    "",
+    "(3) Die Bestätigung des Wohnungsgebers enthält folgende Daten:",
+    "1. Name und Anschrift des Wohnungsgebers und, wenn dieser nicht Eigentümer ist, auch den Namen",
+    "   und die Anschrift des Eigentümers,",
+    "2. Einzugsdatum,",
+    "3. Anschrift der Wohnung sowie",
+    "4. Namen der meldepflichtigen Personen.",
+    "",
+    "(6) Es ist verboten, eine Wohnungsanschrift für eine Anmeldung anzubieten oder zur Verfügung zu",
+    "stellen, obwohl ein tatsächlicher Bezug der Wohnung weder stattfindet noch beabsichtigt ist."
+  ]);
+  const page3 = legalPage("Information gemäß Artikel 13 DSGVO im Zusammenhang mit Wohnungsgeberbestätigungen", [
+    "Die Datenverarbeitung erfolgt zur Erfüllung der Mitwirkungspflicht des Wohnungsgebers nach § 19",
+    "Bundesmeldegesetz. Verantwortlich ist die zuständige Meldebehörde der Stadt Musterstadt.",
+    "",
+    "Die Daten werden zur Durchführung des Meldeverfahrens verarbeitet. Betroffene Personen haben",
+    "nach Maßgabe der DSGVO Rechte auf Auskunft, Berichtigung, Löschung, Einschränkung der Verarbeitung",
+    "und Beschwerde bei der zuständigen Datenschutzaufsicht.",
+    "",
+    "Pflicht zur Angabe der Daten: Gemäß § 19 BMG ist der Wohnungsgeber verpflichtet, bei der Anmeldung",
+    "mitzuwirken und die hierfür erforderlichen personenbezogenen Daten anzugeben."
+  ]);
+  return createPdf([page1, page2, page3]);
+}
+
+function createPdf(pageStreams: string[]) {
+  const pageObjectIds = pageStreams.map((_, index) => 3 + index * 2);
+  const contentObjectIds = pageStreams.map((_, index) => 4 + index * 2);
+  const fontObjectId = 3 + pageStreams.length * 2;
+  const objects = [
+    `<< /Type /Catalog /Pages 2 0 R >>`,
+    `<< /Type /Pages /Kids [${pageObjectIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pageStreams.length} >>`
+  ];
+  for (let index = 0; index < pageStreams.length; index += 1) {
+    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 ${fontObjectId} 0 R >> >> /Contents ${contentObjectIds[index]} 0 R >>`);
+    objects.push(`<< /Length ${Buffer.byteLength(pageStreams[index], "latin1")} >>\nstream\n${pageStreams[index]}\nendstream`);
+  }
+  objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>");
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(Buffer.byteLength(pdf, "latin1"));
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xref = Buffer.byteLength(pdf, "latin1");
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (let index = 1; index < offsets.length; index += 1) {
+    pdf += `${String(offsets[index]).padStart(10, "0")} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(pdf, "latin1");
+}
+
+function pdfText(value: string) {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/\(/g, "\\(")
+    .replace(/\)/g, "\\)");
+}
+
+function line(text: string, x: number, y: number, size = 10, bold = false) {
+  return `BT /F1 ${bold ? size + 1 : size} Tf ${x} ${y} Td (${pdfText(text)}) Tj ET`;
+}
+
+function field(text: string, x: number, y: number, size = 10) {
+  return [
+    line(text, x + 4, y + 5, size),
+    `${x} ${y} m ${x + 510} ${y} l S`
+  ].join("\n");
+}
+
+function legalPage(title: string, lines: string[]) {
+  return [
+    line(title, 42, 800, 12, true),
+    ...lines.map((text, index) => line(text, 42, 760 - index * 20, 9))
+  ].join("\n");
+}

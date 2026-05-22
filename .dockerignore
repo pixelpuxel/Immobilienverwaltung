@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+.git
+.next
+node_modules
+npm-debug.log
+Dockerfile
+docker-compose*.yml
+data
+app
+coverage
+runtime-logs
+*.sqlite3
+*.db

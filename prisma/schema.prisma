@@ -1,0 +1,232 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  BROKER
+  TENANT
+}
+
+enum DocumentStatus {
+  MISSING
+  REQUESTED
+  AVAILABLE
+  SHARED
+  NOT_RELEVANT
+}
+
+enum DocumentScope {
+  PROPERTY
+  UNIT
+  TENANT
+  CONTRACT
+}
+
+enum AuditAction {
+  LOGIN
+  FILE_UPLOADED
+  FILE_VIEWED
+  FILE_DOWNLOADED
+  PERMISSION_CHANGED
+  CONTRACT_GENERATED
+  PROPERTY_CHANGED
+  USER_INVITED
+}
+
+model User {
+  id           String          @id @default(cuid())
+  email        String          @unique
+  name         String?
+  passwordHash String
+  role         Role            @default(TENANT)
+  active       Boolean         @default(true)
+  inviteToken  String?         @unique
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  documents    Document[]      @relation("UploadedDocuments")
+  permissions  AccessPermission[]
+  brokerLinks  BrokerRequest[]
+  tenantProfile TenantProfile?
+  auditLogs    AuditLog[]
+}
+
+model Property {
+  id                    String          @id @default(cuid())
+  name                  String
+  address               String
+  objectType            String?
+  constructionYear      Int?
+  livingArea            Decimal?        @db.Decimal(12, 2)
+  usableArea            Decimal?        @db.Decimal(12, 2)
+  plotArea              Decimal?        @db.Decimal(12, 2)
+  rooms                 Decimal?        @db.Decimal(6, 2)
+  unitCount             Int             @default(0)
+  floor                 String?
+  parkingSpaces         Int?
+  energyCertificate     String?
+  heatingType           String?
+  condition             String?
+  modernizations        String?
+  rentalStatus          String?
+  expectedPurchasePrice Decimal?        @db.Decimal(14, 2)
+  internalNotes         String?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  units                 Unit[]
+  documents             Document[]
+  brokerRequests        BrokerRequest[]
+}
+
+model Unit {
+  id          String          @id @default(cuid())
+  propertyId  String
+  unitNumber  String
+  floor       String?
+  rooms       Decimal?        @db.Decimal(6, 2)
+  livingArea  Decimal?        @db.Decimal(12, 2)
+  rentAmount  Decimal?        @db.Decimal(12, 2)
+  serviceCharges Decimal?     @db.Decimal(12, 2)
+  warmRent    Decimal?        @db.Decimal(12, 2)
+  status      String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  property    Property        @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  documents   Document[]
+  tenants     TenantProfile[]
+  contracts   LeaseContract[]
+}
+
+model DocumentCategory {
+  id          String       @id @default(cuid())
+  group       String
+  name        String       @unique
+  description String?
+  createdAt   DateTime     @default(now())
+  documents   Document[]
+}
+
+model Document {
+  id              String          @id @default(cuid())
+  title           String
+  filename        String
+  mimeType        String
+  size            Int
+  storagePath     String
+  status          DocumentStatus  @default(AVAILABLE)
+  scope           DocumentScope   @default(PROPERTY)
+  propertyId      String?
+  unitId          String?
+  categoryId      String?
+  uploadedById    String
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  property        Property?       @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  unit            Unit?           @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  category        DocumentCategory? @relation(fields: [categoryId], references: [id])
+  uploadedBy      User            @relation("UploadedDocuments", fields: [uploadedById], references: [id])
+  permissions     AccessPermission[]
+}
+
+model AccessPermission {
+  id          String    @id @default(cuid())
+  userId      String
+  documentId  String
+  canView     Boolean   @default(true)
+  canDownload Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  document    Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, documentId])
+}
+
+model BrokerRequest {
+  id          String    @id @default(cuid())
+  userId      String
+  propertyId  String
+  message     String?
+  status      String    @default("active")
+  createdAt   DateTime  @default(now())
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  property    Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, propertyId])
+}
+
+model TenantProfile {
+  id                    String    @id @default(cuid())
+  userId                String    @unique
+  unitId                String?
+  firstName             String
+  lastName              String
+  birthdate             DateTime?
+  currentAddress        String?
+  phone                 String?
+  email                 String
+  moveInDate            DateTime?
+  moveOutDate           DateTime?
+  isCurrent             Boolean   @default(true)
+  leaseStartDate        DateTime?
+  rentAmount            Decimal?  @db.Decimal(12, 2)
+  serviceCharges        Decimal?  @db.Decimal(12, 2)
+  deposit               Decimal?  @db.Decimal(12, 2)
+  occupantCount         Int?
+  bankAccount           String?
+  rentDueDay            Int?
+  landlordBankAccount   String?
+  landlordBankName      String?
+  roomDescription       String?
+  sharedRooms           String?
+  steppedRent           String?
+  contractNotes         String?
+  pets                  String?
+  specialAgreements     String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  unit                  Unit?     @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  contracts             LeaseContract[]
+}
+
+model ContractTemplate {
+  id          String          @id @default(cuid())
+  name        String
+  filename    String
+  storagePath String
+  mimeType    String
+  size        Int
+  createdAt   DateTime        @default(now())
+  contracts   LeaseContract[]
+}
+
+model LeaseContract {
+  id              String            @id @default(cuid())
+  unitId          String
+  tenantProfileId String
+  templateId      String?
+  docxPath        String
+  pdfPath         String?
+  createdAt       DateTime          @default(now())
+  unit            Unit              @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  tenantProfile   TenantProfile     @relation(fields: [tenantProfileId], references: [id], onDelete: Cascade)
+  template        ContractTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+}
+
+model AuditLog {
+  id        String      @id @default(cuid())
+  userId    String?
+  action    AuditAction
+  entity    String?
+  entityId  String?
+  ipAddress String?
+  detail    Json?
+  createdAt DateTime    @default(now())
+  user      User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
