@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+node_modules
+.next
+coverage
+runtime-logs
+/data
+/app
+__pycache__
+*.pyc
+/uploads
+/contracts
+*.log
+*.sqlite3
+*.db

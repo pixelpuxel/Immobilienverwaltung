@@ -1,0 +1,71 @@
+services:
+  app:
+    build: .
+    container_name: immobilienportal_app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${APP_PORT:-8088}:8088"
+    environment:
+      APP_URL: ${APP_URL:-http://localhost:8088}
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      APP_HOST: ${APP_HOST:-0.0.0.0}
+      APP_PORT: ${APP_PORT:-8088}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://immobilienportal:passwort@postgres:5432/immobilienportal}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@meinedomain.de}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-bitte_aendern}
+      JWT_SECRET: ${JWT_SECRET:-bitte_aendern}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-bitte_aendern}
+      UPLOAD_PATH: ${UPLOAD_PATH:-/app/uploads}
+      CONTRACTS_PATH: ${CONTRACTS_PATH:-/app/contracts}
+      RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-60}
+      RATE_LIMIT_MAX_REQUESTS: ${RATE_LIMIT_MAX_REQUESTS:-120}
+      STARTUP_LOG_DIR: /app/logs
+    volumes:
+      - uploads_data:/app/uploads
+      - contracts_data:/app/contracts
+      - /share/gabriel/Schreiber_S/KI/Codex/immobilienverwaltung/runtime-logs:/app/logs
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: immobilienportal_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-immobilienportal}
+      POSTGRES_USER: ${POSTGRES_USER:-immobilienportal}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-passwort}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U immobilienportal -d immobilienportal"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: immobilienportal_redis
+    restart: unless-stopped
+    profiles: ["redis"]
+
+  deploy-hook:
+    build: ./deploy-hook
+    container_name: immobilienportal_deploy_hook
+    restart: unless-stopped
+    ports:
+      - "${DEPLOY_PORT:-8099}:8099"
+    environment:
+      DEPLOY_TOKEN: ${DEPLOY_TOKEN:-bitte_aendern_langer_geheimer_token}
+      DEPLOY_PORT: 8099
+      DEPLOY_WORKDIR: /workspace
+      DEPLOY_COMMAND: "docker compose -p immobilienverwaltung up -d --build app"
+    volumes:
+      - .:/workspace
+      - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  postgres_data:
+  uploads_data:
+  contracts_data:

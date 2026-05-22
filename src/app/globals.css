@@ -1,0 +1,78 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  color-scheme: light;
+  width: 100%;
+  overflow-x: hidden;
+}
+
+body {
+  margin: 0;
+  background: #ffffff;
+  color: #18201b;
+  width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+}
+
+* {
+  min-width: 0;
+}
+
+#__next,
+main,
+section,
+article,
+div,
+form,
+nav,
+header,
+aside {
+  max-width: 100%;
+}
+
+a,
+p,
+span,
+div,
+h1,
+h2,
+h3,
+td,
+th {
+  overflow-wrap: anywhere;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  border: 1px solid #cfd8d2;
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: white;
+}
+
+textarea {
+  min-height: 110px;
+}
+
+button,
+.button {
+  border-radius: 6px;
+  background: #17695f;
+  color: white;
+  padding: 10px 14px;
+  font-weight: 700;
+  max-width: 100%;
+  white-space: normal;
+}
+
+.button-secondary {
+  border: 1px solid #cfd8d2;
+  background: white;
+  color: #18201b;
+}
