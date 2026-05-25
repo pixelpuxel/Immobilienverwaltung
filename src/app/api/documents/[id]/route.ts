@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { auditLog } from "@/lib/audit";
 import { assertSameOrigin, clientIp, requireApiUser } from "@/lib/auth";
+import { assertPropertyInPortal, assertUnitInPortal, portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 
 const documentUpdateSchema = z.object({
@@ -24,11 +25,16 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 
   const body = documentUpdateSchema.safeParse(await request.json());
   if (!body.success) return NextResponse.json({ error: "Ungueltige Daten.", issues: body.error.issues }, { status: 400 });
+  const existing = await prisma.document.findFirst({ where: { id: params.id, ...portalWhere(user) } });
+  if (!existing) return NextResponse.json({ error: "Dokument wurde nicht gefunden." }, { status: 404 });
 
   const data = normalizeEmptyStrings(body.data);
   if (data.unitId) {
-    const unit = await prisma.unit.findUnique({ where: { id: data.unitId } });
+    const unit = await prisma.unit.findFirst({ where: { id: data.unitId, property: { portalInstanceId: user.portalInstanceId } } });
     if (unit) data.propertyId = unit.propertyId;
+  }
+  if (!(await assertPropertyInPortal(data.propertyId, user)) || !(await assertUnitInPortal(data.unitId, user))) {
+    return NextResponse.json({ error: "Zuordnung gehoert nicht zu dieser Instanz." }, { status: 403 });
   }
 
   const document = await prisma.document.update({
@@ -53,7 +59,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
   const user = await requireApiUser(request, [Role.ADMIN]);
   if (!user) return NextResponse.json({ error: "Nicht erlaubt." }, { status: 403 });
 
-  const document = await prisma.document.findUnique({ where: { id: params.id } });
+  const document = await prisma.document.findFirst({ where: { id: params.id, ...portalWhere(user) } });
   if (!document) return NextResponse.json({ error: "Dokument wurde nicht gefunden." }, { status: 404 });
   await prisma.document.delete({ where: { id: params.id } });
   if (document.storagePath) {

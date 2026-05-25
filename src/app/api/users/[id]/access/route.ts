@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { auditLog } from "@/lib/audit";
 import { assertSameOrigin, clientIp, requireApiUser } from "@/lib/auth";
+import { assertUnitInPortal, canAccessPortalUser, portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 
 const schema = z.object({
@@ -23,13 +24,16 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 
   const target = await prisma.user.findUnique({ where: { id: params.id }, include: { tenantProfile: true } });
   if (!target) return NextResponse.json({ error: "Benutzer wurde nicht gefunden." }, { status: 404 });
-  if (target.role === Role.ADMIN) return NextResponse.json({ error: "Admin-Rechte werden hier nicht geaendert." }, { status: 400 });
+  if (!canAccessPortalUser(admin, target)) return NextResponse.json({ error: "Benutzer gehoert nicht zu dieser Instanz." }, { status: 403 });
+  if (target.role === Role.ADMIN) return NextResponse.json({ error: "Eigentümer-Rechte werden hier nicht geaendert." }, { status: 400 });
 
   const body = schema.safeParse(await request.json());
   if (!body.success) return NextResponse.json({ error: "Ungueltige Daten.", issues: body.error.issues }, { status: 400 });
 
   if (target.role === Role.BROKER) {
     const propertyIds = [...new Set(body.data.propertyIds || [])];
+    const allowedPropertyCount = await prisma.property.count({ where: { id: { in: propertyIds }, ...portalWhere(admin) } });
+    if (allowedPropertyCount !== propertyIds.length) return NextResponse.json({ error: "Mindestens eine Immobilie gehoert nicht zu dieser Instanz." }, { status: 403 });
     const currentLinks = await prisma.brokerRequest.findMany({ where: { userId: target.id } });
     const currentPropertyIds = currentLinks.map((link) => link.propertyId);
     const removedPropertyIds = currentPropertyIds.filter((propertyId) => !propertyIds.includes(propertyId));
@@ -45,13 +49,13 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     }
 
     if (removedPropertyIds.length) {
-      const removedDocuments = await prisma.document.findMany({ where: { propertyId: { in: removedPropertyIds } }, select: { id: true } });
+      const removedDocuments = await prisma.document.findMany({ where: { propertyId: { in: removedPropertyIds }, ...portalWhere(admin) }, select: { id: true } });
       await prisma.accessPermission.deleteMany({
         where: { userId: target.id, documentId: { in: removedDocuments.map((document) => document.id) } }
       });
     }
 
-    const documents = await prisma.document.findMany({ where: { propertyId: { in: propertyIds } }, select: { id: true } });
+    const documents = await prisma.document.findMany({ where: { propertyId: { in: propertyIds }, ...portalWhere(admin) }, select: { id: true } });
     for (const document of documents) {
       await prisma.accessPermission.upsert({
         where: { userId_documentId: { userId: target.id, documentId: document.id } },
@@ -73,6 +77,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 
   if (target.role === Role.TENANT) {
     const unitId = body.data.unitId || null;
+    if (!(await assertUnitInPortal(unitId, admin))) return NextResponse.json({ error: "Einheit gehoert nicht zu dieser Instanz." }, { status: 403 });
     const isCurrent = body.data.isCurrent ?? target.tenantProfile?.isCurrent ?? true;
     if (!target.tenantProfile) {
       return NextResponse.json({ error: "Mieterprofil wurde nicht gefunden." }, { status: 404 });
@@ -87,10 +92,13 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       }
     });
     if (profile.unitId && profile.isCurrent) {
-      await prisma.tenantProfile.updateMany({
-        where: { unitId: profile.unitId, id: { not: profile.id } },
-        data: { isCurrent: false, moveOutDate: new Date() }
-      });
+      const unit = await prisma.unit.findUnique({ where: { id: profile.unitId }, select: { isSharedHousing: true } });
+      if (!unit?.isSharedHousing) {
+        await prisma.tenantProfile.updateMany({
+          where: { unitId: profile.unitId, id: { not: profile.id } },
+          data: { isCurrent: false, moveOutDate: new Date() }
+        });
+      }
     }
     await auditLog({
       userId: admin.id,

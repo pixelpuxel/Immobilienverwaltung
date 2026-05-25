@@ -3,27 +3,45 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { auditLog } from "@/lib/audit";
 import { assertSameOrigin, clientIp, hashPassword, requireApiUser } from "@/lib/auth";
+import { assertUnitInPortal, portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 
+const optionalDate = z.preprocess((value) => {
+  if (value === "" || value === null || value === undefined) return null;
+  return value;
+}, z.coerce.date().optional().nullable());
+
+const optionalNumber = z.preprocess((value) => {
+  if (value === "" || value === null || value === undefined) return null;
+  return value;
+}, z.coerce.number().optional().nullable());
+
+const optionalInt = z.preprocess((value) => {
+  if (value === "" || value === null || value === undefined) return null;
+  return value;
+}, z.coerce.number().int().optional().nullable());
+
 const schema = z.object({
-  email: z.string().email(),
-  firstName: z.string().min(1),
-  lastName: z.string().min(1),
+  email: z.string().email().optional().or(z.literal("")),
+  username: z.string().optional(),
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
   unitId: z.string().optional().nullable(),
   password: z.string().min(8).default("BitteSofortAendern123!"),
-  birthdate: z.coerce.date().optional().nullable(),
+  birthdate: optionalDate,
   currentAddress: z.string().optional(),
   phone: z.string().optional(),
-  moveInDate: z.coerce.date().optional().nullable(),
-  moveOutDate: z.coerce.date().optional().nullable(),
+  moveInDate: optionalDate,
+  moveOutDate: optionalDate,
   isCurrent: z.preprocess((value) => value === true || value === "true" || value === "on", z.boolean()).optional().default(true),
-  leaseStartDate: z.coerce.date().optional().nullable(),
-  rentAmount: z.coerce.number().optional().nullable(),
-  serviceCharges: z.coerce.number().optional().nullable(),
-  deposit: z.coerce.number().optional().nullable(),
-  occupantCount: z.coerce.number().int().optional().nullable(),
+  leaseStartDate: optionalDate,
+  rentAmount: optionalNumber,
+  garageRent: optionalNumber,
+  serviceCharges: optionalNumber,
+  deposit: optionalNumber,
+  occupantCount: optionalInt,
   bankAccount: z.string().optional(),
-  rentDueDay: z.coerce.number().int().optional().nullable(),
+  rentDueDay: optionalInt,
   landlordBankAccount: z.string().optional(),
   landlordBankName: z.string().optional(),
   roomDescription: z.string().optional(),
@@ -40,7 +58,7 @@ export async function GET(request: NextRequest) {
   if (user.role === Role.TENANT) {
     return NextResponse.json(await prisma.tenantProfile.findUnique({ where: { userId: user.id }, include: { unit: { include: { property: true } } } }));
   }
-  return NextResponse.json(await prisma.tenantProfile.findMany({ include: { user: true, unit: { include: { property: true } } } }));
+  return NextResponse.json(await prisma.tenantProfile.findMany({ where: { user: portalWhere(user) }, include: { user: true, unit: { include: { property: true } } } }));
 }
 
 export async function POST(request: NextRequest) {
@@ -49,27 +67,56 @@ export async function POST(request: NextRequest) {
   if (!actor) return NextResponse.json({ error: "Nicht angemeldet." }, { status: 401 });
   const body = schema.safeParse(await request.json());
   if (!body.success) return NextResponse.json({ error: "Ungueltige Daten.", issues: body.error.issues }, { status: 400 });
+  const firstName = cleanText(body.data.firstName);
+  const lastName = cleanText(body.data.lastName);
+  const nameSlug = slugify([firstName, lastName].filter(Boolean).join("-"));
+  const generatedUsername = body.data.username || (nameSlug ? `${nameSlug}-${Date.now().toString(36).slice(-4)}` : undefined);
+  const identity = accountIdentity(body.data.email, generatedUsername);
+  if (!identity) return NextResponse.json({ error: "Bitte mindestens Benutzername, Vorname oder Nachname angeben." }, { status: 400 });
+  if (!(await assertUnitInPortal(body.data.unitId, actor))) return NextResponse.json({ error: "Einheit gehoert nicht zu dieser Instanz." }, { status: 403 });
+  const selectedUnit = body.data.unitId
+    ? await prisma.unit.findFirst({
+      where: { id: body.data.unitId, property: portalWhere(actor) },
+      select: { rentAmount: true, garageRent: true, serviceCharges: true }
+    })
+    : null;
 
-  if (actor.role !== Role.ADMIN && actor.email !== body.data.email) {
+  if (actor.role !== Role.ADMIN && actor.email !== identity.email && actor.username !== identity.username) {
     return NextResponse.json({ error: "Nicht erlaubt." }, { status: 403 });
   }
 
-  const { password, ...profileData } = body.data;
+  const { password, username, ...profileData } = body.data;
+  const displayFirstName = firstName || identity.username || identity.email.split("@")[0] || "Mieter";
+  const displayLastName = lastName || "";
+  const displayName = `${displayFirstName} ${displayLastName}`.trim();
   const normalizedProfileData = {
     ...profileData,
+    firstName: displayFirstName,
+    lastName: displayLastName,
+    email: identity.email,
+    rentAmount: profileData.rentAmount ?? selectedUnit?.rentAmount ?? null,
+    garageRent: profileData.garageRent ?? selectedUnit?.garageRent ?? null,
+    serviceCharges: profileData.serviceCharges ?? selectedUnit?.serviceCharges ?? null,
+    deposit: profileData.deposit ?? suggestedDeposit(selectedUnit),
     moveOutDate: profileData.isCurrent ? null : profileData.moveOutDate
   };
-  const user = await prisma.user.upsert({
-    where: { email: body.data.email },
-    update: { name: `${body.data.firstName} ${body.data.lastName}`, role: Role.TENANT, active: true },
-    create: {
-      email: body.data.email,
-      name: `${body.data.firstName} ${body.data.lastName}`,
-      role: Role.TENANT,
-      active: true,
-      passwordHash: await hashPassword(password)
-    }
-  });
+  const existingUser = await prisma.user.findFirst({ where: { OR: [{ email: identity.email }, ...(identity.username ? [{ username: identity.username }] : [])] } });
+  if (existingUser?.portalInstanceId && existingUser.portalInstanceId !== actor.portalInstanceId) {
+    return NextResponse.json({ error: "Diese Zugangsdaten werden bereits in einer anderen Instanz verwendet." }, { status: 400 });
+  }
+  const user = existingUser
+    ? await prisma.user.update({ where: { id: existingUser.id }, data: { portalInstanceId: actor.portalInstanceId, username: identity.username, name: displayName, role: Role.TENANT, active: true } })
+    : await prisma.user.create({
+      data: {
+        email: identity.email,
+        portalInstanceId: actor.portalInstanceId,
+        username: identity.username,
+        name: displayName,
+        role: Role.TENANT,
+        active: true,
+        passwordHash: await hashPassword(password)
+      }
+    });
 
   const profile = await prisma.tenantProfile.upsert({
     where: { userId: user.id },
@@ -77,11 +124,44 @@ export async function POST(request: NextRequest) {
     create: { ...normalizedProfileData, userId: user.id }
   });
   if (profile.unitId && profile.isCurrent) {
-    await prisma.tenantProfile.updateMany({
-      where: { unitId: profile.unitId, id: { not: profile.id } },
-      data: { isCurrent: false, moveOutDate: new Date() }
-    });
+    const unit = await prisma.unit.findUnique({ where: { id: profile.unitId }, select: { isSharedHousing: true } });
+    if (!unit?.isSharedHousing) {
+      await prisma.tenantProfile.updateMany({
+        where: { unitId: profile.unitId, id: { not: profile.id } },
+        data: { isCurrent: false, moveOutDate: new Date() }
+      });
+    }
   }
   await auditLog({ userId: actor.id, action: AuditAction.USER_INVITED, entity: "TenantProfile", entityId: profile.id, ipAddress: clientIp(request) });
   return NextResponse.json(profile, { status: 201 });
+}
+
+function accountIdentity(email?: string, username?: string) {
+  const normalizedEmail = email?.trim().toLowerCase();
+  const normalizedUsername = username?.trim().toLowerCase();
+  if (!normalizedEmail && !normalizedUsername) return null;
+  return {
+    email: normalizedEmail || `${normalizedUsername}@portal.local`,
+    username: normalizedUsername || null
+  };
+}
+
+function cleanText(value?: string) {
+  return value?.trim() || "";
+}
+
+function slugify(value: string) {
+  const slug = value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || undefined;
+}
+
+function suggestedDeposit(unit?: { rentAmount: unknown; garageRent: unknown } | null) {
+  if (!unit) return null;
+  const coldRent = Number(unit.rentAmount || 0) + Number(unit.garageRent || 0);
+  return coldRent ? coldRent * 3 : null;
 }

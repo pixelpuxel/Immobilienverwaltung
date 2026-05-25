@@ -9,9 +9,10 @@ type EditableFieldProps = {
   field: string;
   endpoint: string;
   canEdit: boolean;
-  type?: "text" | "number" | "textarea" | "select";
+  type?: "text" | "number" | "textarea" | "select" | "checkbox";
   suffix?: string;
   options?: string[];
+  displayValue?: string;
 };
 
 export function EditableField({
@@ -22,7 +23,8 @@ export function EditableField({
   canEdit,
   type = "text",
   suffix = "",
-  options = []
+  options = [],
+  displayValue
 }: EditableFieldProps) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -60,6 +62,11 @@ export function EditableField({
               <option value="">offen</option>
               {options.map((option) => <option key={option} value={option}>{option}</option>)}
             </select>
+          ) : type === "checkbox" ? (
+            <label className="flex items-center gap-2 text-sm font-semibold text-muted">
+              <input name={field} type="checkbox" defaultChecked={currentValue === "true"} />
+              aktiv
+            </label>
           ) : (
             <input name={field} type={type} step={type === "number" ? "0.01" : undefined} defaultValue={currentValue} />
           )}
@@ -78,7 +85,7 @@ export function EditableField({
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-xs font-semibold uppercase text-muted">{label}</div>
-          <div className="mt-1">{currentValue ? `${currentValue}${suffix}` : "-"}</div>
+          <div className="mt-1">{type === "checkbox" ? (currentValue === "true" ? "Ja" : "Nein") : currentValue ? (displayValue || `${currentValue}${suffix}`) : "-"}</div>
         </div>
         {canEdit ? (
           <button className="button-secondary px-3 py-1 text-xs" type="button" onClick={() => setEditing(true)}>Bearbeiten</button>

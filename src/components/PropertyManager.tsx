@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { QuickMoneyEdit } from "./QuickMoneyEdit";
 
 type PropertyItem = {
   id: string;
@@ -13,9 +14,14 @@ type PropertyItem = {
   livingArea: string;
   unitCount: string;
   rentalStatus: string;
+  expectedPurchasePrice: string;
+  outstandingLoan: string;
+  annualColdRent: number;
   internalNotes: string;
   documents: number;
 };
+
+const rentalStatuses = ["offen", "frei", "teilvermietet", "voll vermietet", "leerstehend", "reserviert", "in Sanierung"];
 
 export function PropertyManager({ properties }: { properties: PropertyItem[] }) {
   const router = useRouter();
@@ -64,13 +70,15 @@ export function PropertyManager({ properties }: { properties: PropertyItem[] }) 
           {editingId === property.id ? (
             <form className="grid gap-3" onSubmit={(event) => updateProperty(event, property.id)}>
               <div className="grid gap-3 md:grid-cols-2">
-                <label>Objektname<input name="name" defaultValue={property.name} required /></label>
-                <label>Adresse<input name="address" defaultValue={property.address} required /></label>
+                <label>Objektname <span className="text-accent">*</span><input name="name" defaultValue={property.name} required /></label>
+                <label>Adresse<input name="address" defaultValue={property.address} /></label>
                 <label>Objekttyp<input name="objectType" defaultValue={property.objectType} /></label>
                 <label>Baujahr<input name="constructionYear" type="number" defaultValue={property.constructionYear} /></label>
                 <label>Wohnflaeche<input name="livingArea" type="number" step="0.01" defaultValue={property.livingArea} /></label>
                 <label>Anzahl Einheiten<input name="unitCount" type="number" defaultValue={property.unitCount} /></label>
-                <label>Vermietungsstatus<input name="rentalStatus" defaultValue={property.rentalStatus} /></label>
+                <label>Vermietungsstatus<select name="rentalStatus" defaultValue={property.rentalStatus || "offen"}>{rentalStatuses.map((status) => <option key={status} value={status}>{status}</option>)}</select></label>
+                <label>Kaufpreisvorstellung<input name="expectedPurchasePrice" type="number" step="0.01" defaultValue={property.expectedPurchasePrice} /></label>
+                <label>Valutiertes Darlehen<input name="outstandingLoan" type="number" step="0.01" defaultValue={property.outstandingLoan} /></label>
                 <label>Interne Notizen<textarea name="internalNotes" defaultValue={property.internalNotes} /></label>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -95,6 +103,18 @@ export function PropertyManager({ properties }: { properties: PropertyItem[] }) 
                 <div>{property.livingArea || "-"} qm Wohnflaeche</div>
                 <div>{property.documents} Dokumente</div>
               </div>
+              <div className="mt-3 grid gap-3 text-sm md:grid-cols-2">
+                <QuickMoneyEdit endpoint={`/api/properties/${property.id}`} field="expectedPurchasePrice" label="Kaufpreisvorstellung" value={property.expectedPurchasePrice} />
+                <QuickMoneyEdit endpoint={`/api/properties/${property.id}`} field="outstandingLoan" label="Valutiertes Darlehen" value={property.outstandingLoan} />
+                <div className="rounded-md bg-panel p-3">
+                  <div className="text-xs font-semibold text-muted">Rendite</div>
+                  <div className="mt-1 font-semibold">{yieldText(property.annualColdRent, Number(property.expectedPurchasePrice || 0))}</div>
+                </div>
+                <div className="rounded-md bg-panel p-3">
+                  <div className="text-xs font-semibold text-muted">Gehebelte Rendite</div>
+                  <div className="mt-1 font-semibold">{yieldText(property.annualColdRent, Number(property.expectedPurchasePrice || 0) - Number(property.outstandingLoan || 0))}</div>
+                </div>
+              </div>
               <div className="mt-5 grid gap-2 sm:flex sm:flex-wrap">
                 <Link className="button block text-center" href={`/properties/${property.id}`}>Details ansehen</Link>
                 <button className="button-secondary" type="button" onClick={() => setEditingId(property.id)}>Bearbeiten</button>
@@ -106,4 +126,9 @@ export function PropertyManager({ properties }: { properties: PropertyItem[] }) 
       ))}
     </div>
   );
+}
+
+function yieldText(annualColdRent: number, base: number) {
+  if (!base || base <= 0) return "offen";
+  return new Intl.NumberFormat("de-DE", { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(annualColdRent / base);
 }

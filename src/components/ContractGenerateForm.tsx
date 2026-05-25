@@ -8,11 +8,13 @@ type Option = { id: string; label: string };
 export function ContractGenerateForm({
   tenants,
   units,
-  templates
+  templates,
+  defaultUnitId = ""
 }: {
   tenants: Option[];
   units: Option[];
   templates: Option[];
+  defaultUnitId?: string;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -37,16 +39,26 @@ export function ContractGenerateForm({
       body: JSON.stringify(raw)
     });
     if (timer.current) clearInterval(timer.current);
-    setProgress(response.ok ? 100 : 0);
-    setBusy(false);
     if (!response.ok) {
+      setProgress(0);
+      setBusy(false);
       const body = await response.json().catch(() => ({ error: "Vertrag konnte nicht erzeugt werden." }));
       setMessage(body.error || "Vertrag konnte nicht erzeugt werden.");
       return;
     }
-    event.currentTarget.reset();
-    setMessage("Vertrag erzeugt.");
+    const contract = await response.json();
+    setProgress(92);
+    setMessage("Vertrag erzeugt. Vorschau wird bereitgestellt...");
+    const ready = await waitForContract(contract.id);
+    if (!ready) {
+      setBusy(false);
+      setMessage("Vertrag wurde erzeugt, die Vorschau ist aber noch nicht erreichbar. Bitte Seite neu laden.");
+      return;
+    }
+    setProgress(100);
+    setMessage("Vertrag ist bereit. Seite wird aktualisiert...");
     router.refresh();
+    window.setTimeout(() => window.location.reload(), 350);
   }
 
   return (
@@ -54,7 +66,7 @@ export function ContractGenerateForm({
       <h2 className="text-xl font-bold">Vertrag generieren</h2>
       {message ? <div className="rounded-md border border-line bg-white p-3 text-sm">{message}</div> : null}
       <label>Mieter<select name="tenantProfileId" required>{tenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.label}</option>)}</select></label>
-      <label>Einheit<select name="unitId" required>{units.map((unit) => <option key={unit.id} value={unit.id}>{unit.label}</option>)}</select></label>
+      <label>Einheit<select name="unitId" required defaultValue={defaultUnitId}>{units.map((unit) => <option key={unit.id} value={unit.id}>{unit.label}</option>)}</select></label>
       <label>Vorlage<select name="templateId"><option value="">Standard</option>{templates.map((template) => <option key={template.id} value={template.id}>{template.label}</option>)}</select></label>
       {busy || progress > 0 ? (
         <div className="grid gap-2">
@@ -67,4 +79,13 @@ export function ContractGenerateForm({
       <button disabled={busy} type="submit">{busy ? "Erzeuge..." : "Vertrag generieren"}</button>
     </form>
   );
+}
+
+async function waitForContract(contractId: string) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const response = await fetch(`/api/contracts/${contractId}/preview`, { cache: "no-store" }).catch(() => null);
+    if (response?.ok) return true;
+    await new Promise((resolve) => setTimeout(resolve, 700));
+  }
+  return false;
 }

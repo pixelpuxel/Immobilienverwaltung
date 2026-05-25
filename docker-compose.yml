@@ -26,7 +26,7 @@ services:
     volumes:
       - uploads_data:/app/uploads
       - contracts_data:/app/contracts
-      - /share/gabriel/Schreiber_S/KI/Codex/immobilienverwaltung/runtime-logs:/app/logs
+      - ./runtime-logs:/app/logs
 
   postgres:
     image: postgres:16-alpine

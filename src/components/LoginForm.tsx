@@ -14,7 +14,7 @@ export function LoginForm() {
     const response = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: form.get("email"), password: form.get("password") })
+      body: JSON.stringify({ identifier: form.get("identifier"), password: form.get("password") })
     });
     if (!response.ok) {
       const body = await response.json().catch(() => ({ error: "Login fehlgeschlagen." }));
@@ -29,8 +29,8 @@ export function LoginForm() {
     <form onSubmit={submit} className="grid gap-4 rounded-lg border border-line bg-panel p-6">
       {error ? <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}
       <label className="grid gap-1 text-sm font-semibold">
-        E-Mail
-        <input name="email" type="email" autoComplete="email" required />
+        Benutzername oder E-Mail
+        <input name="identifier" type="text" autoComplete="username" required />
       </label>
       <label className="grid gap-1 text-sm font-semibold">
         Passwort

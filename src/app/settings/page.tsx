@@ -1,6 +1,10 @@
 import { Role } from "@prisma/client";
 import { AppShell } from "@/components/AppShell";
+import { BackupTools } from "@/components/BackupTools";
+import { CategoryVisibilityForm } from "@/components/CategoryVisibilityForm";
 import { JsonForm } from "@/components/JsonForm";
+import { OwnerProfileForm } from "@/components/OwnerProfileForm";
+import { PortalInstanceManager } from "@/components/PortalInstanceManager";
 import { requireUser } from "@/lib/auth";
 import { env } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
@@ -9,7 +13,10 @@ export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   const user = await requireUser([Role.ADMIN]);
-  const categories = await prisma.documentCategory.findMany({ orderBy: [{ group: "asc" }, { name: "asc" }] });
+  const [categories, ownerProfile] = await Promise.all([
+    prisma.documentCategory.findMany({ orderBy: [{ group: "asc" }, { name: "asc" }] }),
+    prisma.user.findUniqueOrThrow({ where: { id: user.id } })
+  ]);
   return (
     <AppShell role={user.role} userId={user.id} email={user.email} canSwitchView={user.role === Role.ADMIN || Boolean(user.impersonatedByAdminId)}>
       <h1 className="text-3xl font-bold">Einstellungen</h1>
@@ -23,19 +30,28 @@ export default async function SettingsPage() {
       </div>
       <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_420px]">
         <section className="rounded-lg border border-line">
-          <div className="border-b border-line p-4 font-bold">Dokumentenkategorien</div>
+          <div className="border-b border-line p-4">
+            <div className="font-bold">Dokumentenkategorien</div>
+            <p className="mt-1 text-sm text-muted">Eigentümer sehen alles. Hier steuerst du, welche Dokumentarten Makler oder Mieter grundsätzlich sehen dürfen.</p>
+          </div>
           {categories.map((category) => (
-            <div className="grid gap-1 border-b border-line p-4 text-sm md:grid-cols-[160px_minmax(0,1fr)]" key={category.id}>
+            <div className="grid gap-3 border-b border-line p-4 text-sm md:grid-cols-[160px_minmax(0,1fr)_260px]" key={category.id}>
               <div className="font-semibold">{category.group}</div>
               <div>{category.name}</div>
+              <CategoryVisibilityForm category={category} />
             </div>
           ))}
         </section>
-        <JsonForm endpoint="/api/document-categories" submitLabel="Kategorie anlegen">
-          <label>Gruppe<input name="group" required /></label>
-          <label>Name<input name="name" required /></label>
-          <label>Beschreibung<textarea name="description" /></label>
-        </JsonForm>
+        <div className="grid gap-6">
+          <BackupTools />
+          {user.platformAdmin ? <PortalInstanceManager /> : null}
+          <OwnerProfileForm userId={user.id} profile={ownerProfile} />
+          <JsonForm endpoint="/api/document-categories" submitLabel="Kategorie anlegen">
+            <label>Gruppe<input name="group" required /></label>
+            <label>Name<input name="name" required /></label>
+            <label>Beschreibung<textarea name="description" /></label>
+          </JsonForm>
+        </div>
       </div>
     </AppShell>
   );

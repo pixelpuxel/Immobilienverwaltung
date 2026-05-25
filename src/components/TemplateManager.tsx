@@ -49,10 +49,10 @@ export function TemplateManager({ template }: TemplateManagerProps) {
         <div className="text-muted">{template.filename}</div>
       </div>
       {message ? <div className="rounded-md border border-line bg-white p-2 text-xs">{message}</div> : null}
-      <div className="grid gap-2 sm:grid-cols-3">
-        <a className="button-secondary text-center" href={`/api/templates/${template.id}/preview`} target="_blank" rel="noreferrer">Vorschau</a>
-        <a className="button-secondary text-center" href={`/api/templates/${template.id}/download`}>Download</a>
-        <button className="button-secondary" disabled={busy} type="button" onClick={remove}>Loeschen</button>
+      <div className="flex flex-wrap gap-2">
+        <a className="button-secondary flex min-h-11 min-w-32 flex-none items-center justify-center text-center" href={`/api/templates/${template.id}/preview`} target="_blank" rel="noreferrer">Vorschau</a>
+        <a className="button-secondary flex min-h-11 min-w-32 flex-none items-center justify-center text-center" href={`/api/templates/${template.id}/download`}>Download</a>
+        <button className="button-secondary min-h-11 min-w-32 flex-none" disabled={busy} type="button" onClick={remove}>Loeschen</button>
       </div>
       <form className="grid gap-2" onSubmit={save}>
         <label>Name<input name="name" defaultValue={template.name} required /></label>

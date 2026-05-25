@@ -12,9 +12,11 @@ export const unitSchema = z.object({
   rooms: optionalNumber,
   livingArea: optionalNumber,
   rentAmount: optionalNumber,
+  garageRent: optionalNumber,
   serviceCharges: optionalNumber,
   warmRent: optionalNumber,
-  status: z.string().optional()
+  status: z.string().optional(),
+  isSharedHousing: z.preprocess((value) => value === true || value === "true" || value === "on", z.boolean()).optional()
 });
 
 export const unitUpdateSchema = unitSchema.omit({ propertyId: true }).partial();

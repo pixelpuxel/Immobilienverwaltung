@@ -10,9 +10,14 @@ const optionalInt = z.preprocess((value) => {
   return value;
 }, z.coerce.number().int().optional().nullable());
 
+const optionalText = z.preprocess((value) => {
+  if (value === null || value === undefined) return "";
+  return value;
+}, z.coerce.string().optional().default(""));
+
 export const propertySchema = z.object({
   name: z.string().min(1),
-  address: z.string().min(1),
+  address: optionalText,
   objectType: z.string().optional(),
   constructionYear: optionalInt,
   livingArea: optionalNumber,
@@ -28,6 +33,7 @@ export const propertySchema = z.object({
   modernizations: z.string().optional(),
   rentalStatus: z.string().optional(),
   expectedPurchasePrice: optionalNumber,
+  outstandingLoan: optionalNumber,
   internalNotes: z.string().optional()
 });
 

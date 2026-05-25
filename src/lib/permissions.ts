@@ -5,8 +5,14 @@ export async function canAccessDocument(user: Pick<User, "id" | "role">, documen
   if (user.role === Role.ADMIN) return true;
   if (user.role === Role.TENANT) {
     const profile = await prisma.tenantProfile.findUnique({ where: { userId: user.id } });
-    const document = await prisma.document.findUnique({ where: { id: documentId } });
-    if (profile?.unitId && document?.unitId === profile.unitId && !download) return true;
+    const document = await prisma.document.findUnique({ where: { id: documentId }, include: { category: true } });
+    if (profile?.unitId && document?.unitId === profile.unitId && document.category?.visibleToTenant && document.scope !== "PROPERTY" && !download) return true;
+  }
+  if (user.role === Role.BROKER) {
+    const propertyIds = await brokerPropertyIds(user.id);
+    const document = await prisma.document.findUnique({ where: { id: documentId }, include: { category: true, unit: true } });
+    const propertyId = document?.propertyId || document?.unit?.propertyId;
+    if (propertyId && propertyIds.includes(propertyId) && document?.category?.visibleToBroker && !download) return true;
   }
   const permission = await prisma.accessPermission.findUnique({
     where: { userId_documentId: { userId: user.id, documentId } }

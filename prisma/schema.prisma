@@ -39,10 +39,34 @@ enum AuditAction {
   USER_INVITED
 }
 
+model PortalInstance {
+  id          String             @id @default(cuid())
+  name        String
+  slug        String             @unique
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  users       User[]
+  properties  Property[]
+  documents   Document[]
+  templates   ContractTemplate[]
+  auditLogs   AuditLog[]
+}
+
 model User {
   id           String          @id @default(cuid())
   email        String          @unique
+  username     String?
+  portalInstanceId String?
+  platformAdmin Boolean        @default(false)
   name         String?
+  contactPerson String?
+  contactAddress String?
+  contactPhone String?
+  contactEmail String?
+  ownerBankName String?
+  ownerIban    String?
+  ownerTaxId   String?
+  ownerNotes   String?
   passwordHash String
   role         Role            @default(TENANT)
   active       Boolean         @default(true)
@@ -52,12 +76,15 @@ model User {
   documents    Document[]      @relation("UploadedDocuments")
   permissions  AccessPermission[]
   brokerLinks  BrokerRequest[]
+  brokerValuations BrokerValuation[]
   tenantProfile TenantProfile?
   auditLogs    AuditLog[]
+  portalInstance PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
 }
 
 model Property {
   id                    String          @id @default(cuid())
+  portalInstanceId      String?
   name                  String
   address               String
   objectType            String?
@@ -75,12 +102,15 @@ model Property {
   modernizations        String?
   rentalStatus          String?
   expectedPurchasePrice Decimal?        @db.Decimal(14, 2)
+  outstandingLoan       Decimal?        @db.Decimal(14, 2)
   internalNotes         String?
   createdAt             DateTime        @default(now())
   updatedAt             DateTime        @updatedAt
   units                 Unit[]
   documents             Document[]
   brokerRequests        BrokerRequest[]
+  brokerValuations      BrokerValuation[]
+  portalInstance        PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
 }
 
 model Unit {
@@ -91,9 +121,11 @@ model Unit {
   rooms       Decimal?        @db.Decimal(6, 2)
   livingArea  Decimal?        @db.Decimal(12, 2)
   rentAmount  Decimal?        @db.Decimal(12, 2)
+  garageRent  Decimal?        @db.Decimal(12, 2)
   serviceCharges Decimal?     @db.Decimal(12, 2)
   warmRent    Decimal?        @db.Decimal(12, 2)
   status      String?
+  isSharedHousing Boolean     @default(false)
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
   property    Property        @relation(fields: [propertyId], references: [id], onDelete: Cascade)
@@ -107,12 +139,15 @@ model DocumentCategory {
   group       String
   name        String       @unique
   description String?
+  visibleToBroker Boolean  @default(true)
+  visibleToTenant Boolean  @default(false)
   createdAt   DateTime     @default(now())
   documents   Document[]
 }
 
 model Document {
   id              String          @id @default(cuid())
+  portalInstanceId String?
   title           String
   filename        String
   mimeType        String
@@ -131,6 +166,7 @@ model Document {
   category        DocumentCategory? @relation(fields: [categoryId], references: [id])
   uploadedBy      User            @relation("UploadedDocuments", fields: [uploadedById], references: [id])
   permissions     AccessPermission[]
+  portalInstance  PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
 }
 
 model AccessPermission {
@@ -160,6 +196,20 @@ model BrokerRequest {
   @@unique([userId, propertyId])
 }
 
+model BrokerValuation {
+  id          String    @id @default(cuid())
+  userId      String
+  propertyId  String
+  amount      Decimal?  @db.Decimal(14, 2)
+  note        String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  property    Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, propertyId])
+}
+
 model TenantProfile {
   id                    String    @id @default(cuid())
   userId                String    @unique
@@ -175,6 +225,7 @@ model TenantProfile {
   isCurrent             Boolean   @default(true)
   leaseStartDate        DateTime?
   rentAmount            Decimal?  @db.Decimal(12, 2)
+  garageRent            Decimal?  @db.Decimal(12, 2)
   serviceCharges        Decimal?  @db.Decimal(12, 2)
   deposit               Decimal?  @db.Decimal(12, 2)
   occupantCount         Int?
@@ -197,6 +248,7 @@ model TenantProfile {
 
 model ContractTemplate {
   id          String          @id @default(cuid())
+  portalInstanceId String?
   name        String
   filename    String
   storagePath String
@@ -204,6 +256,7 @@ model ContractTemplate {
   size        Int
   createdAt   DateTime        @default(now())
   contracts   LeaseContract[]
+  portalInstance PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
 }
 
 model LeaseContract {
@@ -221,6 +274,7 @@ model LeaseContract {
 
 model AuditLog {
   id        String      @id @default(cuid())
+  portalInstanceId String?
   userId    String?
   action    AuditAction
   entity    String?
@@ -229,4 +283,5 @@ model AuditLog {
   detail    Json?
   createdAt DateTime    @default(now())
   user      User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  portalInstance PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
 }

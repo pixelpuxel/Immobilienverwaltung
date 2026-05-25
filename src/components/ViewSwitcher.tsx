@@ -1,25 +1,19 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { roleLabel } from "@/lib/display";
 
 type RoleName = "ADMIN" | "BROKER" | "TENANT";
 type SwitchUser = {
   id: string;
   email: string;
+  username: string | null;
   name: string | null;
   role: RoleName;
   context: string;
 };
 
-const labels: Record<RoleName, string> = {
-  ADMIN: "Admin",
-  BROKER: "Makler",
-  TENANT: "Mieter"
-};
-
-export function ViewSwitcher({ currentUserId }: { currentUserId: string }) {
-  const router = useRouter();
+export function ViewSwitcher({ currentUserId, compact = false }: { currentUserId: string; compact?: boolean }) {
   const [users, setUsers] = useState<SwitchUser[]>([]);
   const [selectedUserId, setSelectedUserId] = useState(currentUserId);
   const [busy, setBusy] = useState(false);
@@ -27,7 +21,8 @@ export function ViewSwitcher({ currentUserId }: { currentUserId: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/auth/switch-view")
+    setSelectedUserId(currentUserId);
+    fetch("/api/auth/switch-view", { cache: "no-store" })
       .then((response) => response.ok ? response.json() : { users: [] })
       .then((body) => {
         if (!cancelled) setUsers(body.users || []);
@@ -38,7 +33,7 @@ export function ViewSwitcher({ currentUserId }: { currentUserId: string }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [currentUserId]);
 
   async function switchUser(userId: string) {
     if (userId === currentUserId || busy) return;
@@ -50,9 +45,37 @@ export function ViewSwitcher({ currentUserId }: { currentUserId: string }) {
     });
     setBusy(false);
     if (response.ok) {
-      router.push("/dashboard");
-      router.refresh();
+      window.location.href = "/dashboard";
     }
+  }
+
+  const select = (
+    <select
+      aria-label="Benutzeransicht auswaehlen"
+      className={compact ? "h-10 w-full min-w-0 max-w-[180px] rounded-md bg-white px-2 text-xs" : "min-w-0 text-xs"}
+      value={selectedUserId}
+      disabled={busy || users.length === 0}
+      onChange={(event) => {
+        const userId = event.target.value;
+        setSelectedUserId(userId);
+        switchUser(userId);
+      }}
+    >
+      {users.map((user) => (
+        <option key={user.id} value={user.id}>
+          {roleLabel(user.role)} - {user.name || user.username || user.email}{user.context ? ` (${user.context})` : ""}
+        </option>
+      ))}
+    </select>
+  );
+
+  if (compact) {
+    return (
+      <div className="min-w-0">
+        <div className="sr-only">Benutzeransicht</div>
+        {select}
+      </div>
+    );
   }
 
   return (
@@ -61,27 +84,11 @@ export function ViewSwitcher({ currentUserId }: { currentUserId: string }) {
         <div className="px-1 text-xs font-semibold text-muted">Benutzeransicht</div>
         {currentUser ? (
           <div className="mt-1 truncate px-1 text-xs">
-            {labels[currentUser.role]}: {currentUser.name || currentUser.email}
+            {roleLabel(currentUser.role)}: {currentUser.name || currentUser.username || currentUser.email}
           </div>
         ) : null}
       </div>
-      <select
-        aria-label="Benutzeransicht auswaehlen"
-        className="min-w-0 text-xs"
-        value={selectedUserId}
-        disabled={busy || users.length === 0}
-        onChange={(event) => {
-          const userId = event.target.value;
-          setSelectedUserId(userId);
-          switchUser(userId);
-        }}
-      >
-        {users.map((user) => (
-          <option key={user.id} value={user.id}>
-            {labels[user.role]} - {user.name || user.email}{user.context ? ` (${user.context})` : ""}
-          </option>
-        ))}
-      </select>
+      {select}
       {busy ? <div className="px-1 text-xs text-muted">Wechsle Ansicht...</div> : null}
     </div>
   );

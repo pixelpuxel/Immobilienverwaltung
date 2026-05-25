@@ -52,31 +52,35 @@ export function DocumentAssignmentForm({
   }
 
   return (
-    <form className="mt-3 grid gap-2 rounded-md bg-panel p-3" onSubmit={save}>
-      <div className="text-xs font-semibold text-muted">Zuordnung / verschieben</div>
-      <label className="grid gap-1 text-xs font-semibold text-muted">
-        Immobilie
-        <select name="propertyId" defaultValue={propertyId}>
-          <option value="">Keine</option>
-          {properties.map((property) => <option key={property.id} value={property.id}>{property.label}</option>)}
-        </select>
-      </label>
-      <label className="grid gap-1 text-xs font-semibold text-muted">
-        Einheit
-        <select name="unitId" defaultValue={unitId}>
-          <option value="">Keine</option>
-          {units.map((unit) => <option key={unit.id} value={unit.id}>{unit.label}</option>)}
-        </select>
-      </label>
-      <label className="grid gap-1 text-xs font-semibold text-muted">
-        Kategorie
-        <select name="categoryId" defaultValue={categoryId}>
-          <option value="">Keine</option>
-          {categories.map((category) => <option key={category.id} value={category.id}>{category.label}</option>)}
-        </select>
-      </label>
-      {message ? <div className="text-xs text-muted">{message}</div> : null}
-      <button className="px-3 py-2 text-sm" type="submit">Zuordnung speichern</button>
-    </form>
+    <details className="mt-3 rounded-md border border-line bg-white">
+      <summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-accent">Zuordnung ändern</summary>
+      <form className="grid gap-3 border-t border-line p-3" onSubmit={save}>
+        <div className="grid gap-2 md:grid-cols-3">
+          <label className="grid gap-1 text-xs font-semibold text-muted">
+            Immobilie
+            <select className="text-sm" name="propertyId" defaultValue={propertyId}>
+              <option value="">Keine</option>
+              {properties.map((property) => <option key={property.id} value={property.id}>{property.label}</option>)}
+            </select>
+          </label>
+          <label className="grid gap-1 text-xs font-semibold text-muted">
+            Einheit
+            <select className="text-sm" name="unitId" defaultValue={unitId}>
+              <option value="">Keine</option>
+              {units.map((unit) => <option key={unit.id} value={unit.id}>{unit.label}</option>)}
+            </select>
+          </label>
+          <label className="grid gap-1 text-xs font-semibold text-muted">
+            Kategorie
+            <select className="text-sm" name="categoryId" defaultValue={categoryId}>
+              <option value="">Keine</option>
+              {categories.map((category) => <option key={category.id} value={category.id}>{category.label}</option>)}
+            </select>
+          </label>
+        </div>
+        {message ? <div className="text-xs text-muted">{message}</div> : null}
+        <button className="w-fit px-3 py-2 text-sm" type="submit">Zuordnung speichern</button>
+      </form>
+    </details>
   );
 }

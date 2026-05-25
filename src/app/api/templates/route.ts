@@ -3,12 +3,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { assertSameOrigin, requireApiUser } from "@/lib/auth";
 import { saveUpload } from "@/lib/files";
 import { env } from "@/lib/env";
+import { portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(request: NextRequest) {
   const user = await requireApiUser(request, [Role.ADMIN]);
   if (!user) return NextResponse.json({ error: "Nicht erlaubt." }, { status: 403 });
-  return NextResponse.json(await prisma.contractTemplate.findMany({ orderBy: { createdAt: "desc" } }));
+  return NextResponse.json(await prisma.contractTemplate.findMany({ where: portalWhere(user), orderBy: { createdAt: "desc" } }));
 }
 
 export async function POST(request: NextRequest) {
@@ -27,7 +28,8 @@ export async function POST(request: NextRequest) {
       filename: saved.filename,
       storagePath: saved.storagePath,
       mimeType: saved.mimeType,
-      size: saved.size
+      size: saved.size,
+      portalInstanceId: user.portalInstanceId
     }
   });
   return NextResponse.json(template, { status: 201 });

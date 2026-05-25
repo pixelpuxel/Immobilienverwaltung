@@ -4,13 +4,14 @@ import { auditLog } from "@/lib/audit";
 import { clientIp, requireApiUser } from "@/lib/auth";
 import { readPrivateFile } from "@/lib/files";
 import { canAccessDocument } from "@/lib/permissions";
+import { portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   const user = await requireApiUser(request);
   if (!user) return NextResponse.json({ error: "Nicht angemeldet." }, { status: 401 });
 
-  const document = await prisma.document.findUnique({ where: { id: params.id } });
+  const document = await prisma.document.findFirst({ where: { id: params.id, ...portalWhere(user) } });
   if (!document || !(await canAccessDocument(user, document.id))) {
     return NextResponse.json({ error: "Nicht erlaubt." }, { status: 403 });
   }

@@ -24,12 +24,22 @@ export const contractPlaceholders = [
   "room_description",
   "shared_rooms",
   "rent_amount",
+  "garage_rent",
+  "cold_rent_total",
   "service_charges",
   "warm_rent",
   "deposit",
   "rent_due_day",
   "landlord_bank_name",
   "landlord_bank_account",
+  "owner_name",
+  "owner_address",
+  "owner_phone",
+  "owner_email",
+  "owner_bank_name",
+  "owner_iban",
+  "owner_tax_id",
+  "owner_notes",
   "lease_start_date",
   "move_in_date",
   "occupant_count",
@@ -44,6 +54,7 @@ export async function generateContract(input: { tenantProfileId: string; unitId:
   const template = input.templateId
     ? await prisma.contractTemplate.findUnique({ where: { id: input.templateId } })
     : null;
+  const owner = await prisma.user.findFirst({ where: { role: "ADMIN", active: true, portalInstanceId: unit.property.portalInstanceId }, orderBy: { createdAt: "asc" } });
 
   await fs.mkdir(env.contractsPath, { recursive: true });
   const baseName = contractBaseName(tenant, unit);
@@ -53,15 +64,15 @@ export async function generateContract(input: { tenantProfileId: string; unitId:
   if (template?.storagePath) {
     const content = await fs.readFile(template.storagePath);
     const zip = new PizZip(content);
-    const doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true });
-    doc.render(contractData(tenant, unit));
+    const doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true, delimiters: { start: "{{", end: "}}" } });
+    doc.render(contractData(tenant, unit, owner));
     await fs.writeFile(docxPath, doc.getZip().generate({ type: "nodebuffer" }));
   } else {
     const zip = new PizZip();
     zip.file("[Content_Types].xml", contentTypesXml());
     zip.folder("_rels")?.file(".rels", relsXml());
-    zip.folder("word")?.file("document.xml", defaultContractXml(contractData(tenant, unit)));
-    zip.folder("word")?.folder("_rels")?.file("document.xml.rels", "");
+    zip.folder("word")?.file("document.xml", defaultContractXml(contractData(tenant, unit, owner)));
+    zip.folder("word")?.folder("_rels")?.file("document.xml.rels", documentRelsXml());
     await fs.writeFile(docxPath, zip.generate({ type: "nodebuffer" }));
   }
 
@@ -69,6 +80,7 @@ export async function generateContract(input: { tenantProfileId: string; unitId:
     await execFileAsync("libreoffice", ["--headless", "--convert-to", "pdf", "--outdir", env.contractsPath, docxPath], {
       timeout: 60_000
     });
+    await fs.access(pdfPath);
   } catch {
     return { docxPath, pdfPath: null };
   }
@@ -105,6 +117,7 @@ type ContractTenant = {
   phone: string | null;
   email: string;
   rentAmount: unknown;
+  garageRent: unknown;
   serviceCharges: unknown;
   deposit: unknown;
   rentDueDay: number | null;
@@ -124,15 +137,34 @@ type ContractTenant = {
 type ContractUnit = {
   unitNumber: string;
   rentAmount: unknown;
+  garageRent: unknown;
   serviceCharges: unknown;
   warmRent: unknown;
   property: { name: string; address: string };
 };
 
-function contractData(tenant: ContractTenant, unit: ContractUnit) {
+type ContractOwner = {
+  name: string | null;
+  email: string;
+  contactPerson: string | null;
+  contactAddress: string | null;
+  contactPhone: string | null;
+  contactEmail: string | null;
+  ownerBankName: string | null;
+  ownerIban: string | null;
+  ownerTaxId: string | null;
+  ownerNotes: string | null;
+} | null;
+
+function contractData(tenant: ContractTenant, unit: ContractUnit, owner: ContractOwner) {
   const serviceCharges = tenant.serviceCharges ?? unit.serviceCharges;
   const rentAmount = tenant.rentAmount ?? unit.rentAmount;
-  const warmRent = unit.warmRent ?? (rentAmount && serviceCharges ? Number(rentAmount) + Number(serviceCharges) : null);
+  const garageRent = tenant.garageRent ?? unit.garageRent;
+  const coldRentTotal = amount(rentAmount) + amount(garageRent);
+  const warmRent = coldRentTotal || serviceCharges ? coldRentTotal + amount(serviceCharges) : null;
+  const ownerName = owner?.contactPerson || owner?.name || "";
+  const ownerBankName = owner?.ownerBankName || tenant.landlordBankName || "";
+  const ownerIban = owner?.ownerIban || tenant.landlordBankAccount || "";
   return {
     tenant_name: `${tenant.firstName} ${tenant.lastName}`,
     tenant_first_name: tenant.firstName,
@@ -147,12 +179,22 @@ function contractData(tenant: ContractTenant, unit: ContractUnit) {
     room_description: tenant.roomDescription || `Einheit ${unit.unitNumber}`,
     shared_rooms: tenant.sharedRooms || "Gemeinschaftlich nutzbare Räume nach Vereinbarung.",
     rent_amount: money(rentAmount),
+    garage_rent: money(garageRent),
+    cold_rent_total: money(coldRentTotal),
     service_charges: money(serviceCharges),
     warm_rent: money(warmRent),
     deposit: money(tenant.deposit),
     rent_due_day: tenant.rentDueDay ? String(tenant.rentDueDay) : "1",
-    landlord_bank_name: tenant.landlordBankName || "",
-    landlord_bank_account: tenant.landlordBankAccount || "",
+    landlord_bank_name: ownerBankName,
+    landlord_bank_account: ownerIban,
+    owner_name: ownerName,
+    owner_address: owner?.contactAddress || "",
+    owner_phone: owner?.contactPhone || "",
+    owner_email: owner?.contactEmail || owner?.email || "",
+    owner_bank_name: ownerBankName,
+    owner_iban: ownerIban,
+    owner_tax_id: owner?.ownerTaxId || "",
+    owner_notes: owner?.ownerNotes || "",
     lease_start_date: formatDate(tenant.leaseStartDate),
     move_in_date: formatDate(tenant.moveInDate),
     occupant_count: tenant.occupantCount ? String(tenant.occupantCount) : "1",
@@ -161,6 +203,12 @@ function contractData(tenant: ContractTenant, unit: ContractUnit) {
     special_agreements: tenant.specialAgreements || "",
     pets: tenant.pets || ""
   };
+}
+
+function amount(value: unknown) {
+  if (value === null || value === undefined || value === "") return 0;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function contentTypesXml() {
@@ -179,8 +227,16 @@ function relsXml() {
 </Relationships>`;
 }
 
+function documentRelsXml() {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>`;
+}
+
 function defaultContractXml(values: Record<string, string>) {
   const rows = [
+    ["Vermieter", values.owner_name],
+    ["Vermieter-Anschrift", values.owner_address],
+    ["Vermieter-Kontakt", [values.owner_phone, values.owner_email].filter(Boolean).join(" · ")],
     ["Mieter", values.tenant_name],
     ["Geburtsdatum", values.tenant_birthdate || "noch zu ergänzen"],
     ["Aktuelle Anschrift", values.tenant_current_address],
@@ -191,6 +247,8 @@ function defaultContractXml(values: Record<string, string>) {
     ["Mietgegenstand", values.room_description],
     ["Mitbenutzte Räume", values.shared_rooms],
     ["Kaltmiete", values.rent_amount],
+    ["Tiefgarage", values.garage_rent],
+    ["Kaltmiete inkl. Tiefgarage", values.cold_rent_total],
     ["Nebenkosten", values.service_charges],
     ["Monatliche Gesamtmiete", values.warm_rent],
     ["Kaution", values.deposit],
@@ -203,16 +261,16 @@ function defaultContractXml(values: Record<string, string>) {
     heading("Mietvertrag für Wohnraum"),
     paragraph("Zwischen dem Vermieter und dem unten genannten Mieter wird folgender Mietvertrag geschlossen."),
     heading("1. Vertragsparteien"),
-    ...rows.slice(0, 5).map(([label, value]) => paragraph(`${label}: ${value}`)),
+    ...rows.slice(0, 8).map(([label, value]) => paragraph(`${label}: ${value}`)),
     heading("2. Mietgegenstand"),
-    ...rows.slice(5, 9).map(([label, value]) => paragraph(`${label}: ${value}`)),
+    ...rows.slice(8, 12).map(([label, value]) => paragraph(`${label}: ${value}`)),
     paragraph("Der Mietgegenstand wird ausschließlich zu Wohnzwecken überlassen. Eine Aufnahme weiterer Personen oder eine Untervermietung bedarf der vorherigen schriftlichen Zustimmung des Vermieters."),
     heading("3. Miete, Betriebskosten und Zahlung"),
-    ...rows.slice(9, 14).map(([label, value]) => paragraph(`${label}: ${value}`)),
+    ...rows.slice(12, 18).map(([label, value]) => paragraph(`${label}: ${value}`)),
     paragraph(`Die Miete einschließlich der Betriebskostenvorauszahlung ist spätestens am ${values.rent_due_day || "1"}. Werktag des jeweiligen Monats im Voraus zu zahlen.`),
     values.landlord_bank_account ? paragraph(`Zahlungskonto: ${values.landlord_bank_name} ${values.landlord_bank_account}`) : "",
     heading("4. Mietzeit"),
-    ...rows.slice(14, 17).map(([label, value]) => paragraph(`${label}: ${value}`)),
+    ...rows.slice(19, 22).map(([label, value]) => paragraph(`${label}: ${value}`)),
     paragraph("Die gesetzlichen Kündigungsfristen gelten, soweit keine abweichende schriftliche Vereinbarung getroffen wurde."),
     heading("5. Staffelmiete"),
     values.stepped_rent ? multiline(values.stepped_rent) : paragraph("Keine Staffelmiete hinterlegt."),

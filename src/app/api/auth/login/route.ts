@@ -7,7 +7,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { prisma } from "@/lib/prisma";
 
 const schema = z.object({
-  email: z.string().email(),
+  identifier: z.string().min(1),
   password: z.string().min(1)
 });
 
@@ -19,9 +19,17 @@ export async function POST(request: NextRequest) {
   const body = schema.safeParse(await request.json());
   if (!body.success) return NextResponse.json({ error: "Ungueltige Zugangsdaten." }, { status: 400 });
 
-  const user = await prisma.user.findUnique({ where: { email: body.data.email } });
+  const identifier = body.data.identifier.trim();
+  const user = await prisma.user.findFirst({
+    where: {
+      OR: [
+        { email: identifier.toLowerCase() },
+        { username: identifier.toLowerCase() }
+      ]
+    }
+  });
   if (!user || !user.active || !(await verifyPassword(body.data.password, user.passwordHash))) {
-    return NextResponse.json({ error: "E-Mail oder Passwort ist falsch." }, { status: 401 });
+    return NextResponse.json({ error: "Benutzername/E-Mail oder Passwort ist falsch." }, { status: 401 });
   }
 
   await auditLog({ userId: user.id, action: AuditAction.LOGIN, ipAddress: ip });
