@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { assertSameOrigin, requireApiUser } from "@/lib/auth";
 import { env } from "@/lib/env";
 import { saveUpload } from "@/lib/files";
+import { portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
@@ -11,7 +12,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   const user = await requireApiUser(request, [Role.ADMIN]);
   if (!user) return NextResponse.json({ error: "Nicht erlaubt." }, { status: 403 });
 
-  const template = await prisma.contractTemplate.findUnique({ where: { id: params.id } });
+  const template = await prisma.contractTemplate.findFirst({ where: { id: params.id, ...portalWhere(user) } });
   if (!template) return NextResponse.json({ error: "Vorlage wurde nicht gefunden." }, { status: 404 });
 
   const form = await request.formData();
@@ -38,7 +39,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
   const user = await requireApiUser(request, [Role.ADMIN]);
   if (!user) return NextResponse.json({ error: "Nicht erlaubt." }, { status: 403 });
 
-  const template = await prisma.contractTemplate.findUnique({ where: { id: params.id } });
+  const template = await prisma.contractTemplate.findFirst({ where: { id: params.id, ...portalWhere(user) } });
   if (!template) return NextResponse.json({ error: "Vorlage wurde nicht gefunden." }, { status: 404 });
   await prisma.contractTemplate.delete({ where: { id: template.id } });
   await rm(template.storagePath, { force: true }).catch(() => undefined);

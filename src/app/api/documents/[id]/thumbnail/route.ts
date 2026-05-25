@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/auth";
 import { readPrivateFile } from "@/lib/files";
 import { canAccessDocument } from "@/lib/permissions";
+import { portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -18,7 +19,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   const user = await requireApiUser(request);
   if (!user) return svgResponse("Login", "Nicht angemeldet", 401);
 
-  const document = await prisma.document.findUnique({ where: { id: params.id } });
+  const document = await prisma.document.findFirst({ where: { id: params.id, ...portalWhere(user) } });
   if (!document || !(await canAccessDocument(user, document.id))) {
     return svgResponse("Gesperrt", "Keine Berechtigung", 403);
   }

@@ -8,6 +8,7 @@ import { Role } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/auth";
 import { readPrivateFile } from "@/lib/files";
+import { portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -18,7 +19,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   const user = await requireApiUser(request, [Role.ADMIN]);
   if (!user) return svgResponse("Login", "Nicht angemeldet", 401);
 
-  const template = await prisma.contractTemplate.findUnique({ where: { id: params.id } });
+  const template = await prisma.contractTemplate.findFirst({ where: { id: params.id, ...portalWhere(user) } });
   if (!template) return svgResponse("Fehlt", "Keine Vorlage", 404);
 
   const body = await readPrivateFile(template.storagePath);

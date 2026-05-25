@@ -22,7 +22,7 @@ export function UploadForm({ endpoint, children, submitLabel = "Hochladen" }: { 
   }
 
   return (
-    <form onSubmit={submit} className="grid gap-3 rounded-lg border border-dashed border-line bg-panel p-4">
+    <form onSubmit={submit} className="grid content-start gap-3 self-start rounded-lg border border-dashed border-line bg-panel p-4">
       {message ? <div className="rounded-md border border-line bg-white p-3 text-sm">{message}</div> : null}
       {children}
       <label className="grid min-h-28 place-items-center rounded-md border border-dashed border-line bg-white p-4 text-center text-sm font-semibold">

@@ -25,15 +25,18 @@ export function MobileNav({
           <div className="text-base font-bold">Immobilienportal</div>
           <div className="max-w-[210px] truncate text-xs text-muted">{email}</div>
         </div>
-        <button
-          aria-expanded={open}
-          aria-controls="mobile-navigation"
-          className="button-secondary min-h-10 px-4 py-2 text-sm"
-          type="button"
-          onClick={() => setOpen((value) => !value)}
-        >
-          Menü
-        </button>
+        <div className="flex min-w-0 items-center gap-2">
+          {canSwitchView ? <ViewSwitcher currentUserId={userId} compact /> : null}
+          <button
+            aria-expanded={open}
+            aria-controls="mobile-navigation"
+            className="button-secondary min-h-10 px-4 py-2 text-sm"
+            type="button"
+            onClick={() => setOpen((value) => !value)}
+          >
+            Menü
+          </button>
+        </div>
       </div>
       {open ? (
         <nav id="mobile-navigation" className="grid gap-1 border-t border-line bg-panel p-3">
@@ -47,7 +50,6 @@ export function MobileNav({
               {label}
             </Link>
           ))}
-          {canSwitchView ? <ViewSwitcher currentUserId={userId} /> : null}
           <div className="mt-2">
             <LogoutButton />
           </div>

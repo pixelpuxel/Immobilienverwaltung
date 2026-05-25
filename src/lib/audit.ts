@@ -12,6 +12,9 @@ export async function auditLog(input: {
   await prisma.auditLog.create({
     data: {
       userId: input.userId || null,
+      portalInstanceId: input.userId
+        ? (await prisma.user.findUnique({ where: { id: input.userId }, select: { portalInstanceId: true } }))?.portalInstanceId ?? null
+        : null,
       action: input.action,
       entity: input.entity,
       entityId: input.entityId,

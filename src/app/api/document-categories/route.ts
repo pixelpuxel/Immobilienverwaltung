@@ -7,7 +7,9 @@ import { prisma } from "@/lib/prisma";
 const schema = z.object({
   group: z.string().min(1),
   name: z.string().min(1),
-  description: z.string().optional()
+  description: z.string().optional(),
+  visibleToBroker: z.boolean().optional(),
+  visibleToTenant: z.boolean().optional()
 });
 
 export async function GET(request: NextRequest) {
@@ -23,4 +25,24 @@ export async function POST(request: NextRequest) {
   const body = schema.safeParse(await request.json());
   if (!body.success) return NextResponse.json({ error: "Ungueltige Daten." }, { status: 400 });
   return NextResponse.json(await prisma.documentCategory.create({ data: body.data }), { status: 201 });
+}
+
+export async function PATCH(request: NextRequest) {
+  if (!assertSameOrigin(request)) return NextResponse.json({ error: "CSRF-Schutz hat die Anfrage blockiert." }, { status: 403 });
+  const user = await requireApiUser(request, [Role.ADMIN]);
+  if (!user) return NextResponse.json({ error: "Nicht erlaubt." }, { status: 403 });
+  const body = z.object({
+    id: z.string(),
+    visibleToBroker: z.boolean(),
+    visibleToTenant: z.boolean()
+  }).safeParse(await request.json());
+  if (!body.success) return NextResponse.json({ error: "Ungueltige Daten.", issues: body.error.issues }, { status: 400 });
+  const updated = await prisma.documentCategory.update({
+    where: { id: body.data.id },
+    data: {
+      visibleToBroker: body.data.visibleToBroker,
+      visibleToTenant: body.data.visibleToTenant
+    }
+  });
+  return NextResponse.json(updated);
 }

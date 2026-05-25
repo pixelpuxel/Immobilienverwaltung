@@ -8,6 +8,7 @@ import { Role } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/auth";
 import { readPrivateFile } from "@/lib/files";
+import { portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -18,7 +19,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   const user = await requireApiUser(request);
   if (!user) return svgResponse("Login", "Nicht angemeldet", 401);
 
-  const contract = await prisma.leaseContract.findUnique({ where: { id: params.id }, include: { tenantProfile: true } });
+  const contract = await prisma.leaseContract.findFirst({ where: { id: params.id, unit: { property: portalWhere(user) } }, include: { tenantProfile: true } });
   if (!contract || (user.role !== Role.ADMIN && contract.tenantProfile.userId !== user.id)) {
     return svgResponse("Gesperrt", "Keine Berechtigung", 403);
   }

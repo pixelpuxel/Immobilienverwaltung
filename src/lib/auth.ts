@@ -14,6 +14,8 @@ type SessionPayload = {
   userId: string;
   email: string;
   role: Role;
+  portalInstanceId?: string | null;
+  platformAdmin?: boolean;
   exp: number;
   impersonatedByAdminId?: string;
 };
@@ -34,11 +36,13 @@ function sign(data: string) {
   return crypto.createHmac("sha256", env.jwtSecret).update(data).digest("base64url");
 }
 
-export function createSessionToken(user: Pick<User, "id" | "email" | "role">, options?: { impersonatedByAdminId?: string | null }) {
+export function createSessionToken(user: Pick<User, "id" | "email" | "role" | "portalInstanceId" | "platformAdmin">, options?: { impersonatedByAdminId?: string | null }) {
   const payload: SessionPayload = {
     userId: user.id,
     email: user.email,
     role: user.role,
+    portalInstanceId: user.portalInstanceId,
+    platformAdmin: user.platformAdmin,
     exp: Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS
   };
   if (options?.impersonatedByAdminId) payload.impersonatedByAdminId = options.impersonatedByAdminId;
@@ -84,7 +88,7 @@ export async function currentUser() {
   if (!session) return null;
   const user = await prisma.user.findFirst({
     where: { id: session.userId, active: true },
-    select: { id: true, email: true, name: true, role: true, active: true }
+    select: { id: true, email: true, username: true, name: true, role: true, active: true, portalInstanceId: true, platformAdmin: true }
   });
   return user ? { ...user, impersonatedByAdminId: session.impersonatedByAdminId ?? null } : null;
 }

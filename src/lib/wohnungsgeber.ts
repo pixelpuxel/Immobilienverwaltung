@@ -12,7 +12,7 @@ export async function generateWohnungsgeberbestaetigung(input: { tenantProfileId
   });
   if (!tenant.unit) throw new Error("Dem Mieter ist keine Einheit zugeordnet.");
 
-  const owner = await prisma.user.findFirst({ where: { role: "ADMIN", active: true }, orderBy: { createdAt: "asc" } });
+  const owner = await prisma.user.findFirst({ where: { role: "ADMIN", active: true, portalInstanceId: tenant.user.portalInstanceId }, orderBy: { createdAt: "asc" } });
   const category = await prisma.documentCategory.upsert({
     where: { name: "Wohnungsgeberbestätigung" },
     update: { group: "Vermietung" },
@@ -36,14 +36,15 @@ export async function generateWohnungsgeberbestaetigung(input: { tenantProfileId
     address: tenant.unit.property.address,
     unitDescription: tenant.unit.unitNumber,
     moveInDate: formatDate(tenant.moveInDate),
-    ownerName: owner?.name || "Eigentuemer / Verwaltung",
-    ownerAddress: owner?.email || "",
+    ownerName: owner?.contactPerson || owner?.name || "Eigentümer / Verwaltung",
+    ownerAddress: owner?.contactAddress || owner?.contactEmail || owner?.email || "",
     city: "Musterstadt"
   }), { flag: "wx" });
   const stat = await fs.stat(storagePath);
   const document = await prisma.document.create({
     data: {
       title: `Wohnungsgeberbestaetigung ${tenant.firstName} ${tenant.lastName}`,
+      portalInstanceId: tenant.user.portalInstanceId,
       filename: path.basename(storagePath),
       mimeType: "application/pdf",
       size: stat.size,
@@ -62,6 +63,7 @@ export async function generateWohnungsgeberbestaetigung(input: { tenantProfileId
   await prisma.auditLog.create({
     data: {
       userId: input.actorUserId,
+      portalInstanceId: tenant.user.portalInstanceId,
       action: AuditAction.CONTRACT_GENERATED,
       entity: "Document",
       entityId: document.id,

@@ -68,14 +68,14 @@ Oder hinter Reverse Proxy:
 https://portal.example.com
 ```
 
-7. Standard-Admin einloggen:
+7. Standard-Eigentümer einloggen:
 
 ```text
 E-Mail: Wert aus ADMIN_EMAIL
 Passwort: Wert aus ADMIN_PASSWORD
 ```
 
-Beim Containerstart werden Datenbanktabellen synchronisiert, Dokumentkategorien angelegt und der Admin aus ENV erzeugt oder aktualisiert.
+Beim Containerstart werden Datenbanktabellen synchronisiert, Dokumentkategorien angelegt und der Eigentümer aus ENV erzeugt oder aktualisiert.
 
 ## Docker
 
@@ -164,7 +164,7 @@ http://SERVER-IP:8088
 
 - Passwoerter werden mit bcrypt gehasht.
 - Sessions sind HTTP-only, signiert, SameSite=Lax und bei HTTPS `secure`.
-- Rollen: Admin/Eigentuemer, Makler, Mieter.
+- Rollen: Eigentümer, Makler, Mieter.
 - Datei-Downloads laufen ueber geschuetzte Backend-Routen.
 - Uploads liegen nicht in oeffentlichen Webpfaden.
 - Dokumente ohne hochgeladene Datei zeigen keinen Download-Link.
@@ -177,15 +177,16 @@ http://SERVER-IP:8088
 
 ## Funktionen
 
-Admin:
+Eigentümer:
 
 - Dashboard
 - Immobilien anlegen, bearbeiten und loeschen
 - Einheiten per API verwalten
 - Dokumente hochladen und kategorisieren
 - Dokumentenstatus verwalten
-- Makler einladen
-- Mieter einladen
+- Makler anlegen und für Immobilien freischalten
+- Mieter anlegen und Einheiten zuordnen
+- eigenes Eigentümerprofil mit Kontakt-, Bank- und Vertragsdaten pflegen
 - Rechte pro Dokument per API vergeben
 - Vertragsvorlagen hochladen
 - Mietvertraege als DOCX und PDF generieren
@@ -243,6 +244,13 @@ Die PDF-Datei wird aus der erzeugten DOCX-Datei mit LibreOffice Headless erstell
 - `GET|POST /api/contracts`
 - `GET /api/contracts/:id/download?format=docx|pdf`
 - `GET /api/audit-logs`
+- `GET|POST /api/portal-instances`
+
+## Portal-Instanzen
+
+Das Portal ist mandantenfaehig. Die beim ersten Start erzeugte Installation bleibt als eigene Instanz erhalten; ein Plattform-Eigentuemer kann unter `Einstellungen` weitere, leere Portal-Instanzen mit eigenem Eigentümerzugang anlegen. Immobilien, Benutzer, Dokumente, Vertragsvorlagen, generierte Vertraege und Aktivitaeten werden pro Instanz getrennt.
+
+Hinweis: E-Mail-Adressen und Benutzernamen muessen aktuell portalweit eindeutig sein. Fuer Kunden mit gleicher E-Mail wird spaeter ein Instanz-Login oder eine eigene Domain/Subdomain pro Instanz empfohlen.
 
 ## Entwicklung
 

@@ -16,11 +16,12 @@ export function BrokerInviteForm({ properties }: { properties: PropertyOption[] 
     const propertyIds = form.getAll("propertyIds").map(String);
     const propertyNames = properties.filter((property) => propertyIds.includes(property.id)).map((property) => property.name);
     const email = String(form.get("email") || "");
+    const username = String(form.get("username") || "");
     if (!propertyIds.length) {
       setMessage("Bitte mindestens eine Immobilie auswaehlen.");
       return;
     }
-    const confirmed = window.confirm(`Makler ${email} anlegen und fuer folgende Immobilien freischalten?\n\n${propertyNames.join("\n")}`);
+    const confirmed = window.confirm(`Makler ${email || username} anlegen und fuer folgende Immobilien freischalten?\n\n${propertyNames.join("\n")}`);
     if (!confirmed) return;
 
     const response = await fetch("/api/broker-requests", {
@@ -28,6 +29,7 @@ export function BrokerInviteForm({ properties }: { properties: PropertyOption[] 
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         email,
+        username,
         name: String(form.get("name") || ""),
         password: String(form.get("password") || ""),
         message: String(form.get("message") || ""),
@@ -47,8 +49,9 @@ export function BrokerInviteForm({ properties }: { properties: PropertyOption[] 
   return (
     <form onSubmit={submit} className="grid gap-3 rounded-lg border border-line bg-panel p-4">
       {message ? <div className="rounded-md border border-line bg-white p-3 text-sm">{message}</div> : null}
-      <h2 className="text-xl font-bold">Makler einladen</h2>
-      <label>E-Mail<input name="email" type="email" required /></label>
+      <h2 className="text-xl font-bold">Makler anlegen</h2>
+      <label>Benutzername<input name="username" /></label>
+      <label>E-Mail<input name="email" type="email" /></label>
       <label>Name<input name="name" /></label>
       <label>Passwort<input name="password" type="text" defaultValue="BitteSofortAendern123!" /></label>
       <label>
@@ -58,7 +61,7 @@ export function BrokerInviteForm({ properties }: { properties: PropertyOption[] 
         </select>
       </label>
       <label>Notiz<textarea name="message" /></label>
-      <button type="submit">Makler einladen</button>
+      <button type="submit">Makler anlegen und freischalten</button>
     </form>
   );
 }

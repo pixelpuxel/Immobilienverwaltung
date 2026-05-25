@@ -16,7 +16,12 @@ export default async function TenantPage() {
     : null;
   const documents = profile?.unitId
     ? await prisma.document.findMany({
-        where: { OR: [{ unitId: profile.unitId }, { permissions: { some: { userId: user.id, canView: true } } }] },
+        where: {
+          OR: [
+            { permissions: { some: { userId: user.id, canView: true } } },
+            { unitId: profile.unitId, category: { visibleToTenant: true }, scope: { in: ["UNIT", "CONTRACT"] } }
+          ]
+        },
         include: { category: true },
         orderBy: { createdAt: "desc" }
       })
@@ -28,6 +33,8 @@ export default async function TenantPage() {
         orderBy: { createdAt: "desc" }
       })
     : [];
+  const utilityDocuments = documents.filter((document) => document.category?.name === "Nebenkostenabrechnungen");
+  const otherDocuments = documents.filter((document) => document.category?.name !== "Nebenkostenabrechnungen");
   return (
     <AppShell role={user.role} userId={user.id} email={user.email} canSwitchView={user.role === Role.ADMIN || Boolean(user.impersonatedByAdminId)}>
       <h1 className="text-3xl font-bold">Mieterbereich</h1>
@@ -61,9 +68,12 @@ export default async function TenantPage() {
       ) : null}
       {profile ? (
         <section className="mt-6 rounded-lg border border-line p-5">
-          <h2 className="text-xl font-bold">Bereitgestellte Dokumente</h2>
+          <div>
+            <h2 className="text-xl font-bold">Nebenkostenabrechnungen</h2>
+            <p className="mt-1 text-sm text-muted">Jahresabrechnungen werden vom Eigentümer je Einheit bereitgestellt und bleiben hier getrennt von allgemeinen Dokumenten auffindbar.</p>
+          </div>
           <div className="mt-4 grid gap-3">
-            {documents.length ? documents.map((document) => (
+            {utilityDocuments.length ? utilityDocuments.map((document) => (
               <div className="grid gap-3 rounded-md bg-panel p-3 text-sm sm:grid-cols-[96px_minmax(0,1fr)_130px]" key={document.id}>
                 <DocumentThumbnail id={document.id} title={document.title} mimeType={document.mimeType} hasFile={Boolean(document.storagePath)} compact />
                 <div>
@@ -72,7 +82,24 @@ export default async function TenantPage() {
                 </div>
                 <a className="button text-center" href={`/api/documents/${document.id}/download`}>Download</a>
               </div>
-            )) : <div className="text-sm text-muted">Noch keine Dokumente bereitgestellt.</div>}
+            )) : <div className="text-sm text-muted">Noch keine Nebenkostenabrechnung bereitgestellt.</div>}
+          </div>
+        </section>
+      ) : null}
+      {profile ? (
+        <section className="mt-6 rounded-lg border border-line p-5">
+          <h2 className="text-xl font-bold">Bereitgestellte Dokumente</h2>
+          <div className="mt-4 grid gap-3">
+            {otherDocuments.length ? otherDocuments.map((document) => (
+              <div className="grid gap-3 rounded-md bg-panel p-3 text-sm sm:grid-cols-[96px_minmax(0,1fr)_130px]" key={document.id}>
+                <DocumentThumbnail id={document.id} title={document.title} mimeType={document.mimeType} hasFile={Boolean(document.storagePath)} compact />
+                <div>
+                  <div className="font-semibold">{document.title}</div>
+                  <div className="text-muted">{document.category?.group} / {document.category?.name}</div>
+                </div>
+                <a className="button text-center" href={`/api/documents/${document.id}/download`}>Download</a>
+              </div>
+            )) : <div className="text-sm text-muted">Noch keine weiteren Dokumente bereitgestellt.</div>}
           </div>
         </section>
       ) : null}
@@ -90,6 +117,7 @@ export default async function TenantPage() {
           <label className="flex items-center gap-2"><input name="isCurrent" type="checkbox" defaultChecked={profile?.isCurrent ?? true} /> laufend</label>
           <label>Mietbeginn<input name="leaseStartDate" type="date" defaultValue={toDateInput(profile?.leaseStartDate)} /></label>
           <label>Miethoehe<input name="rentAmount" type="number" step="0.01" defaultValue={profile?.rentAmount?.toString()} /></label>
+          <label>Tiefgarage<input name="garageRent" type="number" step="0.01" defaultValue={profile?.garageRent?.toString()} /></label>
           <label>Nebenkosten<input name="serviceCharges" type="number" step="0.01" defaultValue={profile?.serviceCharges?.toString()} /></label>
           <label>Kaution<input name="deposit" type="number" step="0.01" defaultValue={profile?.deposit?.toString()} /></label>
           <label>Anzahl Bewohner<input name="occupantCount" type="number" defaultValue={profile?.occupantCount?.toString()} /></label>

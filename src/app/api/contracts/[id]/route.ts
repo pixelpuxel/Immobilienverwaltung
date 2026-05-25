@@ -3,6 +3,7 @@ import { rm } from "fs/promises";
 import { NextRequest, NextResponse } from "next/server";
 import { auditLog } from "@/lib/audit";
 import { assertSameOrigin, clientIp, requireApiUser } from "@/lib/auth";
+import { portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
@@ -10,7 +11,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
   const admin = await requireApiUser(request, [Role.ADMIN]);
   if (!admin) return NextResponse.json({ error: "Nicht erlaubt." }, { status: 403 });
 
-  const contract = await prisma.leaseContract.findUnique({ where: { id: params.id } });
+  const contract = await prisma.leaseContract.findFirst({ where: { id: params.id, unit: { property: portalWhere(admin) } } });
   if (!contract) return NextResponse.json({ error: "Vertrag wurde nicht gefunden." }, { status: 404 });
 
   await prisma.leaseContract.delete({ where: { id: contract.id } });

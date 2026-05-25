@@ -1,5 +1,9 @@
 const { PrismaClient, Role, DocumentStatus } = require("@prisma/client");
 const bcrypt = require("bcryptjs");
+const { execFileSync } = require("child_process");
+const fs = require("fs");
+const path = require("path");
+const PizZip = require("pizzip");
 
 const prisma = new PrismaClient();
 
@@ -38,17 +42,49 @@ const categories = {
   ]
 };
 
+const tenantVisibleCategories = new Set([
+  "Mietverträge",
+  "Nebenkostenabrechnungen",
+  "Kautionsnachweise",
+  "Übergabeprotokolle",
+  "Wohnungsgeberbestätigung"
+]);
+
+const brokerHiddenCategories = new Set([
+  "Wohnungsgeberbestätigung"
+]);
+
 async function main() {
   const email = process.env.ADMIN_EMAIL || "admin@example.com";
   const password = process.env.ADMIN_PASSWORD || "bitte_aendern";
   const passwordHash = await bcrypt.hash(password, 12);
+  const defaultPortal = await prisma.portalInstance.upsert({
+    where: { slug: "default" },
+    update: { name: "Eigene Immobilienverwaltung" },
+    create: { name: "Eigene Immobilienverwaltung", slug: "default" }
+  });
 
   await prisma.user.upsert({
     where: { email },
-    update: { passwordHash, role: Role.ADMIN, active: true },
+    update: {
+      portalInstanceId: defaultPortal.id,
+      platformAdmin: true,
+      username: "eigentuemer",
+      passwordHash,
+      role: Role.ADMIN,
+      active: true,
+      name: "Eigentümer",
+      contactPerson: "Max Eigentümer",
+      contactEmail: email
+    },
     create: {
       email,
-      name: "Admin",
+      portalInstanceId: defaultPortal.id,
+      platformAdmin: true,
+      username: "eigentuemer",
+      name: "Eigentümer",
+      contactPerson: "Max Eigentümer",
+      contactEmail: email,
       passwordHash,
       role: Role.ADMIN,
       active: true
@@ -59,8 +95,17 @@ async function main() {
     for (const name of names) {
       await prisma.documentCategory.upsert({
         where: { name },
-        update: { group },
-        create: { group, name }
+        update: {
+          group,
+          visibleToBroker: !brokerHiddenCategories.has(name),
+          visibleToTenant: tenantVisibleCategories.has(name)
+        },
+        create: {
+          group,
+          name,
+          visibleToBroker: !brokerHiddenCategories.has(name),
+          visibleToTenant: tenantVisibleCategories.has(name)
+        }
       });
     }
   }
@@ -69,6 +114,7 @@ async function main() {
   if (propertyCount === 0) {
     const property = await prisma.property.create({
       data: {
+        portalInstanceId: defaultPortal.id,
         name: "Musterobjekt Innenstadt",
         address: "Beispielstraße 12, 12345 Musterstadt",
         objectType: "Mehrfamilienhaus",
@@ -105,6 +151,12 @@ async function main() {
     }
   }
 
+  await prisma.user.updateMany({ where: { portalInstanceId: null }, data: { portalInstanceId: defaultPortal.id } });
+  await prisma.property.updateMany({ where: { portalInstanceId: null }, data: { portalInstanceId: defaultPortal.id } });
+  await prisma.document.updateMany({ where: { portalInstanceId: null }, data: { portalInstanceId: defaultPortal.id } });
+  await prisma.contractTemplate.updateMany({ where: { portalInstanceId: null }, data: { portalInstanceId: defaultPortal.id } });
+  await prisma.auditLog.updateMany({ where: { portalInstanceId: null }, data: { portalInstanceId: defaultPortal.id } });
+
   await prisma.user.deleteMany({
     where: {
       OR: [
@@ -129,6 +181,7 @@ async function main() {
       data: {
         livingArea: 18.4,
         rentAmount: 434,
+        garageRent: 0,
         serviceCharges: 140,
         warmRent: 574,
         status: "vermietet"
@@ -166,6 +219,7 @@ async function main() {
         isCurrent: true,
         leaseStartDate: new Date("2025-10-01T00:00:00.000Z"),
         rentAmount: 434,
+        garageRent: 0,
         serviceCharges: 140,
         deposit: 1148,
         occupantCount: 1,
@@ -212,6 +266,7 @@ async function main() {
         isCurrent: true,
         leaseStartDate: new Date("2025-10-01T00:00:00.000Z"),
         rentAmount: 434,
+        garageRent: 0,
         serviceCharges: 140,
         deposit: 1148,
         occupantCount: 1,
@@ -250,7 +305,233 @@ async function main() {
       where: { unitId: tirolergasseUnit.id, id: { not: jonasProfile.id } },
       data: { isCurrent: false, moveOutDate: new Date("2025-09-30T00:00:00.000Z") }
     });
+
+    const template = await ensureMusterstraßeTemplate();
+    const existingContract = await prisma.leaseContract.findFirst({
+      where: { tenantProfileId: jonasProfile.id, templateId: template.id }
+    });
+    const generated = generateSeedContractFromTemplate(template.storagePath, jonasProfile, tirolergasseUnit, tirolergasse);
+    if (!existingContract) {
+      await prisma.leaseContract.create({
+        data: {
+          tenantProfileId: jonasProfile.id,
+          unitId: tirolergasseUnit.id,
+          templateId: template.id,
+          docxPath: generated.docxPath,
+          pdfPath: generated.pdfPath
+        }
+      });
+    } else {
+      await prisma.leaseContract.update({
+        where: { id: existingContract.id },
+        data: {
+          unitId: tirolergasseUnit.id,
+          docxPath: generated.docxPath,
+          pdfPath: generated.pdfPath
+        }
+      });
+    }
   }
+
+  await prisma.user.updateMany({ where: { portalInstanceId: null }, data: { portalInstanceId: defaultPortal.id } });
+  await prisma.property.updateMany({ where: { portalInstanceId: null }, data: { portalInstanceId: defaultPortal.id } });
+  await prisma.document.updateMany({ where: { portalInstanceId: null }, data: { portalInstanceId: defaultPortal.id } });
+  await prisma.contractTemplate.updateMany({ where: { portalInstanceId: null }, data: { portalInstanceId: defaultPortal.id } });
+  await prisma.auditLog.updateMany({ where: { portalInstanceId: null }, data: { portalInstanceId: defaultPortal.id } });
+}
+
+async function ensureMusterstraßeTemplate() {
+  const contractsPath = process.env.CONTRACTS_PATH || "/app/contracts";
+  fs.mkdirSync(contractsPath, { recursive: true });
+  const filename = "Mietvertrag_Musterstraße_1OG_Vorlage_mit_Platzhaltern.docx";
+  const storagePath = path.join(contractsPath, filename);
+  fs.writeFileSync(storagePath, createMusterstraßeTemplateDocx());
+  const stat = fs.statSync(storagePath);
+  const existing = await prisma.contractTemplate.findFirst({ where: { name: "Mietvertrag Musterstraße WG-Zimmer Vorlage" } });
+  if (existing) {
+    return prisma.contractTemplate.update({
+      where: { id: existing.id },
+      data: {
+        filename,
+        storagePath,
+        mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        size: stat.size
+      }
+    });
+  }
+  return prisma.contractTemplate.create({
+    data: {
+      name: "Mietvertrag Musterstraße WG-Zimmer Vorlage",
+      filename,
+      storagePath,
+      mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      size: stat.size
+    }
+  });
+}
+
+function generateSeedContractFromTemplate(templatePath, tenant, unit, property) {
+  const contractsPath = process.env.CONTRACTS_PATH || "/app/contracts";
+  const baseName = safeFilename(`Mietvertrag_${property.name}_${unit.unitNumber}_${tenant.firstName}${tenant.lastName}-Test`);
+  const docxPath = path.join(contractsPath, `${baseName}.docx`);
+  const pdfPath = path.join(contractsPath, `${baseName}.pdf`);
+  const zip = new PizZip(fs.readFileSync(templatePath));
+  const Docxtemplater = require("docxtemplater");
+  const doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true, delimiters: { start: "{{", end: "}}" } });
+  doc.render(seedContractData(tenant, unit, property));
+  fs.writeFileSync(docxPath, doc.getZip().generate({ type: "nodebuffer" }));
+  try {
+    execFileSync("libreoffice", ["--headless", "--convert-to", "pdf", "--outdir", contractsPath, docxPath], { timeout: 90000 });
+  } catch {
+    return { docxPath, pdfPath: null };
+  }
+  if (!fs.existsSync(pdfPath)) return { docxPath, pdfPath: null };
+  return { docxPath, pdfPath };
+}
+
+function createMusterstraßeTemplateDocx() {
+  const zip = new PizZip();
+  zip.file("[Content_Types].xml", contentTypesXml());
+  zip.folder("_rels").file(".rels", relsXml());
+  zip.folder("word").file("document.xml", documentXml([
+    "MIETVERTRAG fuer Wohnraum",
+    "",
+    "zwischen",
+    "{{owner_name}}, {{owner_address}}, Tel. {{owner_phone}}, Email: {{owner_email}}",
+    "als Vermieter",
+    "",
+    "und",
+    "{{tenant_name}}, geb. am {{tenant_birthdate}}, zur Zeit wohnhaft in {{tenant_current_address}}, Mobil: {{tenant_phone}}, Email: {{tenant_email}}",
+    "als Mieter.",
+    "",
+    "Vorspruch",
+    "Der Mieter erklaert, den Mietgegenstand nur mit {{occupant_count}} Person(en) benutzen zu wollen und keine Wohngemeinschaft mit weiteren Personen zu bilden, soweit dies nicht schriftlich genehmigt wurde.",
+    "",
+    "§ 1 Mietgegenstand",
+    "Vermietet wird in dem Hause {{property_address}} zur Nutzung als Wohnraum:",
+    "{{room_description}}",
+    "Mitbenutzung: {{shared_rooms}}",
+    "",
+    "§ 2 Miete und Betriebskosten",
+    "Die Kaltmiete betraegt monatlich {{rent_amount}}.",
+    "Der Anteil fuer die Tiefgarage betraegt monatlich {{garage_rent}}.",
+    "Kaltmiete inklusive Tiefgarage: {{cold_rent_total}}.",
+    "Auf die Betriebskosten leistet der Mieter monatlich {{service_charges}}.",
+    "Monatliche Gesamtmiete: {{warm_rent}}.",
+    "Die Miete ist spaetestens am {{rent_due_day}}. Werktag des jeweiligen Monats im Voraus zu zahlen.",
+    "Zahlungskonto: {{landlord_bank_name}}, IBAN {{landlord_bank_account}}.",
+    "",
+    "§ 3 Staffelmiete",
+    "{{stepped_rent}}",
+    "",
+    "§ 4 Mietzeit",
+    "Das Mietverhaeltnis beginnt am {{lease_start_date}}. Einzug ist am {{move_in_date}}.",
+    "",
+    "§ 5 Sicherheitsleistung",
+    "Der Mieter leistet eine Kaution in Hoehe von {{deposit}}.",
+    "",
+    "§ 6 Besondere Vereinbarungen",
+    "{{special_agreements}}",
+    "",
+    "§ 7 Vertragsnotizen",
+    "{{contract_notes}}",
+    "",
+    "Ort, Datum: ______________________________",
+    "Mieter: ___________________________________",
+    "Vermieter: ________________________________"
+  ]));
+  zip.folder("word").folder("_rels").file("document.xml.rels", documentRelsXml());
+  return zip.generate({ type: "nodebuffer" });
+}
+
+function seedContractData(tenant, unit, property) {
+  const rent = Number(tenant.rentAmount || unit.rentAmount || 0);
+  const garageRent = Number(tenant.garageRent || unit.garageRent || 0);
+  const charges = Number(tenant.serviceCharges || unit.serviceCharges || 0);
+  const coldRentTotal = rent + garageRent;
+  return {
+    tenant_name: `${tenant.firstName} ${tenant.lastName}`,
+    tenant_birthdate: tenant.birthdate ? formatDate(tenant.birthdate) : "noch zu ergaenzen",
+    tenant_current_address: tenant.currentAddress || "",
+    tenant_phone: tenant.phone || "",
+    tenant_email: tenant.email,
+    property_address: property.address,
+    unit_number: unit.unitNumber,
+    room_description: tenant.roomDescription || unit.unitNumber,
+    shared_rooms: tenant.sharedRooms || "",
+    rent_amount: money(rent),
+    garage_rent: money(garageRent),
+    cold_rent_total: money(coldRentTotal),
+    service_charges: money(charges),
+    warm_rent: money(coldRentTotal + charges),
+    deposit: money(tenant.deposit),
+    rent_due_day: String(tenant.rentDueDay || 1),
+    landlord_bank_name: tenant.landlordBankName || "",
+    landlord_bank_account: tenant.landlordBankAccount || "",
+    owner_name: "Max Eigentümer",
+    owner_address: "Eigentümerweg 1, 12345 Musterstadt",
+    owner_phone: "0100-0000000",
+    owner_email: "owner@example.com",
+    owner_bank_name: tenant.landlordBankName || "",
+    owner_iban: tenant.landlordBankAccount || "",
+    owner_tax_id: "",
+    owner_notes: "",
+    lease_start_date: formatDate(tenant.leaseStartDate),
+    move_in_date: formatDate(tenant.moveInDate),
+    occupant_count: String(tenant.occupantCount || 1),
+    stepped_rent: tenant.steppedRent || "",
+    special_agreements: tenant.specialAgreements || "",
+    contract_notes: tenant.contractNotes || ""
+  };
+}
+
+function contentTypesXml() {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`;
+}
+
+function relsXml() {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`;
+}
+
+function documentRelsXml() {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>`;
+}
+
+function documentXml(lines) {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    ${lines.map((line) => paragraph(line)).join("")}
+    <w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>
+  </w:body>
+</w:document>`;
+}
+
+function paragraph(text) {
+  const escaped = String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return `<w:p><w:r><w:t xml:space="preserve">${escaped}</w:t></w:r></w:p>`;
+}
+
+function formatDate(value) {
+  return value ? new Intl.DateTimeFormat("de-DE").format(value) : "";
+}
+
+function money(value) {
+  if (value === null || value === undefined || value === "") return "";
+  return `${Number(value).toFixed(2)} EUR`;
+}
+
+function safeFilename(name) {
+  return name.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "datei";
 }
 
 main()
