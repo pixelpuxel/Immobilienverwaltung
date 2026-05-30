@@ -1,4 +1,5 @@
 import { Role } from "@prisma/client";
+import { AccountSettingsForm } from "@/components/AccountSettingsForm";
 import { AppShell } from "@/components/AppShell";
 import { BackupTools } from "@/components/BackupTools";
 import { CategoryVisibilityForm } from "@/components/CategoryVisibilityForm";
@@ -45,6 +46,7 @@ export default async function SettingsPage() {
         <div className="grid gap-6">
           <BackupTools />
           {user.platformAdmin ? <PortalInstanceManager /> : null}
+          <AccountSettingsForm userId={user.id} profile={ownerProfile} />
           <OwnerProfileForm userId={user.id} profile={ownerProfile} />
           <JsonForm endpoint="/api/document-categories" submitLabel="Kategorie anlegen">
             <label>Gruppe<input name="group" required /></label>

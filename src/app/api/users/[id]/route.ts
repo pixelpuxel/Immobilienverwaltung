@@ -33,13 +33,13 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   if (!target) return NextResponse.json({ error: "Benutzer wurde nicht gefunden." }, { status: 404 });
   if (!canAccessPortalUser(admin, target)) return NextResponse.json({ error: "Benutzer gehoert nicht zu dieser Instanz." }, { status: 403 });
 
-  const username = cleanUsername(body.data.username);
-  if (username) {
+  const username = hasField(body.data, "username") ? cleanUsername(body.data.username) : target.username;
+  if (username && username !== target.username) {
     const existing = await prisma.user.findFirst({ where: { username, id: { not: target.id } } });
     if (existing) return NextResponse.json({ error: "Dieser Benutzername ist bereits vergeben." }, { status: 400 });
   }
-  const email = body.data.email?.trim().toLowerCase();
-  if (email) {
+  const email = hasField(body.data, "email") ? body.data.email?.trim().toLowerCase() : target.email;
+  if (email && email !== target.email) {
     const existing = await prisma.user.findFirst({ where: { email, id: { not: target.id } } });
     if (existing) return NextResponse.json({ error: "Diese E-Mail ist bereits vergeben." }, { status: 400 });
   }
@@ -55,19 +55,19 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     where: { id: target.id },
     data: {
       email: email || target.email,
-      name: emptyToNull(body.data.name),
+      name: textField(body.data, "name", target.name),
       username,
       role: body.data.role || target.role,
       active: body.data.active ?? target.active,
       ...(password ? { passwordHash: await hashPassword(password) } : {}),
-      contactPerson: emptyToNull(body.data.contactPerson),
-      contactAddress: emptyToNull(body.data.contactAddress),
-      contactPhone: emptyToNull(body.data.contactPhone),
-      contactEmail: emptyToNull(body.data.contactEmail),
-      ownerBankName: emptyToNull(body.data.ownerBankName),
-      ownerIban: emptyToNull(body.data.ownerIban),
-      ownerTaxId: emptyToNull(body.data.ownerTaxId),
-      ownerNotes: emptyToNull(body.data.ownerNotes)
+      contactPerson: textField(body.data, "contactPerson", target.contactPerson),
+      contactAddress: textField(body.data, "contactAddress", target.contactAddress),
+      contactPhone: textField(body.data, "contactPhone", target.contactPhone),
+      contactEmail: textField(body.data, "contactEmail", target.contactEmail),
+      ownerBankName: textField(body.data, "ownerBankName", target.ownerBankName),
+      ownerIban: textField(body.data, "ownerIban", target.ownerIban),
+      ownerTaxId: textField(body.data, "ownerTaxId", target.ownerTaxId),
+      ownerNotes: textField(body.data, "ownerNotes", target.ownerNotes)
     }
   });
   await auditLog({
@@ -113,6 +113,14 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
 function emptyToNull(value?: string) {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+}
+
+function textField<T extends Record<string, unknown>>(data: T, key: keyof T, fallback: string | null) {
+  return hasField(data, key) ? emptyToNull(data[key] as string | undefined) : fallback;
+}
+
+function hasField<T extends Record<string, unknown>>(data: T, key: keyof T) {
+  return Object.prototype.hasOwnProperty.call(data, key);
 }
 
 function cleanUsername(value?: string) {
