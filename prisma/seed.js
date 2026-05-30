@@ -119,6 +119,11 @@ async function main() {
         portalInstanceId: defaultPortal.id,
         name: "Musterobjekt Innenstadt",
         address: "Beispielstraße 12, 12345 Musterstadt",
+        street: "Beispielstraße",
+        houseNumber: "12",
+        postalCode: "12345",
+        city: "Musterstadt",
+        country: "Deutschland",
         objectType: "Mehrfamilienhaus",
         constructionYear: 1998,
         livingArea: 420,
@@ -158,6 +163,30 @@ async function main() {
   await prisma.document.updateMany({ where: { portalInstanceId: null }, data: { portalInstanceId: defaultPortal.id } });
   await prisma.contractTemplate.updateMany({ where: { portalInstanceId: null }, data: { portalInstanceId: defaultPortal.id } });
   await prisma.auditLog.updateMany({ where: { portalInstanceId: null }, data: { portalInstanceId: defaultPortal.id } });
+
+  const knownAddresses = [
+    { match: "Musterstraße 12", street: "Musterstraße", houseNumber: "14", postalCode: "12345", city: "Musterstadt" },
+    { match: "Beispielweg", street: "Beispielweg", houseNumber: "74", postalCode: "12345", city: "Musterstadt" },
+    { match: "Demo", street: "Demostraße", houseNumber: "2a", postalCode: "12345", city: "Musterstadt" },
+    { match: "Projektgasse 17", street: "Projektgasse", houseNumber: "17", postalCode: "12345", city: "Musterstadt" },
+    { match: "Beispielstraße 27", street: "Beispielstraße", houseNumber: "27", postalCode: "12345", city: "Beispielstadt" },
+    { match: "Beispielstraße 78", street: "Beispielstraße", houseNumber: "78", postalCode: "12345", city: "Beispielstadt" },
+    { match: "Musterallee 2a", street: "Musterallee", houseNumber: "2a", postalCode: "12345", city: "Beispielstadt" },
+    { match: "Eigentümerweg 17", street: "Eigentümerweg", houseNumber: "17", postalCode: "12345", city: "Musterstadt" },
+    { match: "Beispielring 17", street: "Beispielring", houseNumber: "17", postalCode: "12345", city: "Musterstadt" },
+    { match: "Sportstr", street: "Sportstraße", houseNumber: "32", postalCode: "12345", city: "Musterstadt" },
+    { match: "Kulturstr", street: "Kulturstraße", houseNumber: "7", postalCode: "12345", city: "Musterstadt" }
+  ];
+  for (const address of knownAddresses) {
+    const { match, ...structuredAddress } = address;
+    await prisma.property.updateMany({
+      where: {
+        address: { contains: match },
+        OR: [{ street: null }, { houseNumber: null }, { postalCode: null }, { city: null }]
+      },
+      data: { ...structuredAddress, country: "Deutschland" }
+    });
+  }
 
   await prisma.user.deleteMany({
     where: {

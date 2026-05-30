@@ -18,6 +18,11 @@ const optionalText = z.preprocess((value) => {
 export const propertySchema = z.object({
   name: z.string().min(1),
   address: optionalText,
+  street: z.string().optional(),
+  houseNumber: z.string().optional(),
+  postalCode: z.string().optional(),
+  city: z.string().optional(),
+  country: z.string().optional(),
   objectType: z.string().optional(),
   constructionYear: optionalInt,
   livingArea: optionalNumber,

@@ -7,6 +7,7 @@ import PizZip from "pizzip";
 import { env } from "./env";
 import { safeFilename } from "./files";
 import { prisma } from "./prisma";
+import { formatPropertyAddress } from "./property-address";
 
 const execFileAsync = promisify(execFile);
 
@@ -140,7 +141,15 @@ type ContractUnit = {
   garageRent: unknown;
   serviceCharges: unknown;
   warmRent: unknown;
-  property: { name: string; address: string };
+  property: {
+    name: string;
+    address: string;
+    street: string | null;
+    houseNumber: string | null;
+    postalCode: string | null;
+    city: string | null;
+    country: string | null;
+  };
 };
 
 type ContractOwner = {
@@ -174,7 +183,7 @@ function contractData(tenant: ContractTenant, unit: ContractUnit, owner: Contrac
     tenant_phone: tenant.phone || "",
     tenant_email: tenant.email,
     property_name: unit.property.name,
-    property_address: unit.property.address,
+    property_address: formatPropertyAddress(unit.property),
     unit_number: unit.unitNumber,
     room_description: tenant.roomDescription || `Einheit ${unit.unitNumber}`,
     shared_rooms: tenant.sharedRooms || "Gemeinschaftlich nutzbare Räume nach Vereinbarung.",

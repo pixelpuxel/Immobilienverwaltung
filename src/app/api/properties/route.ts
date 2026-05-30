@@ -6,6 +6,7 @@ import { brokerPropertyIds } from "@/lib/permissions";
 import { portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 import { propertySchema } from "@/lib/property-schema";
+import { normalizePropertyAddressInput } from "@/lib/property-address";
 
 export async function GET(request: NextRequest) {
   const user = await requireApiUser(request);
@@ -31,7 +32,8 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: "Nicht erlaubt." }, { status: 403 });
   const body = propertySchema.safeParse(await request.json());
   if (!body.success) return NextResponse.json({ error: "Ungueltige Daten.", issues: body.error.issues }, { status: 400 });
-  const property = await prisma.property.create({ data: { ...body.data, portalInstanceId: user.portalInstanceId } });
+  const propertyData = normalizePropertyAddressInput(body.data);
+  const property = await prisma.property.create({ data: { ...propertyData, address: propertyData.address || "", portalInstanceId: user.portalInstanceId } });
   await auditLog({ userId: user.id, action: AuditAction.PROPERTY_CHANGED, entity: "Property", entityId: property.id, ipAddress: clientIp(request) });
   return NextResponse.json(property, { status: 201 });
 }

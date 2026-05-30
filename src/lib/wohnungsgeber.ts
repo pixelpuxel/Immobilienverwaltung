@@ -4,6 +4,7 @@ import path from "path";
 import { env } from "./env";
 import { safeFilename } from "./files";
 import { prisma } from "./prisma";
+import { formatPropertyAddress } from "./property-address";
 
 export async function generateWohnungsgeberbestaetigung(input: { tenantProfileId: string; actorUserId: string }) {
   const tenant = await prisma.tenantProfile.findUniqueOrThrow({
@@ -33,7 +34,7 @@ export async function generateWohnungsgeberbestaetigung(input: { tenantProfileId
   const storagePath = path.join(env.contractsPath, `${baseName}.pdf`);
   await fs.writeFile(storagePath, createWohnungsgeberPdf({
     tenantName: `${tenant.firstName} ${tenant.lastName}`,
-    address: tenant.unit.property.address,
+    address: formatPropertyAddress(tenant.unit.property),
     unitDescription: tenant.unit.unitNumber,
     moveInDate: formatDate(tenant.moveInDate),
     ownerName: owner?.contactPerson || owner?.name || "Eigentümer / Verwaltung",

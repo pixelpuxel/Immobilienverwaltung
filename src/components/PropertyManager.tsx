@@ -10,6 +10,11 @@ type PropertyItem = {
   id: string;
   name: string;
   address: string;
+  street: string;
+  houseNumber: string;
+  postalCode: string;
+  city: string;
+  country: string;
   objectType: string;
   constructionYear: string;
   livingArea: string;
@@ -72,7 +77,12 @@ export function PropertyManager({ properties }: { properties: PropertyItem[] }) 
             <form className="grid gap-3" onSubmit={(event) => updateProperty(event, property.id)}>
               <div className="grid gap-3 md:grid-cols-2">
                 <label>Objektname <span className="text-accent">*</span><input name="name" defaultValue={property.name} required /></label>
-                <label>Adresse<input name="address" defaultValue={property.address} /></label>
+                <label>Adresse frei lesbar<input name="address" defaultValue={property.address} /></label>
+                <label>Straße<input name="street" defaultValue={property.street} /></label>
+                <label>Hausnummer<input name="houseNumber" defaultValue={property.houseNumber} /></label>
+                <label>PLZ<input name="postalCode" inputMode="numeric" defaultValue={property.postalCode} /></label>
+                <label>Ort<input name="city" defaultValue={property.city} /></label>
+                <label>Land<input name="country" defaultValue={property.country || "Deutschland"} /></label>
                 <label>Objekttyp<input name="objectType" defaultValue={property.objectType} /></label>
                 <label>Baujahr<input name="constructionYear" type="number" defaultValue={property.constructionYear} /></label>
                 <label>Wohnflaeche<input name="livingArea" type="number" step="0.01" defaultValue={property.livingArea} /></label>

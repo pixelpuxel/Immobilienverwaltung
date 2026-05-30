@@ -73,6 +73,11 @@ export default async function PropertiesPage({
     id: property.id,
     name: property.name,
     address: property.address,
+    street: property.street || "",
+    houseNumber: property.houseNumber || "",
+    postalCode: property.postalCode || "",
+    city: property.city || "",
+    country: property.country || "",
     objectType: property.objectType || "",
     constructionYear: property.constructionYear?.toString() || "",
     livingArea: property.livingArea?.toString() || "",
@@ -120,7 +125,12 @@ export default async function PropertiesPage({
         <PropertyManager properties={propertyItems} />
         <JsonForm endpoint="/api/properties" submitLabel="Immobilie anlegen">
           <label>Objektname <span className="text-accent">*</span><input name="name" required /></label>
-          <label>Adresse<input name="address" /></label>
+          <label>Adresse frei lesbar<input name="address" placeholder="z. B. Musterstraße 12, 12345 Musterstadt" /></label>
+          <label>Straße<input name="street" /></label>
+          <label>Hausnummer<input name="houseNumber" /></label>
+          <label>PLZ<input name="postalCode" inputMode="numeric" /></label>
+          <label>Ort<input name="city" /></label>
+          <label>Land<input name="country" defaultValue="Deutschland" /></label>
           <label>Objekttyp<input name="objectType" /></label>
           <label>Baujahr<input name="constructionYear" type="number" /></label>
           <label>Wohnflaeche<input name="livingArea" type="number" step="0.01" /></label>

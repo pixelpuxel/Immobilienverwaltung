@@ -5,6 +5,7 @@ import { assertSameOrigin, clientIp, requireApiUser } from "@/lib/auth";
 import { portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 import { propertyUpdateSchema } from "@/lib/property-schema";
+import { normalizePropertyAddressInput } from "@/lib/property-address";
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   const user = await requireApiUser(request);
@@ -21,7 +22,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   if (!body.success) return NextResponse.json({ error: "Ungueltige Daten.", issues: body.error.issues }, { status: 400 });
   const existing = await prisma.property.findFirst({ where: { id: params.id, ...portalWhere(user) } });
   if (!existing) return NextResponse.json({ error: "Nicht gefunden." }, { status: 404 });
-  const property = await prisma.property.update({ where: { id: params.id }, data: body.data });
+  const property = await prisma.property.update({ where: { id: params.id }, data: normalizePropertyAddressInput(body.data, existing) });
   await auditLog({ userId: user.id, action: AuditAction.PROPERTY_CHANGED, entity: "Property", entityId: property.id, ipAddress: clientIp(request) });
   return NextResponse.json(property);
 }

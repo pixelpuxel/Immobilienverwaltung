@@ -9,6 +9,7 @@ import { requireUser } from "@/lib/auth";
 import { brokerPropertyIds, canAccessDocument, tenantUnitId } from "@/lib/permissions";
 import { portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
+import { formatPropertyAddress } from "@/lib/property-address";
 
 export const dynamic = "force-dynamic";
 
@@ -54,6 +55,7 @@ export default async function PropertyDetailPage({ params }: { params: { id: str
   const occupiedUnits = property.units.filter((unit) => unit.status === "vermietet").length;
   const averageBrokerValuation = average(property.brokerValuations.map((valuation) => Number(valuation.amount || 0)).filter(Boolean));
   const energyDocuments = property.documents.filter((document) => document.category?.name === "Energieausweis");
+  const displayAddress = formatPropertyAddress(property);
 
   return (
     <AppShell role={user.role} userId={user.id} email={user.email} canSwitchView={user.role === Role.ADMIN || Boolean(user.impersonatedByAdminId)}>
@@ -62,7 +64,7 @@ export default async function PropertyDetailPage({ params }: { params: { id: str
         <div className="mt-4 grid gap-3 sm:flex sm:items-start sm:justify-between">
           <div>
             <h1 className="text-3xl font-bold">{property.name}</h1>
-            <p className="mt-1 text-muted">{property.address}</p>
+            <p className="mt-1 text-muted">{displayAddress || property.address}</p>
           </div>
           <span className="rounded-full bg-panel px-3 py-1 text-sm">{property.rentalStatus || "offen"}</span>
         </div>
@@ -87,7 +89,12 @@ export default async function PropertyDetailPage({ params }: { params: { id: str
             <h2 className="text-xl font-bold">Objektdaten</h2>
             <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
               <EditableField canEdit={canEdit} endpoint={propertyEndpoint} field="name" label="Objektname" value={property.name} />
-              <EditableField canEdit={canEdit} endpoint={propertyEndpoint} field="address" label="Adresse" value={property.address} />
+              <EditableField canEdit={canEdit} endpoint={propertyEndpoint} field="address" label="Adresse frei lesbar" value={property.address} />
+              <EditableField canEdit={canEdit} endpoint={propertyEndpoint} field="street" label="Straße" value={property.street || ""} />
+              <EditableField canEdit={canEdit} endpoint={propertyEndpoint} field="houseNumber" label="Hausnummer" value={property.houseNumber || ""} />
+              <EditableField canEdit={canEdit} endpoint={propertyEndpoint} field="postalCode" label="PLZ" value={property.postalCode || ""} />
+              <EditableField canEdit={canEdit} endpoint={propertyEndpoint} field="city" label="Ort" value={property.city || ""} />
+              <EditableField canEdit={canEdit} endpoint={propertyEndpoint} field="country" label="Land" value={property.country || "Deutschland"} />
               <EditableField canEdit={canEdit} endpoint={propertyEndpoint} field="objectType" label="Objekttyp" value={property.objectType || ""} />
               <EditableField canEdit={canEdit} endpoint={propertyEndpoint} field="constructionYear" label="Baujahr" type="number" value={property.constructionYear?.toString() || ""} />
               <EditableField canEdit={canEdit} endpoint={propertyEndpoint} field="livingArea" label="Wohnflaeche" type="number" suffix=" qm" value={property.livingArea?.toString() || ""} />
