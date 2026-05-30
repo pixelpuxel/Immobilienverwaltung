@@ -95,6 +95,8 @@ model Property {
   postalCode            String?
   city                  String?
   country               String?         @default("Deutschland")
+  latitude              Float?
+  longitude             Float?
   objectType            String?
   constructionYear      Int?
   livingArea            Decimal?        @db.Decimal(12, 2)

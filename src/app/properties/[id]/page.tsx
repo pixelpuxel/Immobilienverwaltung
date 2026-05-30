@@ -95,6 +95,8 @@ export default async function PropertyDetailPage({ params }: { params: { id: str
               <EditableField canEdit={canEdit} endpoint={propertyEndpoint} field="postalCode" label="PLZ" value={property.postalCode || ""} />
               <EditableField canEdit={canEdit} endpoint={propertyEndpoint} field="city" label="Ort" value={property.city || ""} />
               <EditableField canEdit={canEdit} endpoint={propertyEndpoint} field="country" label="Land" value={property.country || "Deutschland"} />
+              <EditableField canEdit={canEdit} endpoint={propertyEndpoint} field="latitude" label="Breitengrad" type="number" value={property.latitude?.toString() || ""} />
+              <EditableField canEdit={canEdit} endpoint={propertyEndpoint} field="longitude" label="Längengrad" type="number" value={property.longitude?.toString() || ""} />
               <EditableField canEdit={canEdit} endpoint={propertyEndpoint} field="objectType" label="Objekttyp" value={property.objectType || ""} />
               <EditableField canEdit={canEdit} endpoint={propertyEndpoint} field="constructionYear" label="Baujahr" type="number" value={property.constructionYear?.toString() || ""} />
               <EditableField canEdit={canEdit} endpoint={propertyEndpoint} field="livingArea" label="Wohnflaeche" type="number" suffix=" qm" value={property.livingArea?.toString() || ""} />

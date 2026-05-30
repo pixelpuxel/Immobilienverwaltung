@@ -15,6 +15,8 @@ type PropertyItem = {
   postalCode: string;
   city: string;
   country: string;
+  latitude: string;
+  longitude: string;
   objectType: string;
   constructionYear: string;
   livingArea: string;
@@ -83,6 +85,8 @@ export function PropertyManager({ properties }: { properties: PropertyItem[] }) 
                 <label>PLZ<input name="postalCode" inputMode="numeric" defaultValue={property.postalCode} /></label>
                 <label>Ort<input name="city" defaultValue={property.city} /></label>
                 <label>Land<input name="country" defaultValue={property.country || "Deutschland"} /></label>
+                <label>Breitengrad<input name="latitude" type="number" step="0.000001" defaultValue={property.latitude} /></label>
+                <label>Längengrad<input name="longitude" type="number" step="0.000001" defaultValue={property.longitude} /></label>
                 <label>Objekttyp<input name="objectType" defaultValue={property.objectType} /></label>
                 <label>Baujahr<input name="constructionYear" type="number" defaultValue={property.constructionYear} /></label>
                 <label>Wohnflaeche<input name="livingArea" type="number" step="0.01" defaultValue={property.livingArea} /></label>

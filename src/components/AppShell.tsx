@@ -8,6 +8,7 @@ import { roleLabel } from "@/lib/display";
 const adminLinks = [
   ["Dashboard", "/dashboard"],
   ["Immobilien", "/properties"],
+  ["Karte", "/map"],
   ["Dokumente", "/documents"],
   ["Benutzer", "/users"],
   ["Vertraege", "/contracts"],
@@ -18,6 +19,7 @@ const adminLinks = [
 const brokerLinks = [
   ["Dashboard", "/dashboard"],
   ["Immobilien", "/broker"],
+  ["Karte", "/map"],
   ["Dokumente", "/documents"]
 ];
 

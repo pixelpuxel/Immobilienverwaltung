@@ -78,6 +78,8 @@ export default async function PropertiesPage({
     postalCode: property.postalCode || "",
     city: property.city || "",
     country: property.country || "",
+    latitude: property.latitude?.toString() || "",
+    longitude: property.longitude?.toString() || "",
     objectType: property.objectType || "",
     constructionYear: property.constructionYear?.toString() || "",
     livingArea: property.livingArea?.toString() || "",
@@ -131,6 +133,8 @@ export default async function PropertiesPage({
           <label>PLZ<input name="postalCode" inputMode="numeric" /></label>
           <label>Ort<input name="city" /></label>
           <label>Land<input name="country" defaultValue="Deutschland" /></label>
+          <label>Breitengrad<input name="latitude" type="number" step="0.000001" placeholder="z. B. 50.002" /></label>
+          <label>Längengrad<input name="longitude" type="number" step="0.000001" placeholder="z. B. 8.0011" /></label>
           <label>Objekttyp<input name="objectType" /></label>
           <label>Baujahr<input name="constructionYear" type="number" /></label>
           <label>Wohnflaeche<input name="livingArea" type="number" step="0.01" /></label>

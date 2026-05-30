@@ -124,6 +124,8 @@ async function main() {
         postalCode: "12345",
         city: "Musterstadt",
         country: "Deutschland",
+        latitude: 50.001,
+        longitude: 8.001,
         objectType: "Mehrfamilienhaus",
         constructionYear: 1998,
         livingArea: 420,
@@ -165,24 +167,24 @@ async function main() {
   await prisma.auditLog.updateMany({ where: { portalInstanceId: null }, data: { portalInstanceId: defaultPortal.id } });
 
   const knownAddresses = [
-    { match: "Musterstraße 12", street: "Musterstraße", houseNumber: "14", postalCode: "12345", city: "Musterstadt" },
-    { match: "Beispielweg", street: "Beispielweg", houseNumber: "74", postalCode: "12345", city: "Musterstadt" },
-    { match: "Demo", street: "Demostraße", houseNumber: "2a", postalCode: "12345", city: "Musterstadt" },
-    { match: "Projektgasse 17", street: "Projektgasse", houseNumber: "17", postalCode: "12345", city: "Musterstadt" },
-    { match: "Beispielstraße 27", street: "Beispielstraße", houseNumber: "27", postalCode: "12345", city: "Beispielstadt" },
-    { match: "Beispielstraße 78", street: "Beispielstraße", houseNumber: "78", postalCode: "12345", city: "Beispielstadt" },
-    { match: "Musterallee 2a", street: "Musterallee", houseNumber: "2a", postalCode: "12345", city: "Beispielstadt" },
-    { match: "Eigentümerweg 17", street: "Eigentümerweg", houseNumber: "17", postalCode: "12345", city: "Musterstadt" },
-    { match: "Beispielring 17", street: "Beispielring", houseNumber: "17", postalCode: "12345", city: "Musterstadt" },
-    { match: "Sportstr", street: "Sportstraße", houseNumber: "32", postalCode: "12345", city: "Musterstadt" },
-    { match: "Kulturstr", street: "Kulturstraße", houseNumber: "7", postalCode: "12345", city: "Musterstadt" }
+    { match: "Musterstraße 12", street: "Musterstraße", houseNumber: "14", postalCode: "12345", city: "Musterstadt", latitude: 50.002, longitude: 8.0011 },
+    { match: "Beispielweg", street: "Beispielweg", houseNumber: "74", postalCode: "12345", city: "Musterstadt", latitude: 50.003, longitude: 8.003 },
+    { match: "Demo", street: "Demostraße", houseNumber: "2a", postalCode: "12345", city: "Musterstadt", latitude: 50.004, longitude: 8.004 },
+    { match: "Projektgasse 17", street: "Projektgasse", houseNumber: "17", postalCode: "12345", city: "Musterstadt", latitude: 50.005, longitude: 8.005 },
+    { match: "Beispielstraße 27", street: "Beispielstraße", houseNumber: "27", postalCode: "12345", city: "Beispielstadt", latitude: 50.006, longitude: 8.006 },
+    { match: "Beispielstraße 78", street: "Beispielstraße", houseNumber: "78", postalCode: "12345", city: "Beispielstadt", latitude: 50.007, longitude: 8.007 },
+    { match: "Musterallee 2a", street: "Musterallee", houseNumber: "2a", postalCode: "12345", city: "Beispielstadt", latitude: 50.008, longitude: 8.008 },
+    { match: "Eigentümerweg 17", street: "Eigentümerweg", houseNumber: "17", postalCode: "12345", city: "Musterstadt", latitude: 50.009, longitude: 8.009 },
+    { match: "Beispielring 17", street: "Beispielring", houseNumber: "17", postalCode: "12345", city: "Musterstadt", latitude: 50.010, longitude: 8.010 },
+    { match: "Sportstr", street: "Sportstraße", houseNumber: "32", postalCode: "12345", city: "Musterstadt", latitude: 50.011, longitude: 8.011 },
+    { match: "Kulturstr", street: "Kulturstraße", houseNumber: "7", postalCode: "12345", city: "Musterstadt", latitude: 50.012, longitude: 8.012 }
   ];
   for (const address of knownAddresses) {
     const { match, ...structuredAddress } = address;
     await prisma.property.updateMany({
       where: {
         address: { contains: match },
-        OR: [{ street: null }, { houseNumber: null }, { postalCode: null }, { city: null }]
+        OR: [{ street: null }, { houseNumber: null }, { postalCode: null }, { city: null }, { latitude: null }, { longitude: null }]
       },
       data: { ...structuredAddress, country: "Deutschland" }
     });

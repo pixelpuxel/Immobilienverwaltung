@@ -45,7 +45,8 @@ docker compose up -d --build
 - Eigentümerprofil mit Kontaktperson, Anschrift, Telefon, Kontakt-E-Mail, Bank, IBAN, Steuer-ID und Notizen für Verkauf/Mietvertrag.
 - Immobilien und Einheiten verwalten
 - Immobilien haben neben einer freien lesbaren Adresse strukturierte Adressfelder: Straße, Hausnummer, PLZ, Ort und Land. Die freie Adresse darf weiter existieren, aber Formulare, Verträge und Wohnungsgeberbestätigungen sollen bevorzugt die strukturierten Felder nutzen.
-- Bestandsobjekte können beim Seed/Import anhand bekannter Freitextadressen mit strukturierten Adressdaten ergänzt werden, damit behördliche Formulare nicht unvollständige Anschriften übernehmen.
+- Immobilien können Koordinaten `latitude` und `longitude` enthalten. Eine eigene Kartenseite zeigt alle Immobilien mit Koordinaten auf OpenStreetMap mit klickbaren Pins, die zur Detailansicht führen. Eigentümer sehen alle Objekte der Instanz, Makler nur freigegebene Objekte.
+- Bestandsobjekte können beim Seed/Import anhand bekannter Freitextadressen mit strukturierten Adressdaten und Koordinaten ergänzt werden, damit behördliche Formulare und Kartenansicht sofort nutzbar sind.
 - Dokumente hochladen, kategorisieren, freigeben und geschützte Downloads bereitstellen
 - Thumbnail-Vorschau für Dokumente
 - Admin-Dokumentenverwaltung gruppiert Unterlagen nach Immobilien/Objekten, inklusive Bereich für allgemeine Dokumente ohne Objektzuordnung
@@ -149,6 +150,7 @@ docker compose up -d --build
 - `/dashboard`
 - `/properties`
 - `/properties/[id]`
+- `/map` als OpenStreetMap-Kartenansicht mit klickbaren Immobilien-Pins
 - `/documents`
 - `/users`
 - `/broker` als Immobilienbereich für Makler

@@ -23,6 +23,8 @@ export const propertySchema = z.object({
   postalCode: z.string().optional(),
   city: z.string().optional(),
   country: z.string().optional(),
+  latitude: optionalNumber,
+  longitude: optionalNumber,
   objectType: z.string().optional(),
   constructionYear: optionalInt,
   livingArea: optionalNumber,
