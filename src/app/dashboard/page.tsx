@@ -70,13 +70,13 @@ export default async function DashboardPage() {
         ) : null}
         <Link href="/documents"><StatCard label="Dokumente" value={documents} detail={user.role === Role.TENANT ? "Für Sie bereitgestellt" : "Geschuetzte Unterlagen"} icon="DU" tone="violet" /></Link>
         <Link href="/contracts"><StatCard label="Verträge" value={contracts} detail={user.role === Role.TENANT ? "Ihre Mietvertraege" : "Erzeugte Vertragsdokumente"} icon="MV" tone="amber" /></Link>
-        {user.role === Role.ADMIN ? <Link href="/properties"><StatCard label="Immobilienwert" value={money(propertyValue)} detail="Summe der Kaufpreisvorstellungen" icon="€" tone="rose" /></Link> : null}
-        {user.role === Role.ADMIN ? <Link href="/properties"><StatCard label="Valutierte Darlehen" value={money(loanValue)} detail="Noch offene Darlehenssumme" icon="DL" tone="slate" /></Link> : null}
-        {user.role === Role.ADMIN ? <Link href="/properties"><StatCard label="Nettowert" value={money(netValue)} detail="Kaufpreisvorstellung minus Darlehen" icon="NW" tone="blue" /></Link> : null}
-        {user.role === Role.ADMIN ? <Link href="/properties"><StatCard label="Rendite" value={percent(annualColdRent, propertyValue)} detail="Jahreskaltmiete geteilt durch Kaufpreisvorstellung" icon="%" tone="emerald" /></Link> : null}
-        {user.role === Role.ADMIN ? <Link href="/properties"><StatCard label="Gehebelte Rendite" value={percent(annualColdRent, netValue)} detail="Jahreskaltmiete geteilt durch Nettowert" icon="GR" tone="amber" /></Link> : null}
-        {user.role !== Role.TENANT ? <Link href="/properties"><StatCard label="Kaltmiete" value={money(income.cold)} detail={`${money(income.cold * 12)} / Jahr inkl. Tiefgarage, ohne Nebenkosten`} icon="KM" tone="slate" /></Link> : null}
-        {user.role !== Role.TENANT ? <Link href="/properties"><StatCard label="Warmmiete" value={money(income.warm)} detail={`${money(income.warm * 12)} / Jahr inkl. Nebenkosten`} icon="WM" tone="emerald" /></Link> : null}
+        {user.role === Role.ADMIN ? <Link href="/properties?auswertung=immobilienwert"><StatCard label="Immobilienwert" value={money(propertyValue)} detail="Summe der Kaufpreisvorstellungen" icon="€" tone="rose" /></Link> : null}
+        {user.role === Role.ADMIN ? <Link href="/properties?auswertung=darlehen"><StatCard label="Valutierte Darlehen" value={money(loanValue)} detail="Noch offene Darlehenssumme" icon="DL" tone="slate" /></Link> : null}
+        {user.role === Role.ADMIN ? <Link href="/properties?auswertung=nettowert"><StatCard label="Nettowert" value={money(netValue)} detail="Kaufpreisvorstellung minus Darlehen" icon="NW" tone="blue" /></Link> : null}
+        {user.role === Role.ADMIN ? <Link href="/properties?auswertung=rendite"><StatCard label="Rendite" value={percent(annualColdRent, propertyValue)} detail="Jahreskaltmiete geteilt durch Kaufpreisvorstellung" icon="%" tone="emerald" /></Link> : null}
+        {user.role === Role.ADMIN ? <Link href="/properties?auswertung=gehebelte-rendite"><StatCard label="Gehebelte Rendite" value={percent(annualColdRent, netValue)} detail="Jahreskaltmiete geteilt durch Nettowert" icon="GR" tone="amber" /></Link> : null}
+        {user.role !== Role.TENANT ? <Link href="/properties?auswertung=kaltmiete"><StatCard label="Kaltmiete" value={money(income.cold)} detail={`${money(income.cold * 12)} / Jahr inkl. Tiefgarage, ohne Nebenkosten`} icon="KM" tone="slate" /></Link> : null}
+        {user.role !== Role.TENANT ? <Link href="/properties?auswertung=warmmiete"><StatCard label="Warmmiete" value={money(income.warm)} detail={`${money(income.warm * 12)} / Jahr inkl. Nebenkosten`} icon="WM" tone="emerald" /></Link> : null}
       </div>
       {user.role === Role.ADMIN ? (
         <section className="mt-8 overflow-hidden rounded-lg border border-line bg-white shadow-sm">

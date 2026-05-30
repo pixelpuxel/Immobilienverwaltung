@@ -9,8 +9,64 @@ import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 
 const rentalStatuses = ["offen", "frei", "teilvermietet", "voll vermietet", "leerstehend", "reserviert", "in Sanierung"];
+const analysisLabels = {
+  immobilienwert: {
+    title: "Immobilienwert",
+    description: "Kaufpreisvorstellung je Immobilie und Summe ueber alle Objekte.",
+    valueLabel: "Kaufpreisvorstellung"
+  },
+  darlehen: {
+    title: "Valutierte Darlehen",
+    description: "Noch offene Darlehenssumme je Immobilie.",
+    valueLabel: "Valutiertes Darlehen"
+  },
+  nettowert: {
+    title: "Nettowert",
+    description: "Kaufpreisvorstellung abzüglich valutiertem Darlehen.",
+    valueLabel: "Nettowert"
+  },
+  rendite: {
+    title: "Rendite",
+    description: "Jahreskaltmiete geteilt durch Kaufpreisvorstellung.",
+    valueLabel: "Rendite"
+  },
+  "gehebelte-rendite": {
+    title: "Gehebelte Rendite",
+    description: "Jahreskaltmiete geteilt durch Nettowert.",
+    valueLabel: "Gehebelte Rendite"
+  },
+  kaltmiete: {
+    title: "Kaltmiete",
+    description: "Monatliche und jährliche Kaltmiete inklusive Tiefgarage, ohne Nebenkosten.",
+    valueLabel: "Kaltmiete / Monat"
+  },
+  warmmiete: {
+    title: "Warmmiete",
+    description: "Monatliche und jährliche Warmmiete inklusive Nebenkosten.",
+    valueLabel: "Warmmiete / Monat"
+  }
+} as const;
 
-export default async function PropertiesPage() {
+type AnalysisKey = keyof typeof analysisLabels;
+type PropertyAnalysisRow = {
+  id: string;
+  name: string;
+  address: string;
+  propertyValue: number;
+  loanValue: number;
+  netValue: number;
+  coldMonthly: number;
+  warmMonthly: number;
+  annualColdRent: number;
+  yieldValue: number | null;
+  leveragedYield: number | null;
+};
+
+export default async function PropertiesPage({
+  searchParams
+}: {
+  searchParams?: { auswertung?: string };
+}) {
   const user = await requireUser([Role.ADMIN]);
   const properties = await prisma.property.findMany({ where: portalWhere(user), include: { units: true, documents: true }, orderBy: { createdAt: "desc" } });
   const propertyItems = properties.map((property) => ({
@@ -28,9 +84,38 @@ export default async function PropertiesPage() {
     internalNotes: property.internalNotes || "",
     documents: property.documents.length
   }));
+  const activeAnalysis = analysisKey(searchParams?.auswertung);
+  const analysisRows = properties.map((property) => {
+    const coldMonthly = property.units.reduce((sum, unit) => sum + Number(unit.rentAmount || 0) + Number(unit.garageRent || 0), 0);
+    const warmMonthly = property.units.reduce((sum, unit) => sum + Number(unit.rentAmount || 0) + Number(unit.garageRent || 0) + Number(unit.serviceCharges || 0), 0);
+    const propertyValue = Number(property.expectedPurchasePrice || 0);
+    const loanValue = Number(property.outstandingLoan || 0);
+    const netValue = propertyValue - loanValue;
+    const annualColdRent = coldMonthly * 12;
+    return {
+      id: property.id,
+      name: property.name,
+      address: property.address,
+      propertyValue,
+      loanValue,
+      netValue,
+      coldMonthly,
+      warmMonthly,
+      annualColdRent,
+      yieldValue: propertyValue > 0 ? annualColdRent / propertyValue : null,
+      leveragedYield: netValue > 0 ? annualColdRent / netValue : null
+    };
+  });
   return (
     <AppShell role={user.role} userId={user.id} email={user.email} canSwitchView={user.role === Role.ADMIN || Boolean(user.impersonatedByAdminId)}>
-      <h1 className="text-3xl font-bold">Immobilien</h1>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-bold">Immobilien</h1>
+          {activeAnalysis ? <p className="mt-1 text-sm text-muted">Auswertung: {analysisLabels[activeAnalysis].title}</p> : null}
+        </div>
+        {activeAnalysis ? <a className="button-secondary px-3 py-2 text-sm" href="/properties">Auswertung schliessen</a> : null}
+      </div>
+      {activeAnalysis ? <PropertyAnalysisTable type={activeAnalysis} rows={analysisRows} /> : null}
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_420px]">
         <PropertyManager properties={propertyItems} />
         <JsonForm endpoint="/api/properties" submitLabel="Immobilie anlegen">
@@ -57,4 +142,99 @@ export default async function PropertiesPage() {
       </div>
     </AppShell>
   );
+}
+
+function analysisKey(value?: string): AnalysisKey | null {
+  return value && value in analysisLabels ? value as AnalysisKey : null;
+}
+
+function PropertyAnalysisTable({ type, rows }: { type: AnalysisKey; rows: PropertyAnalysisRow[] }) {
+  const config = analysisLabels[type];
+  const sortedRows = [...rows].sort((a, b) => numericValue(b, type) - numericValue(a, type));
+  const total = totalValue(rows, type);
+  return (
+    <section className="mt-6 overflow-hidden rounded-lg border border-line bg-white shadow-sm">
+      <div className="border-b border-line bg-[linear-gradient(90deg,#ecfdf5,#eff6ff)] p-4">
+        <h2 className="text-xl font-bold">{config.title}</h2>
+        <p className="mt-1 text-sm text-muted">{config.description}</p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[760px] text-left text-sm">
+          <thead className="bg-panel text-xs uppercase text-muted">
+            <tr>
+              <th className="px-4 py-3">Immobilie</th>
+              <th className="px-4 py-3 text-right">{config.valueLabel}</th>
+              <th className="px-4 py-3 text-right">Kaufpreis</th>
+              <th className="px-4 py-3 text-right">Darlehen</th>
+              <th className="px-4 py-3 text-right">Jahreskaltmiete</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-line">
+            {sortedRows.map((row) => (
+              <tr key={row.id} className="hover:bg-panel/60">
+                <td className="px-4 py-3">
+                  <a className="font-semibold text-accent hover:underline" href={`/properties/${row.id}`}>{row.name}</a>
+                  <div className="mt-1 text-xs text-muted">{row.address || "Keine Adresse hinterlegt"}</div>
+                </td>
+                <td className="px-4 py-3 text-right font-semibold">{formatAnalysisValue(row, type)}</td>
+                <td className="px-4 py-3 text-right text-muted">{money(row.propertyValue)}</td>
+                <td className="px-4 py-3 text-right text-muted">{money(row.loanValue)}</td>
+                <td className="px-4 py-3 text-right text-muted">{money(row.annualColdRent)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot className="border-t border-line bg-panel font-bold">
+            <tr>
+              <td className="px-4 py-3">Summe / Gesamt</td>
+              <td className="px-4 py-3 text-right">{formatTotal(rows, type, total)}</td>
+              <td className="px-4 py-3 text-right">{money(rows.reduce((sum, row) => sum + row.propertyValue, 0))}</td>
+              <td className="px-4 py-3 text-right">{money(rows.reduce((sum, row) => sum + row.loanValue, 0))}</td>
+              <td className="px-4 py-3 text-right">{money(rows.reduce((sum, row) => sum + row.annualColdRent, 0))}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function numericValue(row: PropertyAnalysisRow, type: AnalysisKey) {
+  if (type === "immobilienwert") return row.propertyValue;
+  if (type === "darlehen") return row.loanValue;
+  if (type === "nettowert") return row.netValue;
+  if (type === "rendite") return row.yieldValue || 0;
+  if (type === "gehebelte-rendite") return row.leveragedYield || 0;
+  if (type === "kaltmiete") return row.coldMonthly;
+  return row.warmMonthly;
+}
+
+function totalValue(rows: PropertyAnalysisRow[], type: AnalysisKey) {
+  if (type === "rendite") return percent(rows.reduce((sum, row) => sum + row.annualColdRent, 0), rows.reduce((sum, row) => sum + row.propertyValue, 0));
+  if (type === "gehebelte-rendite") return percent(rows.reduce((sum, row) => sum + row.annualColdRent, 0), rows.reduce((sum, row) => sum + row.netValue, 0));
+  return money(rows.reduce((sum, row) => sum + numericValue(row, type), 0));
+}
+
+function formatAnalysisValue(row: PropertyAnalysisRow, type: AnalysisKey) {
+  if (type === "rendite") return percent(row.annualColdRent, row.propertyValue);
+  if (type === "gehebelte-rendite") return percent(row.annualColdRent, row.netValue);
+  return money(numericValue(row, type));
+}
+
+function formatTotal(rows: PropertyAnalysisRow[], type: AnalysisKey, total: string) {
+  if (type === "kaltmiete" || type === "warmmiete") {
+    const monthly = type === "kaltmiete"
+      ? rows.reduce((sum, row) => sum + row.coldMonthly, 0)
+      : rows.reduce((sum, row) => sum + row.warmMonthly, 0);
+    return `${money(monthly)} / Monat`;
+  }
+  return total;
+}
+
+function money(value: number) {
+  return new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(value);
+}
+
+function percent(numerator: number, denominator: number) {
+  if (!denominator || denominator <= 0) return "offen";
+  return new Intl.NumberFormat("de-DE", { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(numerator / denominator);
 }
