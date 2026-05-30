@@ -47,6 +47,8 @@ export async function GET(request: NextRequest) {
       },
       tenantProfile: {
         select: {
+          firstName: true,
+          lastName: true,
           unit: {
             select: {
               unitNumber: true,
@@ -65,7 +67,9 @@ export async function GET(request: NextRequest) {
       id: user.id,
       email: user.email,
       username: user.username,
-      name: user.name,
+      name: user.role === Role.TENANT && user.tenantProfile
+        ? `${user.tenantProfile.firstName} ${user.tenantProfile.lastName}`.trim() || user.name
+        : user.name,
       role: user.role,
       context: user.role === Role.BROKER
         ? user.brokerLinks.map((link) => link.property.name).join(", ")
