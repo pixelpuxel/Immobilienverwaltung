@@ -18,6 +18,7 @@ export default async function MapPage() {
   };
   const properties = await prisma.property.findMany({
     where,
+    include: { documents: true, units: true },
     orderBy: { name: "asc" }
   });
   const mappedProperties = properties
@@ -28,7 +29,11 @@ export default async function MapPage() {
       address: formatPropertyAddress(property) || property.address,
       latitude: property.latitude as number,
       longitude: property.longitude as number,
-      rentalStatus: property.rentalStatus
+      rentalStatus: property.rentalStatus,
+      unitCount: property.units.length || property.unitCount,
+      primaryImageId: property.documents.find((document) => document.isPropertyImage && document.isPrimaryImage)?.id
+        || property.documents.find((document) => document.isPropertyImage)?.id
+        || ""
     }));
   const missingProperties = properties.filter((property) => property.latitude === null || property.longitude === null);
 
@@ -39,7 +44,7 @@ export default async function MapPage() {
           <p className="text-sm font-bold uppercase tracking-normal text-accent">Standorte</p>
           <h1 className="text-3xl font-bold">Immobilienkarte</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
-            Alle Immobilien mit hinterlegten Koordinaten werden auf OpenStreetMap angezeigt. Ein Klick auf den Pin öffnet die Detailansicht.
+            Alle Immobilien mit hinterlegten Koordinaten werden auf OpenStreetMap angezeigt. Pins öffnen zuerst eine Objektkarte mit Details.
           </p>
         </div>
         <a className="button-secondary px-3 py-2 text-sm" href="/properties">Zur Immobilienliste</a>
