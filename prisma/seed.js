@@ -94,13 +94,15 @@ async function main() {
   for (const [group, names] of Object.entries(categories)) {
     for (const name of names) {
       await prisma.documentCategory.upsert({
-        where: { name },
+        where: { portalInstanceId_name: { portalInstanceId: defaultPortal.id, name } },
         update: {
+          portalInstanceId: defaultPortal.id,
           group,
           visibleToBroker: !brokerHiddenCategories.has(name),
           visibleToTenant: tenantVisibleCategories.has(name)
         },
         create: {
+          portalInstanceId: defaultPortal.id,
           group,
           name,
           visibleToBroker: !brokerHiddenCategories.has(name),
@@ -133,7 +135,7 @@ async function main() {
       ]
     });
 
-    const cat = await prisma.documentCategory.findUnique({ where: { name: "Grundbuchauszug" } });
+    const cat = await prisma.documentCategory.findUnique({ where: { portalInstanceId_name: { portalInstanceId: defaultPortal.id, name: "Grundbuchauszug" } } });
     if (cat) {
       await prisma.document.create({
         data: {

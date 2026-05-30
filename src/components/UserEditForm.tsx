@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { refreshCurrentView } from "@/lib/client-refresh";
 
 type RoleName = "ADMIN" | "BROKER" | "TENANT";
 
@@ -61,7 +62,7 @@ export function UserEditForm({
     const passwordInput = event.currentTarget.elements.namedItem("password") as HTMLInputElement | null;
     if (passwordInput) passwordInput.value = "";
     setMessage(password ? "Benutzer und Passwort gespeichert." : "Benutzer gespeichert.");
-    router.refresh();
+    refreshCurrentView(router);
   }
 
   return (

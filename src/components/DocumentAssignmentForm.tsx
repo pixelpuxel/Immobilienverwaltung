@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { reloadCurrentView } from "@/lib/client-refresh";
 
 type Option = { id: string; label: string; propertyId?: string };
 
@@ -48,7 +49,7 @@ export function DocumentAssignmentForm({
       return;
     }
     setMessage("Zuordnung gespeichert.");
-    router.refresh();
+    reloadCurrentView(router);
   }
 
   return (

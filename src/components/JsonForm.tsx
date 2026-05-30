@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { reloadCurrentView } from "@/lib/client-refresh";
 
 export function JsonForm({
   endpoint,
@@ -44,8 +45,7 @@ export function JsonForm({
     }
     event.currentTarget.reset();
     setMessage("Gespeichert.");
-    router.refresh();
-    window.location.reload();
+    reloadCurrentView(router);
   }
 
   return (

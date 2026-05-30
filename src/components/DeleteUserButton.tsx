@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { reloadCurrentView } from "@/lib/client-refresh";
 
 export function DeleteUserButton({ userId, label = "Benutzer loeschen" }: { userId: string; label?: string }) {
   const router = useRouter();
@@ -12,7 +13,7 @@ export function DeleteUserButton({ userId, label = "Benutzer loeschen" }: { user
     setBusy(true);
     const response = await fetch(`/api/users/${userId}`, { method: "DELETE" });
     setBusy(false);
-    if (response.ok) router.refresh();
+    if (response.ok) reloadCurrentView(router);
   }
 
   return (

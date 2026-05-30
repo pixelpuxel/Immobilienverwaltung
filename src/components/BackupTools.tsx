@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { reloadCurrentView } from "@/lib/client-refresh";
 
 export function BackupTools() {
   const router = useRouter();
@@ -31,7 +32,7 @@ export function BackupTools() {
         ? ` ${body.summary.records} Datensätze und ${body.summary.files} Dateien übernommen.`
         : "";
       setMessage(`Import abgeschlossen.${summary}`);
-      router.refresh();
+      reloadCurrentView(router);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Import fehlgeschlagen.");
     } finally {

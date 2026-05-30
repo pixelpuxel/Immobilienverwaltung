@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { refreshCurrentView } from "@/lib/client-refresh";
 
 type RoleName = "ADMIN" | "BROKER" | "TENANT";
 type PropertyOption = { id: string; name: string };
@@ -59,7 +60,7 @@ export function UserAccessEditor({
       return;
     }
     setMessage("Rechte gespeichert.");
-    router.refresh();
+    refreshCurrentView(router);
   }
 
   return (

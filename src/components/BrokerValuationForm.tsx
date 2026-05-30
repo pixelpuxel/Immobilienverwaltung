@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { refreshCurrentView } from "@/lib/client-refresh";
 
 export function BrokerValuationForm({
   propertyId,
@@ -37,7 +38,7 @@ export function BrokerValuationForm({
       return;
     }
     setMessage("Schaetzung gespeichert.");
-    router.refresh();
+    refreshCurrentView(router);
   }
 
   return (

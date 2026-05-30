@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { refreshCurrentView } from "@/lib/client-refresh";
 
 type Instance = {
   id: string;
@@ -12,6 +14,7 @@ type Instance = {
 };
 
 export function PortalInstanceManager() {
+  const router = useRouter();
   const [instances, setInstances] = useState<Instance[]>([]);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -41,6 +44,7 @@ export function PortalInstanceManager() {
     }
     setMessage("Neue Portal-Instanz wurde angelegt.");
     await load();
+    refreshCurrentView(router);
   }
 
   async function switchToOwner(userId?: string) {

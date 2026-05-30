@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { reloadCurrentView } from "@/lib/client-refresh";
 import { QuickMoneyEdit } from "./QuickMoneyEdit";
 
 type PropertyItem = {
@@ -44,7 +45,7 @@ export function PropertyManager({ properties }: { properties: PropertyItem[] }) 
     }
     setEditingId(null);
     setMessage("Immobilie wurde geaendert.");
-    router.refresh();
+    reloadCurrentView(router);
   }
 
   async function deleteProperty(id: string, name: string) {
@@ -59,7 +60,7 @@ export function PropertyManager({ properties }: { properties: PropertyItem[] }) 
       return;
     }
     setMessage("Immobilie wurde geloescht.");
-    router.refresh();
+    reloadCurrentView(router);
   }
 
   return (

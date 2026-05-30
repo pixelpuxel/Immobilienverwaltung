@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { reloadCurrentView } from "@/lib/client-refresh";
 
 type PropertyOption = { id: string; name: string };
 
@@ -43,7 +44,7 @@ export function BrokerInviteForm({ properties }: { properties: PropertyOption[] 
     }
     event.currentTarget.reset();
     setMessage("Makler angelegt und freigeschaltet.");
-    router.refresh();
+    reloadCurrentView(router);
   }
 
   return (

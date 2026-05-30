@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { refreshCurrentView, reloadCurrentView } from "@/lib/client-refresh";
 
 type TemplateManagerProps = {
   template: {
@@ -31,7 +32,7 @@ export function TemplateManager({ template }: TemplateManagerProps) {
       return;
     }
     setMessage("Gespeichert.");
-    router.refresh();
+    refreshCurrentView(router);
   }
 
   async function remove() {
@@ -39,7 +40,7 @@ export function TemplateManager({ template }: TemplateManagerProps) {
     setBusy(true);
     const response = await fetch(`/api/templates/${template.id}`, { method: "DELETE" });
     setBusy(false);
-    if (response.ok) router.refresh();
+    if (response.ok) reloadCurrentView(router);
   }
 
   return (

@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { refreshCurrentView } from "@/lib/client-refresh";
 
 type OwnerProfile = {
   name: string | null;
@@ -35,7 +36,7 @@ export function OwnerProfileForm({ userId, profile }: { userId: string; profile:
       return;
     }
     setMessage("Eigentümerdaten gespeichert.");
-    router.refresh();
+    refreshCurrentView(router);
   }
 
   return (

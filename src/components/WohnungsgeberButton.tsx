@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { reloadCurrentView } from "@/lib/client-refresh";
 
 export function WohnungsgeberButton({ tenantProfileId }: { tenantProfileId: string }) {
   const router = useRouter();
@@ -16,7 +17,7 @@ export function WohnungsgeberButton({ tenantProfileId }: { tenantProfileId: stri
       return;
     }
     setMessage("Wohnungsgeberbestaetigung erstellt.");
-    router.refresh();
+    reloadCurrentView(router);
   }
 
   return (

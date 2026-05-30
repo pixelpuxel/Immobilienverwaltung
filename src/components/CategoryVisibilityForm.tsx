@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { refreshCurrentView } from "@/lib/client-refresh";
 
 export function CategoryVisibilityForm({
   category
@@ -33,7 +34,7 @@ export function CategoryVisibilityForm({
       return;
     }
     setMessage("Gespeichert.");
-    router.refresh();
+    refreshCurrentView(router);
   }
 
   return (

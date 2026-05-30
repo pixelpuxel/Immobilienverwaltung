@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { refreshCurrentView } from "@/lib/client-refresh";
 
 export function QuickMoneyEdit({
   endpoint,
@@ -40,7 +41,7 @@ export function QuickMoneyEdit({
       return;
     }
     setEditing(false);
-    router.refresh();
+    refreshCurrentView(router);
   }
 
   if (editing) {

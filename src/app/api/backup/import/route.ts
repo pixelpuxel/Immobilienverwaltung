@@ -44,14 +44,22 @@ export async function POST(request: NextRequest) {
 
     await prisma.$transaction(async (tx) => {
       if (replaceExisting) await deletePortalData(tx, user.portalInstanceId, user.id);
+      const categoryIdMap = new Map<string, string>();
       for (const row of t.portalInstances || []) await upsertPortalInstance(tx, row);
       for (const row of t.users || []) await upsertUser(tx, withPortal(row, user.portalInstanceId) as typeof row);
       for (const row of t.properties || []) await tx.property.upsert({ where: { id: row.id }, update: withPortal(row, user.portalInstanceId) as any, create: withPortal(row, user.portalInstanceId) as any });
       for (const row of t.units || []) await tx.unit.upsert({ where: { id: row.id }, update: row as any, create: row as any });
       for (const row of t.documentCategories || []) {
-        await upsertDocumentCategory(tx, withPortal(row, user.portalInstanceId));
+        const importedId = await upsertDocumentCategory(tx, withPortal(row, user.portalInstanceId));
+        if (importedId !== row.id) categoryIdMap.set(row.id, importedId);
       }
-      for (const row of t.documents || []) await tx.document.upsert({ where: { id: row.id }, update: withPortal(row, user.portalInstanceId) as any, create: withPortal(row, user.portalInstanceId) as any });
+      for (const row of t.documents || []) {
+        const data = withPortal(row, user.portalInstanceId);
+        if (data.categoryId && categoryIdMap.has(String(data.categoryId))) {
+          data.categoryId = categoryIdMap.get(String(data.categoryId));
+        }
+        await tx.document.upsert({ where: { id: row.id }, update: data as any, create: data as any });
+      }
       for (const row of t.tenantProfiles || []) await upsertTenantProfile(tx, row);
       for (const row of t.contractTemplates || []) await tx.contractTemplate.upsert({ where: { id: row.id }, update: withPortal(row, user.portalInstanceId) as any, create: withPortal(row, user.portalInstanceId) as any });
       for (const row of t.leaseContracts || []) await tx.leaseContract.upsert({ where: { id: row.id }, update: row as any, create: row as any });
@@ -116,7 +124,7 @@ async function upsertDocumentCategory(tx: Prisma.TransactionClient, row: Record<
   const byId = await tx.documentCategory.findUnique({ where: { id: row.id }, select: { id: true } });
   if (byId) {
     await tx.documentCategory.update({ where: { id: row.id }, data: row as any });
-    return;
+    return byId.id;
   }
   if (row.portalInstanceId && row.name) {
     const byName = await tx.documentCategory.findUnique({
@@ -125,10 +133,21 @@ async function upsertDocumentCategory(tx: Prisma.TransactionClient, row: Record<
     });
     if (byName) {
       await tx.documentCategory.update({ where: { id: byName.id }, data: withoutId(row) as any });
-      return;
+      return byName.id;
     }
   }
-  await tx.documentCategory.create({ data: row as any });
+  if (row.name) {
+    const byName = await tx.documentCategory.findFirst({
+      where: { portalInstanceId: null, name: String(row.name) },
+      select: { id: true }
+    });
+    if (byName) {
+      await tx.documentCategory.update({ where: { id: byName.id }, data: withoutId(row) as any });
+      return byName.id;
+    }
+  }
+  const created = await tx.documentCategory.create({ data: row as any, select: { id: true } });
+  return created.id;
 }
 
 async function upsertTenantProfile(tx: Prisma.TransactionClient, row: Record<string, unknown> & { id: string }) {

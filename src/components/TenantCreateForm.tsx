@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { reloadCurrentView } from "@/lib/client-refresh";
 
 type TenantUnit = {
   id: string;
@@ -19,6 +21,7 @@ type TenantCreateFormProps = {
 type Message = { type: "ok" | "error"; text: string } | null;
 
 export function TenantCreateForm({ units, defaultUnitId = "", compact = false }: TenantCreateFormProps) {
+  const router = useRouter();
   const [message, setMessage] = useState<Message>(null);
   const [busy, setBusy] = useState(false);
   const unitMap = useMemo(() => new Map(units.map((unit) => [unit.id, unit])), [units]);
@@ -59,7 +62,7 @@ export function TenantCreateForm({ units, defaultUnitId = "", compact = false }:
       return;
     }
     setMessage({ type: "ok", text: "Mieter wurde angelegt." });
-    window.location.reload();
+    reloadCurrentView(router);
   }
 
   return (

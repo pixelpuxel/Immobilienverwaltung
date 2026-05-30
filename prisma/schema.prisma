@@ -37,6 +37,8 @@ enum AuditAction {
   CONTRACT_GENERATED
   PROPERTY_CHANGED
   USER_INVITED
+  BACKUP_EXPORTED
+  BACKUP_IMPORTED
 }
 
 model PortalInstance {
@@ -48,6 +50,7 @@ model PortalInstance {
   users       User[]
   properties  Property[]
   documents   Document[]
+  categories  DocumentCategory[]
   templates   ContractTemplate[]
   auditLogs   AuditLog[]
 }
@@ -136,13 +139,17 @@ model Unit {
 
 model DocumentCategory {
   id          String       @id @default(cuid())
+  portalInstanceId String?
   group       String
-  name        String       @unique
+  name        String
   description String?
   visibleToBroker Boolean  @default(true)
   visibleToTenant Boolean  @default(false)
   createdAt   DateTime     @default(now())
   documents   Document[]
+  portalInstance PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
+
+  @@unique([portalInstanceId, name])
 }
 
 model Document {

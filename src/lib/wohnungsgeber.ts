@@ -14,9 +14,9 @@ export async function generateWohnungsgeberbestaetigung(input: { tenantProfileId
 
   const owner = await prisma.user.findFirst({ where: { role: "ADMIN", active: true, portalInstanceId: tenant.user.portalInstanceId }, orderBy: { createdAt: "asc" } });
   const category = await prisma.documentCategory.upsert({
-    where: { name: "Wohnungsgeberbestätigung" },
-    update: { group: "Vermietung" },
-    create: { group: "Vermietung", name: "Wohnungsgeberbestätigung" }
+    where: { portalInstanceId_name: { portalInstanceId: tenant.user.portalInstanceId || "", name: "Wohnungsgeberbestätigung" } },
+    update: { group: "Vermietung", portalInstanceId: tenant.user.portalInstanceId },
+    create: { group: "Vermietung", name: "Wohnungsgeberbestätigung", portalInstanceId: tenant.user.portalInstanceId }
   });
   const existing = await prisma.document.findFirst({
     where: {

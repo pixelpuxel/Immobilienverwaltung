@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { reloadCurrentView } from "@/lib/client-refresh";
 
 export function UploadForm({ endpoint, children, submitLabel = "Hochladen" }: { endpoint: string; children: React.ReactNode; submitLabel?: string }) {
   const router = useRouter();
@@ -18,7 +19,7 @@ export function UploadForm({ endpoint, children, submitLabel = "Hochladen" }: { 
     }
     form.reset();
     setMessage("Hochgeladen.");
-    router.refresh();
+    reloadCurrentView(router);
   }
 
   return (

@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { refreshCurrentView } from "@/lib/client-refresh";
 
 type EditableFieldProps = {
   label: string;
@@ -47,7 +48,7 @@ export function EditableField({
     }
     setCurrentValue(formValue);
     setEditing(false);
-    router.refresh();
+    refreshCurrentView(router);
   }
 
   if (editing) {

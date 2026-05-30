@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { reloadCurrentView } from "@/lib/client-refresh";
 
 export function DeleteDocumentButton({ documentId, label = "Loeschen" }: { documentId: string; label?: string }) {
   const router = useRouter();
@@ -12,7 +13,7 @@ export function DeleteDocumentButton({ documentId, label = "Loeschen" }: { docum
     setBusy(true);
     const response = await fetch(`/api/documents/${documentId}`, { method: "DELETE" });
     setBusy(false);
-    if (response.ok) router.refresh();
+    if (response.ok) reloadCurrentView(router);
   }
 
   return (
