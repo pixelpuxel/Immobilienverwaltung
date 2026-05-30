@@ -44,6 +44,8 @@ docker compose up -d --build
 - Sichtbares Wording soll "Eigentümer" statt "Admin" verwenden, auch wenn die technische Rolle intern `ADMIN` bleibt.
 - Eigentümerprofil mit Kontaktperson, Anschrift, Telefon, Kontakt-E-Mail, Bank, IBAN, Steuer-ID und Notizen für Verkauf/Mietvertrag.
 - Immobilien und Einheiten verwalten
+- Immobilien haben neben einer freien lesbaren Adresse strukturierte Adressfelder: Straße, Hausnummer, PLZ, Ort und Land. Die freie Adresse darf weiter existieren, aber Formulare, Verträge und Wohnungsgeberbestätigungen sollen bevorzugt die strukturierten Felder nutzen.
+- Bestandsobjekte können beim Seed/Import anhand bekannter Freitextadressen mit strukturierten Adressdaten ergänzt werden, damit behördliche Formulare nicht unvollständige Anschriften übernehmen.
 - Dokumente hochladen, kategorisieren, freigeben und geschützte Downloads bereitstellen
 - Thumbnail-Vorschau für Dokumente
 - Admin-Dokumentenverwaltung gruppiert Unterlagen nach Immobilien/Objekten, inklusive Bereich für allgemeine Dokumente ohne Objektzuordnung
@@ -89,6 +91,7 @@ docker compose up -d --build
 - Menüpunkt `/audit` wird sichtbar als "Aktivitäten" formuliert, behält aber Zeitstempel, Benutzer und IP zur Nachvollziehbarkeit.
 - Portal ist mandantenfähig: Die bestehende Nutzung bleibt eine eigene Instanz, weitere Nutzer/Kunden können als neue leere Portal-Instanz mit eigenem Eigentümerzugang angelegt werden.
 - Plattform-Eigentümer können unter Einstellungen Portal-Instanzen sehen und neue Instanzen anlegen. Normale Eigentümer sehen nur ihre eigene Instanz.
+- Die öffentliche Loginseite ist nicht nur ein nacktes Formular, sondern eine seriöse kleine Einstiegsseite: Navigation, Hero-Bereich mit Immobilienbild, Funktionsbeschreibung, Rollenübersicht, Sicherheits-/Betriebshinweise und sichtbarer Loginbereich. Sie soll erklären, was das Portal kann und was Benutzer nach dem Login erwartet.
 
 ## Aktuelle fachliche Regeln
 
@@ -113,7 +116,7 @@ docker compose up -d --build
 - Ein Mieterprofil enthält Einzug, Auszug, ein Kennzeichen `laufend`, Zahlungsziel, Vermieterbankverbindung, Mietgegenstand, Gemeinschaftsräume, Staffelmiete, Vertragsnotizen und besondere Vereinbarungen.
 - Vertragsplatzhalter enthalten `{{garage_rent}}` für die Tiefgarage und `{{cold_rent_total}}` für Kaltmiete inklusive Tiefgarage.
 - Wird ein Mieter für eine Einheit auf `laufend` gesetzt, werden andere laufende Mieter derselben Einheit beendet.
-- Wohnungsgeberbestätigung muss mindestens Wohnungsgeber, Einzugsdatum, Anschrift der Wohnung und meldepflichtige Personen enthalten.
+- Wohnungsgeberbestätigung muss mindestens Wohnungsgeber, Einzugsdatum, strukturierte Anschrift der Wohnung und meldepflichtige Personen enthalten.
 
 ## Docker / Betrieb
 
@@ -142,7 +145,7 @@ docker compose up -d --build
 
 ## Wichtige Seiten
 
-- `/login`
+- `/login` als öffentliche Einstiegs- und Loginseite mit Produktbeschreibung, Rollen-, Funktions- und Sicherheitshinweisen
 - `/dashboard`
 - `/properties`
 - `/properties/[id]`
