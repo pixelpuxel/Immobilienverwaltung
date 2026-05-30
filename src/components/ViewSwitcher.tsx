@@ -103,10 +103,11 @@ function viewTitle(user: SwitchUser) {
 }
 
 function viewOptionLabel(user: SwitchUser) {
-  const label = roleLabel(user.role);
+  const label = `${roleConfig[user.role].icon} ${roleLabel(user.role)}`;
   const title = viewTitle(user);
+  const plainLabel = roleLabel(user.role);
   const identity = user.username ? `@${user.username}` : user.email;
-  const titleWithIdentity = isSameLabel(title, label) ? `${label} (${identity})` : `${label}: ${title}`;
+  const titleWithIdentity = isSameLabel(title, plainLabel) ? `${label} (${identity})` : `${label}: ${title}`;
   return user.context ? `${titleWithIdentity} (${user.context})` : titleWithIdentity;
 }
 
@@ -122,13 +123,13 @@ function RoleBadge({ role, compact = false }: { role: RoleName; compact?: boolea
       className={`${compact ? "h-7 w-7 text-[11px]" : "h-9 w-9 text-sm"} grid shrink-0 place-items-center rounded-md bg-gradient-to-br ${config.tone} font-black text-white shadow-sm`}
       title={config.label}
     >
-      {config.initial}
+      {config.icon}
     </span>
   );
 }
 
-const roleConfig: Record<RoleName, { label: string; initial: string; tone: string }> = {
-  ADMIN: { label: "Eigentümer", initial: "E", tone: "from-emerald-500 to-teal-700" },
-  BROKER: { label: "Makler", initial: "M", tone: "from-sky-500 to-blue-700" },
-  TENANT: { label: "Mieter", initial: "T", tone: "from-amber-400 to-orange-600" }
+const roleConfig: Record<RoleName, { label: string; icon: string; tone: string }> = {
+  ADMIN: { label: "Eigentümer", icon: "🏠", tone: "from-emerald-500 to-teal-700" },
+  BROKER: { label: "Makler", icon: "💼", tone: "from-sky-500 to-blue-700" },
+  TENANT: { label: "Mieter", icon: "🔑", tone: "from-amber-400 to-orange-600" }
 };
