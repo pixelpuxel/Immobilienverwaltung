@@ -47,6 +47,7 @@ docker compose up -d --build
 - Immobilien haben neben einer freien lesbaren Adresse strukturierte Adressfelder: Straße, Hausnummer, PLZ, Ort und Land. Die freie Adresse darf weiter existieren, aber Formulare, Verträge und Wohnungsgeberbestätigungen sollen bevorzugt die strukturierten Felder nutzen.
 - Immobilien können Koordinaten `latitude` und `longitude` enthalten. Eine eigene Kartenseite zeigt alle Immobilien mit Koordinaten auf OpenStreetMap mit klickbaren Pins, die zur Detailansicht führen. Eigentümer sehen alle Objekte der Instanz, Makler nur freigegebene Objekte.
 - Bestandsobjekte können beim Seed/Import anhand bekannter Freitextadressen mit strukturierten Adressdaten und Koordinaten ergänzt werden, damit behördliche Formulare und Kartenansicht sofort nutzbar sind.
+- Zu jeder Immobilie können mehrere Objektbilder hochgeladen werden. Bilder werden sicher im privaten Dateispeicher abgelegt, in der Objekt-Detailansicht als Galerie angezeigt und ein Bild kann als Hauptbild markiert werden. Das Hauptbild erscheint in Immobilienübersichten als großes Thumbnail.
 - Dokumente hochladen, kategorisieren, freigeben und geschützte Downloads bereitstellen
 - Thumbnail-Vorschau für Dokumente
 - Admin-Dokumentenverwaltung gruppiert Unterlagen nach Immobilien/Objekten, inklusive Bereich für allgemeine Dokumente ohne Objektzuordnung

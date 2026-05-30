@@ -12,6 +12,7 @@ export async function canAccessDocument(user: Pick<User, "id" | "role">, documen
     const propertyIds = await brokerPropertyIds(user.id);
     const document = await prisma.document.findUnique({ where: { id: documentId }, include: { category: true, unit: true } });
     const propertyId = document?.propertyId || document?.unit?.propertyId;
+    if (propertyId && propertyIds.includes(propertyId) && document?.isPropertyImage && !download) return true;
     if (propertyId && propertyIds.includes(propertyId) && document?.category?.visibleToBroker && !download) return true;
   }
   const permission = await prisma.accessPermission.findUnique({

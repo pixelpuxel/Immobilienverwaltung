@@ -4,6 +4,8 @@ import { Role } from "@prisma/client";
 import { AppShell } from "@/components/AppShell";
 import { DocumentThumbnail } from "@/components/DocumentThumbnail";
 import { EditableField } from "@/components/EditableField";
+import { PropertyImageGallery } from "@/components/PropertyImageGallery";
+import { PropertyImageUpload } from "@/components/PropertyImageUpload";
 import { UploadForm } from "@/components/UploadForm";
 import { requireUser } from "@/lib/auth";
 import { brokerPropertyIds, canAccessDocument, tenantUnitId } from "@/lib/permissions";
@@ -55,6 +57,8 @@ export default async function PropertyDetailPage({ params }: { params: { id: str
   const occupiedUnits = property.units.filter((unit) => unit.status === "vermietet").length;
   const averageBrokerValuation = average(property.brokerValuations.map((valuation) => Number(valuation.amount || 0)).filter(Boolean));
   const energyDocuments = property.documents.filter((document) => document.category?.name === "Energieausweis");
+  const propertyImages = visibleDocuments.filter((document) => document.isPropertyImage && document.mimeType.startsWith("image/"));
+  const visibleRegularDocuments = visibleDocuments.filter((document) => !document.isPropertyImage);
   const displayAddress = formatPropertyAddress(property);
 
   return (
@@ -85,6 +89,24 @@ export default async function PropertyDetailPage({ params }: { params: { id: str
 
       <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="grid gap-6">
+          <section className="rounded-lg border border-line p-4 sm:p-5">
+            <div className="grid gap-3 sm:flex sm:items-start sm:justify-between">
+              <div>
+                <h2 className="text-xl font-bold">Bilder</h2>
+                <p className="mt-1 text-sm text-muted">Objektfotos werden als Galerie angezeigt. Das Hauptbild erscheint in den Uebersichten.</p>
+              </div>
+              {canEdit ? <span className="rounded-full bg-panel px-3 py-1 text-xs font-semibold text-muted">{propertyImages.length} Bilder</span> : null}
+            </div>
+            <div className="mt-4">
+              <PropertyImageGallery images={propertyImages.map((image) => ({ id: image.id, title: image.title, isPrimaryImage: image.isPrimaryImage }))} canEdit={canEdit} />
+            </div>
+            {canEdit ? (
+              <div className="mt-4">
+                <PropertyImageUpload propertyId={property.id} hasPrimaryImage={propertyImages.some((image) => image.isPrimaryImage)} />
+              </div>
+            ) : null}
+          </section>
+
           <section className="rounded-lg border border-line p-4 sm:p-5">
             <h2 className="text-xl font-bold">Objektdaten</h2>
             <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
@@ -171,7 +193,7 @@ export default async function PropertyDetailPage({ params }: { params: { id: str
 
           <section className="rounded-lg border border-line">
             <div className="border-b border-line p-4 font-bold">Dokumente</div>
-            {visibleDocuments.length ? visibleDocuments.map((document) => (
+            {visibleRegularDocuments.length ? visibleRegularDocuments.map((document) => (
               <div key={document.id} className="grid gap-3 border-b border-line p-4 text-sm sm:grid-cols-[120px_minmax(0,1fr)_120px_140px]">
                 <DocumentThumbnail id={document.id} title={document.title} mimeType={document.mimeType} hasFile={Boolean(document.storagePath)} compact />
                 <div>

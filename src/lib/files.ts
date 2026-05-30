@@ -12,6 +12,7 @@ export const allowedExtensions = new Set([
   ".jpg",
   ".jpeg",
   ".png",
+  ".webp",
   ".txt"
 ]);
 

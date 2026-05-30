@@ -13,7 +13,9 @@ const documentUpdateSchema = z.object({
   scope: z.nativeEnum(DocumentScope).optional(),
   propertyId: z.string().nullable().optional(),
   unitId: z.string().nullable().optional(),
-  categoryId: z.string().nullable().optional()
+  categoryId: z.string().nullable().optional(),
+  isPropertyImage: z.boolean().optional(),
+  isPrimaryImage: z.boolean().optional()
 });
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
@@ -35,6 +37,15 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   }
   if (!(await assertPropertyInPortal(data.propertyId, user)) || !(await assertUnitInPortal(data.unitId, user))) {
     return NextResponse.json({ error: "Zuordnung gehoert nicht zu dieser Instanz." }, { status: 403 });
+  }
+  if (data.isPrimaryImage) {
+    const propertyId = data.propertyId ?? existing.propertyId;
+    if (!propertyId) return NextResponse.json({ error: "Hauptbild braucht eine Immobilie." }, { status: 400 });
+    await prisma.document.updateMany({
+      where: { portalInstanceId: user.portalInstanceId, propertyId, isPropertyImage: true, id: { not: params.id } },
+      data: { isPrimaryImage: false }
+    });
+    data.isPropertyImage = true;
   }
 
   const document = await prisma.document.update({

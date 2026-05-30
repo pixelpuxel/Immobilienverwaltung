@@ -173,6 +173,8 @@ model Document {
   unitId          String?
   categoryId      String?
   uploadedById    String
+  isPropertyImage Boolean         @default(false)
+  isPrimaryImage  Boolean         @default(false)
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
   property        Property?       @relation(fields: [propertyId], references: [id], onDelete: Cascade)

@@ -89,7 +89,10 @@ export default async function PropertiesPage({
     outstandingLoan: property.outstandingLoan?.toString() || "",
     annualColdRent: property.units.reduce((sum, unit) => sum + Number(unit.rentAmount || 0) + Number(unit.garageRent || 0), 0) * 12,
     internalNotes: property.internalNotes || "",
-    documents: property.documents.length
+    documents: property.documents.length,
+    primaryImageId: property.documents.find((document) => document.isPropertyImage && document.isPrimaryImage)?.id
+      || property.documents.find((document) => document.isPropertyImage)?.id
+      || ""
   }));
   const activeAnalysis = analysisKey(searchParams?.auswertung);
   const analysisRows = properties.map((property) => {

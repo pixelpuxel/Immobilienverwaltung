@@ -44,8 +44,19 @@ export async function POST(request: NextRequest) {
   const saved = await saveUpload(file);
   const propertyId = String(form.get("propertyId") || "") || null;
   const unitId = String(form.get("unitId") || "") || null;
+  const isPropertyImage = String(form.get("isPropertyImage") || "") === "true";
+  const isPrimaryImage = String(form.get("isPrimaryImage") || "") === "true";
+  if (isPropertyImage && (!file.type.startsWith("image/") || !propertyId)) {
+    return NextResponse.json({ error: "Objektbilder brauchen eine Bilddatei und eine Immobilie." }, { status: 400 });
+  }
   if (!(await assertPropertyInPortal(propertyId, user)) || !(await assertUnitInPortal(unitId, user))) {
     return NextResponse.json({ error: "Zuordnung gehoert nicht zu dieser Instanz." }, { status: 403 });
+  }
+  if (isPropertyImage && isPrimaryImage && propertyId) {
+    await prisma.document.updateMany({
+      where: { portalInstanceId: user.portalInstanceId, propertyId, isPropertyImage: true },
+      data: { isPrimaryImage: false }
+    });
   }
   const document = await prisma.document.create({
     data: {
@@ -60,6 +71,8 @@ export async function POST(request: NextRequest) {
       propertyId,
       unitId,
       categoryId: String(form.get("categoryId") || "") || null,
+      isPropertyImage,
+      isPrimaryImage,
       uploadedById: user.id
     }
   });

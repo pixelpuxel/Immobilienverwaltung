@@ -27,6 +27,7 @@ type PropertyItem = {
   annualColdRent: number;
   internalNotes: string;
   documents: number;
+  primaryImageId: string;
 };
 
 const rentalStatuses = ["offen", "frei", "teilvermietet", "voll vermietet", "leerstehend", "reserviert", "in Sanierung"];
@@ -103,6 +104,13 @@ export function PropertyManager({ properties }: { properties: PropertyItem[] }) 
             </form>
           ) : (
             <>
+              {property.primaryImageId ? (
+                <Link className="mb-4 block overflow-hidden rounded-md border border-line bg-panel" href={`/properties/${property.id}`}>
+                  <img className="aspect-[16/7] w-full object-cover" src={`/api/documents/${property.primaryImageId}/preview`} alt={`Hauptbild ${property.name}`} loading="lazy" />
+                </Link>
+              ) : (
+                <div className="mb-4 grid aspect-[16/7] place-items-center rounded-md border border-dashed border-line bg-panel text-sm font-semibold text-muted">Noch kein Hauptbild</div>
+              )}
               <div className="grid gap-3 sm:flex sm:items-start sm:justify-between sm:gap-4">
                 <div>
                   <h2 className="text-xl font-bold">
