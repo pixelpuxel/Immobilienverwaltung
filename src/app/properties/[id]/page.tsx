@@ -89,7 +89,7 @@ export default async function PropertyDetailPage({ params }: { params: { id: str
 
       <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="grid gap-6">
-          <section className="rounded-lg border border-line p-4 sm:p-5">
+          <section id="bilder" className="scroll-mt-6 rounded-lg border border-line p-4 sm:p-5">
             <div className="grid gap-3 sm:flex sm:items-start sm:justify-between">
               <div>
                 <h2 className="text-xl font-bold">Bilder</h2>

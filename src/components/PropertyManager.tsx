@@ -104,19 +104,21 @@ export function PropertyManager({ properties }: { properties: PropertyItem[] }) 
             </form>
           ) : (
             <>
-              {property.primaryImageId ? (
-                <Link className="mb-4 block overflow-hidden rounded-md border border-line bg-panel" href={`/properties/${property.id}`}>
-                  <img className="aspect-[16/7] w-full object-cover" src={`/api/documents/${property.primaryImageId}/preview`} alt={`Hauptbild ${property.name}`} loading="lazy" />
-                </Link>
-              ) : (
-                <div className="mb-4 grid aspect-[16/7] place-items-center rounded-md border border-dashed border-line bg-panel text-sm font-semibold text-muted">Noch kein Hauptbild</div>
-              )}
-              <div className="grid gap-3 sm:flex sm:items-start sm:justify-between sm:gap-4">
-                <div>
-                  <h2 className="text-xl font-bold">
-                    <Link className="hover:text-accent" href={`/properties/${property.id}`}>{property.name}</Link>
-                  </h2>
-                  <p className="text-muted">{property.address}</p>
+              <div className="grid gap-3 sm:grid-cols-[96px_minmax(0,1fr)_auto] sm:items-start sm:gap-4">
+                {property.primaryImageId ? (
+                  <Link className="block overflow-hidden rounded-md border border-line bg-panel" href={`/properties/${property.id}#bilder`}>
+                    <img className="aspect-square w-full object-cover" src={`/api/documents/${property.primaryImageId}/preview`} alt={`Hauptbild ${property.name}`} loading="lazy" />
+                  </Link>
+                ) : null}
+                <div className={property.primaryImageId ? "min-w-0" : "min-w-0 sm:col-span-2"}>
+                  <div className="grid gap-3 sm:flex sm:items-start sm:justify-between sm:gap-4">
+                    <div className="min-w-0">
+                      <h2 className="text-xl font-bold">
+                        <Link className="hover:text-accent" href={`/properties/${property.id}`}>{property.name}</Link>
+                      </h2>
+                      <p className="text-muted">{property.address}</p>
+                    </div>
+                  </div>
                 </div>
                 <span className="rounded-full bg-panel px-3 py-1 text-sm">{property.rentalStatus || "offen"}</span>
               </div>
@@ -140,6 +142,7 @@ export function PropertyManager({ properties }: { properties: PropertyItem[] }) 
               </div>
               <div className="mt-5 grid gap-2 sm:flex sm:flex-wrap">
                 <Link className="button block text-center" href={`/properties/${property.id}`}>Details ansehen</Link>
+                <Link className="button-secondary block text-center" href={`/properties/${property.id}#bilder`}>Bilder</Link>
                 <button className="button-secondary" type="button" onClick={() => setEditingId(property.id)}>Bearbeiten</button>
                 <button className="bg-red-700" type="button" onClick={() => deleteProperty(property.id, property.name)}>Loeschen</button>
               </div>
