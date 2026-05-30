@@ -48,6 +48,8 @@ const analysisLabels = {
 } as const;
 
 type AnalysisKey = keyof typeof analysisLabels;
+type AnalysisSortKey = "name" | "value" | "propertyValue" | "loanValue" | "annualColdRent";
+type SortDirection = "asc" | "desc";
 type PropertyAnalysisRow = {
   id: string;
   name: string;
@@ -65,7 +67,7 @@ type PropertyAnalysisRow = {
 export default async function PropertiesPage({
   searchParams
 }: {
-  searchParams?: { auswertung?: string };
+  searchParams?: { auswertung?: string; sort?: string; richtung?: string };
 }) {
   const user = await requireUser([Role.ADMIN]);
   const properties = await prisma.property.findMany({ where: portalWhere(user), include: { units: true, documents: true }, orderBy: { createdAt: "desc" } });
@@ -95,6 +97,8 @@ export default async function PropertiesPage({
       || ""
   }));
   const activeAnalysis = analysisKey(searchParams?.auswertung);
+  const activeSort = analysisSortKey(searchParams?.sort);
+  const activeDirection = sortDirection(searchParams?.richtung);
   const analysisRows = properties.map((property) => {
     const coldMonthly = property.units.reduce((sum, unit) => sum + Number(unit.rentAmount || 0) + Number(unit.garageRent || 0), 0);
     const warmMonthly = property.units.reduce((sum, unit) => sum + Number(unit.rentAmount || 0) + Number(unit.garageRent || 0) + Number(unit.serviceCharges || 0), 0);
@@ -125,7 +129,7 @@ export default async function PropertiesPage({
         </div>
         {activeAnalysis ? <a className="button-secondary px-3 py-2 text-sm" href="/properties">Auswertung schliessen</a> : null}
       </div>
-      {activeAnalysis ? <PropertyAnalysisTable type={activeAnalysis} rows={analysisRows} /> : null}
+      {activeAnalysis ? <PropertyAnalysisTable direction={activeDirection} sortKey={activeSort} type={activeAnalysis} rows={analysisRows} /> : null}
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_420px]">
         <PropertyManager properties={propertyItems} />
         <JsonForm endpoint="/api/properties" submitLabel="Immobilie anlegen">
@@ -165,9 +169,27 @@ function analysisKey(value?: string): AnalysisKey | null {
   return value && value in analysisLabels ? value as AnalysisKey : null;
 }
 
-function PropertyAnalysisTable({ type, rows }: { type: AnalysisKey; rows: PropertyAnalysisRow[] }) {
+function analysisSortKey(value?: string): AnalysisSortKey {
+  return value === "name" || value === "propertyValue" || value === "loanValue" || value === "annualColdRent" || value === "value" ? value : "value";
+}
+
+function sortDirection(value?: string): SortDirection {
+  return value === "asc" ? "asc" : "desc";
+}
+
+function PropertyAnalysisTable({
+  direction,
+  rows,
+  sortKey,
+  type
+}: {
+  direction: SortDirection;
+  rows: PropertyAnalysisRow[];
+  sortKey: AnalysisSortKey;
+  type: AnalysisKey;
+}) {
   const config = analysisLabels[type];
-  const sortedRows = [...rows].sort((a, b) => numericValue(b, type) - numericValue(a, type));
+  const sortedRows = [...rows].sort((a, b) => compareRows(a, b, type, sortKey, direction));
   const total = totalValue(rows, type);
   return (
     <section className="mt-6 overflow-hidden rounded-lg border border-line bg-white shadow-sm">
@@ -179,11 +201,11 @@ function PropertyAnalysisTable({ type, rows }: { type: AnalysisKey; rows: Proper
         <table className="w-full min-w-[760px] text-left text-sm">
           <thead className="bg-panel text-xs uppercase text-muted">
             <tr>
-              <th className="px-4 py-3">Immobilie</th>
-              <th className="px-4 py-3 text-right">{config.valueLabel}</th>
-              <th className="px-4 py-3 text-right">Kaufpreis</th>
-              <th className="px-4 py-3 text-right">Darlehen</th>
-              <th className="px-4 py-3 text-right">Jahreskaltmiete</th>
+              <SortableHeader activeDirection={direction} activeSort={sortKey} label="Immobilie" sort="name" type={type} />
+              <SortableHeader activeDirection={direction} activeSort={sortKey} align="right" label={config.valueLabel} sort="value" type={type} />
+              <SortableHeader activeDirection={direction} activeSort={sortKey} align="right" label="Kaufpreis" sort="propertyValue" type={type} />
+              <SortableHeader activeDirection={direction} activeSort={sortKey} align="right" label="Darlehen" sort="loanValue" type={type} />
+              <SortableHeader activeDirection={direction} activeSort={sortKey} align="right" label="Jahreskaltmiete" sort="annualColdRent" type={type} />
             </tr>
           </thead>
           <tbody className="divide-y divide-line">
@@ -213,6 +235,55 @@ function PropertyAnalysisTable({ type, rows }: { type: AnalysisKey; rows: Proper
       </div>
     </section>
   );
+}
+
+function SortableHeader({
+  activeDirection,
+  activeSort,
+  align = "left",
+  label,
+  sort,
+  type
+}: {
+  activeDirection: SortDirection;
+  activeSort: AnalysisSortKey;
+  align?: "left" | "right";
+  label: string;
+  sort: AnalysisSortKey;
+  type: AnalysisKey;
+}) {
+  const isActive = activeSort === sort;
+  const nextDirection: SortDirection = isActive && activeDirection === "desc" ? "asc" : "desc";
+  const indicator = isActive ? (activeDirection === "desc" ? "↓" : "↑") : "↕";
+  const href = `/properties?auswertung=${type}&sort=${sort}&richtung=${nextDirection}`;
+  return (
+    <th className={`px-4 py-3 ${align === "right" ? "text-right" : ""}`}>
+      <a className={`inline-flex items-center gap-1 rounded px-1 py-0.5 hover:bg-white hover:text-ink ${align === "right" ? "justify-end" : ""}`} href={href}>
+        <span>{label}</span>
+        <span aria-hidden="true" className={isActive ? "text-accent" : "text-muted/70"}>{indicator}</span>
+      </a>
+    </th>
+  );
+}
+
+function compareRows(a: PropertyAnalysisRow, b: PropertyAnalysisRow, type: AnalysisKey, sortKey: AnalysisSortKey, direction: SortDirection) {
+  const factor = direction === "asc" ? 1 : -1;
+  if (sortKey === "name") {
+    const byName = a.name.localeCompare(b.name, "de", { sensitivity: "base" });
+    if (byName !== 0) return byName * factor;
+    return a.address.localeCompare(b.address, "de", { sensitivity: "base" }) * factor;
+  }
+  const left = sortableNumericValue(a, type, sortKey);
+  const right = sortableNumericValue(b, type, sortKey);
+  if (left === right) return a.name.localeCompare(b.name, "de", { sensitivity: "base" });
+  return (left - right) * factor;
+}
+
+function sortableNumericValue(row: PropertyAnalysisRow, type: AnalysisKey, sortKey: AnalysisSortKey) {
+  if (sortKey === "propertyValue") return row.propertyValue;
+  if (sortKey === "loanValue") return row.loanValue;
+  if (sortKey === "annualColdRent") return row.annualColdRent;
+  return numericValue(row, type);
 }
 
 function numericValue(row: PropertyAnalysisRow, type: AnalysisKey) {
