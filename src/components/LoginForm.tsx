@@ -27,7 +27,7 @@ export function LoginForm() {
   }
 
   return (
-    <form onSubmit={submit} className="grid gap-4 rounded-lg border border-line bg-panel p-6">
+    <form onSubmit={submit} className="grid gap-4">
       {error ? <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}
       <label className="grid gap-1 text-sm font-semibold">
         Benutzername oder E-Mail
