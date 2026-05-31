@@ -107,72 +107,74 @@ export function SearchAutocomplete({ defaultQuery = "" }: { defaultQuery?: strin
   }
 
   return (
-    <form className="relative z-30 mt-5 flex flex-col gap-3 sm:flex-row" action="/search" autoComplete="off">
-      <div ref={wrapperRef} className="relative min-w-0 flex-1">
-        <label className="sr-only" htmlFor="global-search">Suchbegriff</label>
-        <input
-          id="global-search"
-          name="q"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          onFocus={() => {
-            if (suggestions.length || trimmedQuery.length >= 2) setOpen(true);
-          }}
-          onKeyDown={handleKeyDown}
-          placeholder="Name, Adresse, Dokument, Mieter, Vertrag ..."
-          autoFocus
-          className="min-h-12 w-full pr-28 text-base"
-          role="combobox"
-          aria-expanded={open}
-          aria-controls="global-search-suggestions"
-          aria-autocomplete="list"
-        />
-        <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted">
-          {loading ? "Sucht ..." : trimmedQuery.length >= 2 ? `${suggestions.length} Treffer` : "ab 2 Zeichen"}
-        </div>
-
-        {open && trimmedQuery.length >= 2 ? (
-          <div
-            id="global-search-suggestions"
-            className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-50 overflow-hidden rounded-lg border border-line bg-white shadow-xl"
-            role="listbox"
-          >
-            {suggestions.length > 0 ? (
-              <div className="max-h-96 overflow-auto py-2">
-                {suggestions.map((suggestion, index) => (
-                  <Link
-                    key={`${suggestion.type}-${suggestion.href}-${suggestion.title}-${index}`}
-                    href={suggestion.href}
-                    className={`grid grid-cols-[2.75rem_1fr] gap-3 px-4 py-3 transition hover:bg-panel ${index === activeIndex ? "bg-panel" : ""}`}
-                    role="option"
-                    aria-selected={index === activeIndex}
-                    onMouseEnter={() => setActiveIndex(index)}
-                  >
-                    <span className={`flex h-10 w-10 items-center justify-center rounded-lg border text-xs font-black ${typeTones[suggestion.type]}`}>
-                      {typeIcons[suggestion.type]}
-                    </span>
-                    <span className="min-w-0">
-                      <span className="flex flex-wrap items-center gap-2">
-                        <span className="truncate font-bold">{highlight(suggestion.title, trimmedQuery)}</span>
-                        <span className={`rounded-full border px-2 py-0.5 text-[11px] font-bold ${typeTones[suggestion.type]}`}>{suggestion.type}</span>
-                      </span>
-                      <span className="mt-1 block truncate text-sm text-muted">{suggestion.description || "Kein weiterer Kontext hinterlegt."}</span>
-                    </span>
-                  </Link>
-                ))}
-              </div>
-            ) : (
-              <div className="px-4 py-4 text-sm text-muted">
-                {loading ? "Suche laeuft ..." : "Keine direkten Vorschlaege gefunden. Mit Enter trotzdem suchen."}
-              </div>
-            )}
-            <div className="border-t border-line bg-panel px-4 py-2 text-xs text-muted">
-              Enter sucht alle Treffer. Pfeiltasten waehlen einen Vorschlag.
-            </div>
+    <form className="relative z-30 mt-5 grid gap-3" action="/search" autoComplete="off">
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_10rem]">
+        <div ref={wrapperRef} className="relative min-w-0">
+          <label className="sr-only" htmlFor="global-search">Suchbegriff</label>
+          <input
+            id="global-search"
+            name="q"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onFocus={() => {
+              if (suggestions.length || trimmedQuery.length >= 2) setOpen(true);
+            }}
+            onKeyDown={handleKeyDown}
+            placeholder="Name, Adresse, Dokument, Mieter, Vertrag ..."
+            autoFocus
+            className="min-h-12 w-full pr-28 text-base"
+            role="combobox"
+            aria-expanded={open}
+            aria-controls="global-search-suggestions"
+            aria-autocomplete="list"
+          />
+          <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted">
+            {loading ? "Sucht ..." : trimmedQuery.length >= 2 ? `${suggestions.length} Treffer` : "ab 2 Zeichen"}
           </div>
-        ) : null}
+        </div>
+        <button className="min-h-12 px-6" type="submit">Suchen</button>
       </div>
-      <button className="min-h-12 shrink-0 px-6" type="submit">Suchen</button>
+
+      {open && trimmedQuery.length >= 2 ? (
+        <div
+          id="global-search-suggestions"
+          className="overflow-hidden rounded-lg border border-line bg-white shadow-xl"
+          role="listbox"
+        >
+          {suggestions.length > 0 ? (
+            <div className="max-h-[min(28rem,60vh)] overflow-auto py-2">
+              {suggestions.map((suggestion, index) => (
+                <Link
+                  key={`${suggestion.type}-${suggestion.href}-${suggestion.title}-${index}`}
+                  href={suggestion.href}
+                  className={`grid grid-cols-[2.75rem_1fr] gap-3 px-4 py-3 transition hover:bg-panel ${index === activeIndex ? "bg-panel" : ""}`}
+                  role="option"
+                  aria-selected={index === activeIndex}
+                  onMouseEnter={() => setActiveIndex(index)}
+                >
+                  <span className={`flex h-10 w-10 items-center justify-center rounded-lg border text-xs font-black ${typeTones[suggestion.type]}`}>
+                    {typeIcons[suggestion.type]}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="truncate font-bold">{highlight(suggestion.title, trimmedQuery)}</span>
+                      <span className={`rounded-full border px-2 py-0.5 text-[11px] font-bold ${typeTones[suggestion.type]}`}>{suggestion.type}</span>
+                    </span>
+                    <span className="mt-1 block truncate text-sm text-muted">{suggestion.description || "Kein weiterer Kontext hinterlegt."}</span>
+                  </span>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <div className="px-4 py-4 text-sm text-muted">
+              {loading ? "Suche laeuft ..." : "Keine direkten Vorschlaege gefunden. Mit Enter trotzdem suchen."}
+            </div>
+          )}
+          <div className="border-t border-line bg-panel px-4 py-2 text-xs text-muted">
+            Enter sucht alle Treffer. Pfeiltasten waehlen einen Vorschlag.
+          </div>
+        </div>
+      ) : null}
     </form>
   );
 }
