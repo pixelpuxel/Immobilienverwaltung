@@ -14,14 +14,15 @@ export type SearchResult = {
 export async function globalSearch(user: ScopedUser, query: string) {
   const q = query.trim();
   if (q.length < 2) return [];
+  const terms = searchTerms(q);
   const brokerIds = user.role === Role.BROKER ? await brokerPropertyIds(user.id) : [];
   const tenantUnit = user.role === Role.TENANT ? await tenantUnitId(user.id) : null;
-  const propertyWhere = propertySearchWhere(user, q, brokerIds, tenantUnit);
-  const unitWhere = unitSearchWhere(user, q, brokerIds, tenantUnit);
-  const documentWhere = documentSearchWhere(user, q, brokerIds, tenantUnit);
-  const tenantWhere = tenantSearchWhere(user, q, brokerIds, tenantUnit);
-  const contractWhere = contractSearchWhere(user, q, brokerIds, tenantUnit);
-  const userWhere = user.role === Role.ADMIN ? userSearchWhere(user, q) : null;
+  const propertyWhere = propertySearchWhere(user, terms, brokerIds, tenantUnit);
+  const unitWhere = unitSearchWhere(user, terms, brokerIds, tenantUnit);
+  const documentWhere = documentSearchWhere(user, terms, brokerIds, tenantUnit);
+  const tenantWhere = tenantSearchWhere(user, terms, brokerIds, tenantUnit);
+  const contractWhere = contractSearchWhere(user, terms, brokerIds, tenantUnit);
+  const userWhere = user.role === Role.ADMIN ? userSearchWhere(user, terms) : null;
 
   const [properties, units, documents, tenants, users, contracts] = await Promise.all([
     prisma.property.findMany({ where: propertyWhere, orderBy: { updatedAt: "desc" }, take: 12 }),
@@ -91,17 +92,17 @@ export async function globalSearch(user: ScopedUser, query: string) {
   ].slice(0, 80);
 }
 
-function propertySearchWhere(user: ScopedUser, q: string, brokerIds: string[], tenantUnit: string | null): Prisma.PropertyWhereInput {
+function propertySearchWhere(user: ScopedUser, terms: string[], brokerIds: string[], tenantUnit: string | null): Prisma.PropertyWhereInput {
   const search: Prisma.PropertyWhereInput = {
     OR: [
-      contains("name", q),
-      contains("address", q),
-      contains("street", q),
-      contains("postalCode", q),
-      contains("city", q),
-      contains("objectType", q),
-      contains("rentalStatus", q),
-      contains("internalNotes", q)
+      ...containsAny("name", terms),
+      ...containsAny("address", terms),
+      ...containsAny("street", terms),
+      ...containsAny("postalCode", terms),
+      ...containsAny("city", terms),
+      ...containsAny("objectType", terms),
+      ...containsAny("rentalStatus", terms),
+      ...containsAny("internalNotes", terms)
     ]
   };
   if (user.role === Role.ADMIN) return { ...portalWhere(user), ...search };
@@ -109,23 +110,23 @@ function propertySearchWhere(user: ScopedUser, q: string, brokerIds: string[], t
   return { units: { some: { id: tenantUnit || "" } }, ...search };
 }
 
-function unitSearchWhere(user: ScopedUser, q: string, brokerIds: string[], tenantUnit: string | null): Prisma.UnitWhereInput {
+function unitSearchWhere(user: ScopedUser, terms: string[], brokerIds: string[], tenantUnit: string | null): Prisma.UnitWhereInput {
   const search: Prisma.UnitWhereInput = {
-    OR: [contains("unitNumber", q), contains("floor", q), contains("status", q)]
+    OR: [...containsAny("unitNumber", terms), ...containsAny("floor", terms), ...containsAny("status", terms)]
   };
   if (user.role === Role.ADMIN) return { property: portalWhere(user), ...search };
   if (user.role === Role.BROKER) return { propertyId: { in: brokerIds }, ...search };
   return { id: tenantUnit || "", ...search };
 }
 
-function documentSearchWhere(user: ScopedUser, q: string, brokerIds: string[], tenantUnit: string | null): Prisma.DocumentWhereInput {
+function documentSearchWhere(user: ScopedUser, terms: string[], brokerIds: string[], tenantUnit: string | null): Prisma.DocumentWhereInput {
   const search: Prisma.DocumentWhereInput = {
     OR: [
-      contains("title", q),
-      contains("filename", q),
-      contains("summary", q),
-      { tags: { has: q } },
-      { category: { OR: [contains("name", q), contains("group", q)] } }
+      ...containsAny("title", terms),
+      ...containsAny("filename", terms),
+      ...containsAny("summary", terms),
+      { tags: { hasSome: terms } },
+      { category: { OR: [...containsAny("name", terms), ...containsAny("group", terms)] } }
     ]
   };
   if (user.role === Role.ADMIN) return { ...portalWhere(user), ...search };
@@ -150,21 +151,28 @@ function documentSearchWhere(user: ScopedUser, q: string, brokerIds: string[], t
   };
 }
 
-function tenantSearchWhere(user: ScopedUser, q: string, brokerIds: string[], tenantUnit: string | null): Prisma.TenantProfileWhereInput {
+function tenantSearchWhere(user: ScopedUser, terms: string[], brokerIds: string[], tenantUnit: string | null): Prisma.TenantProfileWhereInput {
   const search: Prisma.TenantProfileWhereInput = {
-    OR: [contains("firstName", q), contains("lastName", q), contains("email", q), contains("phone", q), contains("currentAddress", q), contains("roomDescription", q)]
+    OR: [
+      ...containsAny("firstName", terms),
+      ...containsAny("lastName", terms),
+      ...containsAny("email", terms),
+      ...containsAny("phone", terms),
+      ...containsAny("currentAddress", terms),
+      ...containsAny("roomDescription", terms)
+    ]
   };
   if (user.role === Role.ADMIN) return { user: portalWhere(user), ...search };
   if (user.role === Role.BROKER) return { isCurrent: true, unit: { propertyId: { in: brokerIds } }, ...search };
   return { userId: user.id, ...search };
 }
 
-function contractSearchWhere(user: ScopedUser, q: string, brokerIds: string[], tenantUnit: string | null): Prisma.LeaseContractWhereInput {
+function contractSearchWhere(user: ScopedUser, terms: string[], brokerIds: string[], tenantUnit: string | null): Prisma.LeaseContractWhereInput {
   const search: Prisma.LeaseContractWhereInput = {
     OR: [
-      { tenantProfile: { OR: [contains("firstName", q), contains("lastName", q), contains("email", q)] } },
-      { unit: { OR: [contains("unitNumber", q), { property: { OR: [contains("name", q), contains("address", q)] } }] } },
-      { template: contains("name", q) }
+      { tenantProfile: { OR: [...containsAny("firstName", terms), ...containsAny("lastName", terms), ...containsAny("email", terms)] } },
+      { unit: { OR: [...containsAny("unitNumber", terms), { property: { OR: [...containsAny("name", terms), ...containsAny("address", terms)] } }] } },
+      { template: { OR: containsAny("name", terms) } }
     ]
   };
   if (user.role === Role.ADMIN) return { unit: { property: portalWhere(user) }, ...search };
@@ -172,15 +180,52 @@ function contractSearchWhere(user: ScopedUser, q: string, brokerIds: string[], t
   return { tenantProfile: { userId: user.id }, ...search };
 }
 
-function userSearchWhere(user: ScopedUser, q: string): Prisma.UserWhereInput {
+function userSearchWhere(user: ScopedUser, terms: string[]): Prisma.UserWhereInput {
   return {
     ...portalWhere(user),
-    OR: [contains("email", q), contains("username", q), contains("name", q), contains("contactPerson", q), contains("contactPhone", q), contains("contactEmail", q)]
+    OR: [
+      ...containsAny("email", terms),
+      ...containsAny("username", terms),
+      ...containsAny("name", terms),
+      ...containsAny("contactPerson", terms),
+      ...containsAny("contactPhone", terms),
+      ...containsAny("contactEmail", terms)
+    ]
   };
 }
 
 function contains(field: string, q: string) {
   return { [field]: { contains: q, mode: "insensitive" as const } };
+}
+
+function containsAny(field: string, terms: string[]) {
+  return terms.map((term) => contains(field, term));
+}
+
+function searchTerms(query: string) {
+  return [...new Set([query, ...dateVariants(query)].map((term) => term.trim()).filter((term) => term.length >= 2))];
+}
+
+function dateVariants(query: string) {
+  const match = query.trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{2}|\d{4})$/);
+  if (!match) return [];
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const yearInput = match[3];
+  if (day < 1 || day > 31 || month < 1 || month > 12) return [];
+  const fullYear = yearInput.length === 2 ? Number(`20${yearInput}`) : Number(yearInput);
+  if (fullYear < 1900 || fullYear > 2099) return [];
+  const shortYear = String(fullYear).slice(-2);
+  const dayPlain = String(day);
+  const monthPlain = String(month);
+  const dayPadded = dayPlain.padStart(2, "0");
+  const monthPadded = monthPlain.padStart(2, "0");
+  return [
+    `${dayPlain}.${monthPlain}.${shortYear}`,
+    `${dayPadded}.${monthPadded}.${shortYear}`,
+    `${dayPlain}.${monthPlain}.${fullYear}`,
+    `${dayPadded}.${monthPadded}.${fullYear}`
+  ];
 }
 
 function formatDate(value: Date) {
