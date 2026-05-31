@@ -175,6 +175,8 @@ model Document {
   uploadedById    String
   isPropertyImage Boolean         @default(false)
   isPrimaryImage  Boolean         @default(false)
+  summary         String?
+  tags            String[]        @default([])
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
   property        Property?       @relation(fields: [propertyId], references: [id], onDelete: Cascade)

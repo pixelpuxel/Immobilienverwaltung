@@ -4,7 +4,7 @@ import { AppShell } from "@/components/AppShell";
 import { StatCard } from "@/components/StatCard";
 import { activityHref, activityLabelMap, activityTitle } from "@/lib/activity-display";
 import { requireUser } from "@/lib/auth";
-import { brokerPropertyIds, tenantUnitId } from "@/lib/permissions";
+import { brokerPropertyIds, brokerVisibleDocumentWhere, tenantUnitId } from "@/lib/permissions";
 import { portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 
@@ -29,7 +29,7 @@ export default async function DashboardPage() {
       ? await Promise.all([
           prisma.property.count({ where: { id: { in: brokerIds || [] } } }),
           prisma.unit.count({ where: { propertyId: { in: brokerIds || [] } } }),
-          prisma.document.count({ where: { propertyId: { in: brokerIds || [] }, permissions: { some: { userId: user.id, canView: true } } } }),
+          prisma.document.count({ where: brokerVisibleDocumentWhere(user.id, brokerIds || []) }),
           prisma.leaseContract.count({ where: { unit: { propertyId: { in: brokerIds || [] } } } }),
           [],
           totalPropertyValue(brokerIds || []),
@@ -51,6 +51,7 @@ export default async function DashboardPage() {
   const annualColdRent = income.cold * 12;
   const netValue = propertyValue - loanValue;
   const activityLabels = user.role === Role.ADMIN ? await activityLabelMap(auditLogs) : new Map<string, string>();
+  const propertyBaseHref = user.role === Role.BROKER ? "/broker" : "/properties";
 
   return (
     <AppShell role={user.role} userId={user.id} email={user.email} canSwitchView={user.role === Role.ADMIN || Boolean(user.impersonatedByAdminId)}>
@@ -75,8 +76,8 @@ export default async function DashboardPage() {
         {user.role === Role.ADMIN ? <Link href="/properties?auswertung=nettowert"><StatCard label="Nettowert" value={money(netValue)} detail="Kaufpreisvorstellung minus Darlehen" icon="NW" tone="blue" /></Link> : null}
         {user.role === Role.ADMIN ? <Link href="/properties?auswertung=rendite"><StatCard label="Rendite" value={percent(annualColdRent, propertyValue)} detail="Jahreskaltmiete geteilt durch Kaufpreisvorstellung" icon="%" tone="emerald" /></Link> : null}
         {user.role === Role.ADMIN ? <Link href="/properties?auswertung=gehebelte-rendite"><StatCard label="Gehebelte Rendite" value={percent(annualColdRent, netValue)} detail="Jahreskaltmiete geteilt durch Nettowert" icon="GR" tone="amber" /></Link> : null}
-        {user.role !== Role.TENANT ? <Link href="/properties?auswertung=kaltmiete"><StatCard label="Kaltmiete" value={money(income.cold)} detail={`${money(income.cold * 12)} / Jahr inkl. Tiefgarage, ohne Nebenkosten`} icon="KM" tone="slate" /></Link> : null}
-        {user.role !== Role.TENANT ? <Link href="/properties?auswertung=warmmiete"><StatCard label="Warmmiete" value={money(income.warm)} detail={`${money(income.warm * 12)} / Jahr inkl. Nebenkosten`} icon="WM" tone="emerald" /></Link> : null}
+        {user.role !== Role.TENANT ? <Link href={`${propertyBaseHref}?auswertung=kaltmiete`}><StatCard label="Kaltmiete" value={money(income.cold)} detail={`${money(income.cold * 12)} / Jahr inkl. Tiefgarage, ohne Nebenkosten`} icon="KM" tone="slate" /></Link> : null}
+        {user.role !== Role.TENANT ? <Link href={`${propertyBaseHref}?auswertung=warmmiete`}><StatCard label="Warmmiete" value={money(income.warm)} detail={`${money(income.warm * 12)} / Jahr inkl. Nebenkosten`} icon="WM" tone="emerald" /></Link> : null}
       </div>
       {user.role === Role.ADMIN ? (
         <section className="mt-8 overflow-hidden rounded-lg border border-line bg-white shadow-sm">

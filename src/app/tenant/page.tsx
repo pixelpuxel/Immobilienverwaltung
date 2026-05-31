@@ -12,7 +12,23 @@ export const dynamic = "force-dynamic";
 export default async function TenantPage() {
   const user = await requireUser([Role.TENANT, Role.ADMIN]);
   const profile = user.role === Role.TENANT
-    ? await prisma.tenantProfile.findUnique({ where: { userId: user.id }, include: { unit: { include: { property: true } } } })
+    ? await prisma.tenantProfile.findUnique({
+        where: { userId: user.id },
+        include: {
+          unit: {
+            include: {
+              property: {
+                include: {
+                  documents: {
+                    where: { isPropertyImage: true },
+                    orderBy: [{ isPrimaryImage: "desc" }, { createdAt: "desc" }]
+                  }
+                }
+              }
+            }
+          }
+        }
+      })
     : null;
   const documents = profile?.unitId
     ? await prisma.document.findMany({
@@ -35,9 +51,22 @@ export default async function TenantPage() {
     : [];
   const utilityDocuments = documents.filter((document) => document.category?.name === "Nebenkostenabrechnungen");
   const otherDocuments = documents.filter((document) => document.category?.name !== "Nebenkostenabrechnungen");
+  const primaryImage = profile?.unit?.property.documents.find((document) => document.isPrimaryImage) || profile?.unit?.property.documents[0];
   return (
     <AppShell role={user.role} userId={user.id} email={user.email} canSwitchView={user.role === Role.ADMIN || Boolean(user.impersonatedByAdminId)}>
       <h1 className="text-3xl font-bold">Mieterbereich</h1>
+      {profile?.unit?.property ? (
+        <section className="mt-6 overflow-hidden rounded-lg border border-line bg-white">
+          {primaryImage ? (
+            <img className="max-h-72 w-full object-cover" src={`/api/documents/${primaryImage.id}/preview`} alt={`Hauptbild ${profile.unit.property.name}`} loading="lazy" />
+          ) : null}
+          <div className="p-5">
+            <div className="text-sm font-semibold uppercase tracking-wide text-accent">Meine Immobilie</div>
+            <h2 className="mt-1 text-2xl font-bold">{profile.unit.property.name}</h2>
+            <p className="text-muted">{profile.unit.property.address} / {profile.unit.unitNumber}</p>
+          </div>
+        </section>
+      ) : null}
       {profile ? (
         <section className="mt-6 rounded-lg border border-line p-5">
           <h2 className="text-xl font-bold">Mietvertraege</h2>

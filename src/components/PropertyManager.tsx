@@ -142,7 +142,7 @@ export function PropertyManager({ properties }: { properties: PropertyItem[] }) 
               </div>
               <div className="mt-5 grid gap-2 sm:flex sm:flex-wrap">
                 <Link className="button block text-center" href={`/properties/${property.id}`}>Details ansehen</Link>
-                <Link className="button-secondary block text-center" href={`/properties/${property.id}#bilder`}>Bilder</Link>
+                <Link className="button button-secondary block text-center" href={`/properties/${property.id}#bilder`}>Bilder</Link>
                 <button className="button-secondary" type="button" onClick={() => setEditingId(property.id)}>Bearbeiten</button>
                 <button className="bg-red-700" type="button" onClick={() => deleteProperty(property.id, property.name)}>Loeschen</button>
               </div>

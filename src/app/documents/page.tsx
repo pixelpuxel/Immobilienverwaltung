@@ -1,8 +1,6 @@
-import { Role } from "@prisma/client";
+import { DocumentScope, Prisma, Role } from "@prisma/client";
 import { AppShell } from "@/components/AppShell";
-import { DeleteDocumentButton } from "@/components/DeleteDocumentButton";
-import { DocumentAssignmentForm } from "@/components/DocumentAssignmentForm";
-import { DocumentThumbnail } from "@/components/DocumentThumbnail";
+import { LazyDocumentGroup } from "@/components/LazyDocumentGroup";
 import { UploadForm } from "@/components/UploadForm";
 import { requireUser } from "@/lib/auth";
 import { brokerPropertyIds, tenantUnitId } from "@/lib/permissions";
@@ -26,95 +24,76 @@ export default async function DocumentsPage({ searchParams }: { searchParams?: {
   const defaultCategoryId = searchParams?.category === "nebenkosten"
     ? categories.find((category) => category.name === "Nebenkostenabrechnungen")?.id || ""
     : "";
-  const documentInclude = { property: true, unit: { include: { property: true } }, category: true } as const;
-  const documents = user.role === Role.ADMIN
-    ? await prisma.document.findMany({ where: portalWhere(user), include: documentInclude, orderBy: { createdAt: "desc" } })
+  const propertyIds = user.role === Role.BROKER ? await brokerPropertyIds(user.id) : [];
+  const unitId = user.role === Role.TENANT ? await tenantUnitId(user.id) : null;
+  const documentWhere: Prisma.DocumentWhereInput = user.role === Role.ADMIN
+    ? portalWhere(user)
     : user.role === Role.BROKER
-      ? await prisma.document.findMany({
-          where: { propertyId: { in: await brokerPropertyIds(user.id) }, ...portalWhere(user), category: { visibleToBroker: true }, permissions: { some: { userId: user.id, canView: true } } },
-          include: documentInclude,
-          orderBy: { createdAt: "desc" }
+      ? { propertyId: { in: propertyIds }, ...portalWhere(user), category: { visibleToBroker: true }, permissions: { some: { userId: user.id, canView: true } } }
+      : {
+          ...portalWhere(user),
+          OR: [
+            { permissions: { some: { userId: user.id, canView: true } } },
+            { unitId, category: { visibleToTenant: true }, scope: { in: [DocumentScope.UNIT, DocumentScope.CONTRACT] } }
+          ]
+        };
+  const scopedProperties = user.role === Role.BROKER
+    ? properties.filter((property) => propertyIds.includes(property.id))
+    : properties;
+  const [propertyGroups, generalCount, generalPreview] = await Promise.all([
+    Promise.all(scopedProperties.map(async (property) => {
+      const propertyWhere: Prisma.DocumentWhereInput = { AND: [documentWhere, { OR: [{ propertyId: property.id }, { unit: { propertyId: property.id } }] }] };
+      const [count, previewRows] = await Promise.all([
+        prisma.document.count({ where: propertyWhere }),
+        prisma.document.findMany({
+          where: propertyWhere,
+          select: { title: true, category: { select: { name: true } } },
+          orderBy: { createdAt: "desc" },
+          take: 3
         })
-      : await prisma.document.findMany({
-          where: {
-            OR: [
-              { permissions: { some: { userId: user.id, canView: true } } },
-              { unitId: await tenantUnitId(user.id), category: { visibleToTenant: true }, scope: { in: ["UNIT", "CONTRACT"] } }
-            ]
-          },
-          include: documentInclude,
-          orderBy: { createdAt: "desc" }
-        });
-  const groupedDocuments = documents.reduce<Array<{ id: string; label: string; documents: typeof documents }>>((groups, document) => {
-    const property = document.property || document.unit?.property;
-    const id = property?.id || "general";
-    const label = property?.name || "Allgemein / ohne Objekt";
-    const group = groups.find((item) => item.id === id);
-    if (group) {
-      group.documents.push(document);
-    } else {
-      groups.push({ id, label, documents: [document] });
+      ]);
+      return {
+        id: property.id,
+        label: property.name,
+        count,
+        preview: previewRows.map((document) => document.category?.name || document.title).join(" · ")
+      };
+    })),
+    prisma.document.count({ where: { AND: [documentWhere, { propertyId: null, unitId: null }] } }),
+    prisma.document.findMany({
+      where: { AND: [documentWhere, { propertyId: null, unitId: null }] },
+      select: { title: true, category: { select: { name: true } } },
+      orderBy: { createdAt: "desc" },
+      take: 3
+    })
+  ]);
+  const groupedDocuments = [
+    ...propertyGroups,
+    {
+      id: "general",
+      label: "Allgemein / ohne Objekt",
+      count: generalCount,
+      preview: generalPreview.map((document) => document.category?.name || document.title).join(" · ")
     }
-    return groups;
-  }, []);
+  ]
+    .filter((group) => group.count > 0)
+    .sort((a, b) => a.label.localeCompare(b.label, "de"));
   return (
     <AppShell role={user.role} userId={user.id} email={user.email} canSwitchView={user.role === Role.ADMIN || Boolean(user.impersonatedByAdminId)}>
       <h1 className="text-3xl font-bold">Dokumentenverwaltung</h1>
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_420px]">
         <div className="grid w-full gap-5">
           {groupedDocuments.map((group) => (
-            <details className="group w-full overflow-hidden rounded-lg border border-line bg-white shadow-sm transition hover:border-accent/40 hover:shadow-md [&:not([open])>div]:hidden" key={group.id}>
-              <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-3 border-b border-line bg-gradient-to-r from-emerald-50 via-white to-sky-50 px-4 py-3">
-                <span className="flex min-w-0 items-center gap-3">
-                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-accent text-lg font-black leading-none text-white shadow-sm">
-                    <span className="transition-transform group-open:rotate-90">›</span>
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block truncate text-lg font-bold">{group.label}</span>
-                    <span className="text-xs font-semibold text-muted">
-                      <span className="group-open:hidden">{group.documents.map((document) => document.category?.name || document.title).slice(0, 3).join(" · ")}</span>
-                      <span className="hidden group-open:inline">Dokumente werden angezeigt</span>
-                    </span>
-                  </span>
-                </span>
-                <span className="rounded-full border border-line bg-white px-3 py-1 text-xs font-semibold text-muted shadow-sm">{group.documents.length} Dokumente</span>
-              </summary>
-              <div className="grid gap-3 bg-white p-3">
-              {group.documents.map((doc) => (
-                <div className="grid w-full gap-3 rounded-md border border-line bg-panel p-3 text-sm md:grid-cols-[104px_minmax(0,1fr)]" key={doc.id}>
-                  <DocumentThumbnail id={doc.id} title={doc.title} mimeType={doc.mimeType} hasFile={Boolean(doc.storagePath)} compact />
-                  <div className="min-w-0">
-                    <div className="break-words font-bold">{doc.title}</div>
-                    <div className="mt-1 flex flex-wrap gap-2 text-xs">
-                      <span className="rounded-full bg-white px-2 py-1 font-semibold text-muted">{doc.status}</span>
-                      {doc.category ? <span className="rounded-full bg-white px-2 py-1 font-semibold text-muted">{doc.category.group} / {doc.category.name}</span> : null}
-                    </div>
-                    <div className="mt-1 text-muted">{doc.unit ? `${doc.unit.property.name} / ${doc.unit.unitNumber}` : doc.property?.name || "Allgemein"}</div>
-                    {user.role === Role.ADMIN ? (
-                      <DocumentAssignmentForm
-                        documentId={doc.id}
-                        propertyId={doc.propertyId || ""}
-                        unitId={doc.unitId || ""}
-                        categoryId={doc.categoryId || ""}
-                        properties={propertyOptions}
-                        units={unitOptions}
-                        categories={categoryOptions}
-                      />
-                    ) : null}
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {doc.storagePath ? (
-                        <a className="button px-3 py-2 text-sm" href={`/api/documents/${doc.id}/download`}>Download</a>
-                      ) : (
-                        <span className="rounded-md border border-line bg-white px-3 py-2 text-sm text-muted">Keine Datei</span>
-                      )}
-                      {user.role === Role.ADMIN ? <DeleteDocumentButton documentId={doc.id} /> : null}
-                    </div>
-                  </div>
-                </div>
-              ))}
-              </div>
-            </details>
+            <LazyDocumentGroup
+              categories={categoryOptions}
+              group={group}
+              isAdmin={user.role === Role.ADMIN}
+              key={group.id}
+              properties={propertyOptions}
+              units={unitOptions}
+            />
           ))}
+          {groupedDocuments.length ? null : <div className="rounded-lg border border-dashed border-line bg-white p-6 text-sm text-muted">Noch keine Dokumente vorhanden.</div>}
         </div>
         {user.role === Role.ADMIN ? (
           <UploadForm endpoint="/api/documents">

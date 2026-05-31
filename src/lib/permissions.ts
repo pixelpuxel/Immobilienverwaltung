@@ -4,8 +4,9 @@ import { prisma } from "./prisma";
 export async function canAccessDocument(user: Pick<User, "id" | "role">, documentId: string, download = false) {
   if (user.role === Role.ADMIN) return true;
   if (user.role === Role.TENANT) {
-    const profile = await prisma.tenantProfile.findUnique({ where: { userId: user.id } });
+    const profile = await prisma.tenantProfile.findUnique({ where: { userId: user.id }, include: { unit: true } });
     const document = await prisma.document.findUnique({ where: { id: documentId }, include: { category: true } });
+    if (profile?.unit?.propertyId && document?.propertyId === profile.unit.propertyId && document.isPropertyImage && !download) return true;
     if (profile?.unitId && document?.unitId === profile.unitId && document.category?.visibleToTenant && document.scope !== "PROPERTY" && !download) return true;
   }
   if (user.role === Role.BROKER) {
@@ -13,12 +14,36 @@ export async function canAccessDocument(user: Pick<User, "id" | "role">, documen
     const document = await prisma.document.findUnique({ where: { id: documentId }, include: { category: true, unit: true } });
     const propertyId = document?.propertyId || document?.unit?.propertyId;
     if (propertyId && propertyIds.includes(propertyId) && document?.isPropertyImage && !download) return true;
+    if (propertyId && propertyIds.includes(propertyId) && isBrokerEssentialDocument(document)) return true;
     if (propertyId && propertyIds.includes(propertyId) && document?.category?.visibleToBroker && !download) return true;
   }
   const permission = await prisma.accessPermission.findUnique({
     where: { userId_documentId: { userId: user.id, documentId } }
   });
   return Boolean(permission?.canView && (!download || permission.canDownload));
+}
+
+export function brokerVisibleDocumentWhere(userId: string, propertyIds: string[]) {
+  return {
+    propertyId: { in: propertyIds },
+    OR: [
+      { isPropertyImage: true },
+      { category: { name: "Grundbuchauszug" } },
+      {
+        permissions: { some: { userId, canView: true } },
+        category: { visibleToBroker: true }
+      }
+    ]
+  };
+}
+
+export function isBrokerEssentialDocument(document: {
+  title?: string | null;
+  filename?: string | null;
+  category?: { name: string | null } | null;
+}) {
+  return document.category?.name === "Grundbuchauszug"
+    || /grundbuch/i.test(`${document.title || ""} ${document.filename || ""}`);
 }
 
 export async function brokerPropertyIds(userId: string) {

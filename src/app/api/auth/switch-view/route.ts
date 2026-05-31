@@ -49,10 +49,13 @@ export async function GET(request: NextRequest) {
         select: {
           firstName: true,
           lastName: true,
+          isCurrent: true,
+          moveInDate: true,
+          moveOutDate: true,
           unit: {
             select: {
               unitNumber: true,
-              property: { select: { name: true } }
+              property: { select: { id: true, name: true } }
             }
           }
         }
@@ -60,10 +63,14 @@ export async function GET(request: NextRequest) {
     },
     orderBy: [{ role: "asc" }, { email: "asc" }]
   });
+  const sortedUsers = users.sort((left, right) => compareSwitchUsers(left, right));
 
   return NextResponse.json({
     adminId: admin.id,
-    users: users.map((user) => ({
+    users: sortedUsers.map((user) => {
+      const propertyName = user.tenantProfile?.unit?.property.name || "Ohne Immobilie";
+      const unitNumber = user.tenantProfile?.unit?.unitNumber || "";
+      return {
       id: user.id,
       email: user.email,
       username: user.username,
@@ -75,9 +82,62 @@ export async function GET(request: NextRequest) {
         ? user.brokerLinks.map((link) => link.property.name).join(", ")
         : user.role === Role.TENANT && user.tenantProfile?.unit
           ? `${user.tenantProfile.unit.property.name} / ${user.tenantProfile.unit.unitNumber}`
-          : ""
-    }))
+          : "",
+      group: user.role === Role.ADMIN
+        ? "Eigentümer"
+        : user.role === Role.BROKER
+          ? "Makler"
+          : `${user.tenantProfile?.isCurrent ? "Aktuelle Mieter" : "Ehemalige Mieter"} - ${propertyName}`,
+      isCurrent: user.tenantProfile?.isCurrent ?? null,
+      sortLabel: `${propertyName} ${unitNumber} ${user.tenantProfile?.lastName || ""} ${user.tenantProfile?.firstName || ""}`
+    };
+    })
   });
+}
+
+function compareSwitchUsers(
+  left: {
+    role: Role;
+    email: string;
+    name: string | null;
+    tenantProfile: null | {
+      firstName: string;
+      lastName: string;
+      isCurrent: boolean;
+      moveInDate: Date | null;
+      unit: null | { unitNumber: string; property: { name: string } };
+    };
+  },
+  right: {
+    role: Role;
+    email: string;
+    name: string | null;
+    tenantProfile: null | {
+      firstName: string;
+      lastName: string;
+      isCurrent: boolean;
+      moveInDate: Date | null;
+      unit: null | { unitNumber: string; property: { name: string } };
+    };
+  }
+) {
+  const roleOrder = (role: Role) => role === Role.ADMIN ? 0 : role === Role.BROKER ? 1 : 2;
+  const byRole = roleOrder(left.role) - roleOrder(right.role);
+  if (byRole !== 0) return byRole;
+  if (left.role === Role.TENANT && right.role === Role.TENANT) {
+    const byCurrent = Number(right.tenantProfile?.isCurrent || false) - Number(left.tenantProfile?.isCurrent || false);
+    if (byCurrent !== 0) return byCurrent;
+    const leftProperty = left.tenantProfile?.unit?.property.name || "";
+    const rightProperty = right.tenantProfile?.unit?.property.name || "";
+    const byProperty = leftProperty.localeCompare(rightProperty, "de", { sensitivity: "base" });
+    if (byProperty !== 0) return byProperty;
+    const byUnit = (left.tenantProfile?.unit?.unitNumber || "").localeCompare(right.tenantProfile?.unit?.unitNumber || "", "de", { numeric: true, sensitivity: "base" });
+    if (byUnit !== 0) return byUnit;
+    const byMoveIn = Number(right.tenantProfile?.moveInDate || 0) - Number(left.tenantProfile?.moveInDate || 0);
+    if (byMoveIn !== 0) return byMoveIn;
+    return `${left.tenantProfile?.lastName || ""} ${left.tenantProfile?.firstName || ""}`.localeCompare(`${right.tenantProfile?.lastName || ""} ${right.tenantProfile?.firstName || ""}`, "de", { sensitivity: "base" });
+  }
+  return (left.name || left.email).localeCompare(right.name || right.email, "de", { sensitivity: "base" });
 }
 
 export async function POST(request: NextRequest) {

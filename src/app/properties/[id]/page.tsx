@@ -6,6 +6,7 @@ import { DocumentThumbnail } from "@/components/DocumentThumbnail";
 import { EditableField } from "@/components/EditableField";
 import { PropertyImageGallery } from "@/components/PropertyImageGallery";
 import { PropertyImageUpload } from "@/components/PropertyImageUpload";
+import { TenancyCalendar } from "@/components/TenancyCalendar";
 import { UploadForm } from "@/components/UploadForm";
 import { requireUser } from "@/lib/auth";
 import { brokerPropertyIds, canAccessDocument, tenantUnitId } from "@/lib/permissions";
@@ -98,7 +99,7 @@ export default async function PropertyDetailPage({ params }: { params: { id: str
               {canEdit ? <span className="rounded-full bg-panel px-3 py-1 text-xs font-semibold text-muted">{propertyImages.length} Bilder</span> : null}
             </div>
             <div className="mt-4">
-              <PropertyImageGallery images={propertyImages.map((image) => ({ id: image.id, title: image.title, isPrimaryImage: image.isPrimaryImage }))} canEdit={canEdit} />
+              <PropertyImageGallery images={propertyImages.map((image) => ({ id: image.id, title: image.title, summary: image.summary || "", isPrimaryImage: image.isPrimaryImage }))} canEdit={canEdit} />
             </div>
             {canEdit ? (
               <div className="mt-4">
@@ -190,6 +191,8 @@ export default async function PropertyDetailPage({ params }: { params: { id: str
               </div>
             )) : <div className="p-4 text-sm text-muted">Noch keine Einheiten angelegt.</div>}
           </section>
+
+          <TenancyCalendar units={property.units} />
 
           <section className="rounded-lg border border-line">
             <div className="border-b border-line p-4 font-bold">Dokumente</div>

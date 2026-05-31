@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { auditLog } from "@/lib/audit";
 import { assertSameOrigin, clientIp, requireApiUser } from "@/lib/auth";
+import { buildDocumentMetadata } from "@/lib/document-metadata";
 import { assertPropertyInPortal, assertUnitInPortal, portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 
@@ -15,7 +16,9 @@ const documentUpdateSchema = z.object({
   unitId: z.string().nullable().optional(),
   categoryId: z.string().nullable().optional(),
   isPropertyImage: z.boolean().optional(),
-  isPrimaryImage: z.boolean().optional()
+  isPrimaryImage: z.boolean().optional(),
+  summary: z.string().nullable().optional(),
+  tags: z.array(z.string()).optional()
 });
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
@@ -50,17 +53,22 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 
   const document = await prisma.document.update({
     where: { id: params.id },
-    data
+    data,
+    include: { property: true, unit: { include: { property: true } }, category: true }
   });
+  const shouldRegenerate = !data.summary && !data.tags && (data.title !== undefined || data.propertyId !== undefined || data.unitId !== undefined || data.categoryId !== undefined);
+  const enrichedDocument = shouldRegenerate
+    ? await prisma.document.update({ where: { id: params.id }, data: buildDocumentMetadata(document) })
+    : document;
   await auditLog({
     userId: user.id,
     action: AuditAction.PROPERTY_CHANGED,
     entity: "Document",
-    entityId: document.id,
+    entityId: enrichedDocument.id,
     ipAddress: clientIp(request),
     detail: data
   });
-  return NextResponse.json(document);
+  return NextResponse.json(enrichedDocument);
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {

@@ -96,7 +96,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       if (!unit?.isSharedHousing) {
         await prisma.tenantProfile.updateMany({
           where: { unitId: profile.unitId, id: { not: profile.id } },
-          data: { isCurrent: false, moveOutDate: new Date() }
+          data: { isCurrent: false, moveOutDate: profile.moveInDate || new Date() }
         });
       }
     }

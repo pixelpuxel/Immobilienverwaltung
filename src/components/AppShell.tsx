@@ -7,6 +7,7 @@ import { roleLabel } from "@/lib/display";
 
 const adminLinks = [
   ["Dashboard", "/dashboard"],
+  ["Suche", "/search"],
   ["Immobilien", "/properties"],
   ["Karte", "/map"],
   ["Dokumente", "/documents"],
@@ -18,6 +19,7 @@ const adminLinks = [
 
 const brokerLinks = [
   ["Dashboard", "/dashboard"],
+  ["Suche", "/search"],
   ["Immobilien", "/broker"],
   ["Karte", "/map"],
   ["Dokumente", "/documents"]
@@ -25,6 +27,7 @@ const brokerLinks = [
 
 const tenantLinks = [
   ["Dashboard", "/dashboard"],
+  ["Suche", "/search"],
   ["Mieterbereich", "/tenant"],
   ["Vertraege", "/contracts"]
 ];

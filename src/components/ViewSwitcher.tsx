@@ -11,6 +11,8 @@ type SwitchUser = {
   name: string | null;
   role: RoleName;
   context: string;
+  group?: string;
+  isCurrent?: boolean | null;
 };
 
 export function ViewSwitcher({ currentUserId, compact = false }: { currentUserId: string; compact?: boolean }) {
@@ -18,6 +20,7 @@ export function ViewSwitcher({ currentUserId, compact = false }: { currentUserId
   const [selectedUserId, setSelectedUserId] = useState(currentUserId);
   const [busy, setBusy] = useState(false);
   const currentUser = users.find((user) => user.id === currentUserId);
+  const groupedUsers = groupUsers(users);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,10 +64,14 @@ export function ViewSwitcher({ currentUserId, compact = false }: { currentUserId
         switchUser(userId);
       }}
     >
-      {users.map((user) => (
-        <option key={user.id} value={user.id}>
-          {viewOptionLabel(user)}
-        </option>
+      {groupedUsers.map((group) => (
+        <optgroup key={group.label} label={group.label}>
+          {group.users.map((user) => (
+            <option key={user.id} value={user.id}>
+              {viewOptionLabel(user)}
+            </option>
+          ))}
+        </optgroup>
       ))}
     </select>
   );
@@ -108,7 +115,22 @@ function viewOptionLabel(user: SwitchUser) {
   const plainLabel = roleLabel(user.role);
   const identity = user.username ? `@${user.username}` : user.email;
   const titleWithIdentity = isSameLabel(title, plainLabel) ? `${label} (${identity})` : `${label}: ${title}`;
-  return user.context ? `${titleWithIdentity} (${user.context})` : titleWithIdentity;
+  const currentMarker = user.role === "TENANT" && user.isCurrent ? "laufend · " : "";
+  return user.context ? `${currentMarker}${titleWithIdentity} (${user.context})` : `${currentMarker}${titleWithIdentity}`;
+}
+
+function groupUsers(users: SwitchUser[]) {
+  const groups: Array<{ label: string; users: SwitchUser[] }> = [];
+  for (const user of users) {
+    const label = user.group || roleLabel(user.role);
+    let group = groups.find((item) => item.label === label);
+    if (!group) {
+      group = { label, users: [] };
+      groups.push(group);
+    }
+    group.users.push(user);
+  }
+  return groups;
 }
 
 function isSameLabel(left: string, right: string) {
