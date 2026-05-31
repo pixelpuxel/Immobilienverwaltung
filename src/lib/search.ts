@@ -56,7 +56,7 @@ export async function globalSearch(user: ScopedUser, query: string) {
         document.category ? `${document.category.group} / ${document.category.name}` : null,
         document.unit ? `${document.unit.property.name} / ${document.unit.unitNumber}` : document.property?.name
       ].filter(Boolean).join(" · "),
-      href: "/documents",
+      href: document.storagePath ? `/api/documents/${document.id}/preview` : `/documents?documentId=${document.id}`,
       badge: document.tags.slice(0, 3).join(", ") || document.status
     })),
     ...tenants.map<SearchResult>((tenant) => ({
