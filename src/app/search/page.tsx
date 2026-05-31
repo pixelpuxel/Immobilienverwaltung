@@ -28,7 +28,7 @@ export default async function SearchPage({
 
   return (
     <AppShell role={user.role} userId={user.id} email={user.email} canSwitchView={user.role === Role.ADMIN || Boolean(user.impersonatedByAdminId)}>
-      <div className="overflow-hidden rounded-lg border border-line bg-[radial-gradient(circle_at_top_left,#e6f7ee_0,#ffffff_38%,#eef4ff_100%)] p-5 shadow-sm">
+      <div className="relative z-20 rounded-lg border border-line bg-[radial-gradient(circle_at_top_left,#e6f7ee_0,#ffffff_38%,#eef4ff_100%)] p-5 shadow-sm">
         <p className="text-sm font-bold uppercase tracking-wide text-accent">Portalweite Suche</p>
         <h1 className="mt-2 text-3xl font-bold">Suche</h1>
         <p className="mt-2 max-w-3xl text-sm text-muted">

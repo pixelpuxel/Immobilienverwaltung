@@ -107,7 +107,7 @@ export function SearchAutocomplete({ defaultQuery = "" }: { defaultQuery?: strin
   }
 
   return (
-    <form className="mt-5 flex flex-col gap-3 sm:flex-row" action="/search" autoComplete="off">
+    <form className="relative z-30 mt-5 flex flex-col gap-3 sm:flex-row" action="/search" autoComplete="off">
       <div ref={wrapperRef} className="relative min-w-0 flex-1">
         <label className="sr-only" htmlFor="global-search">Suchbegriff</label>
         <input
@@ -134,7 +134,7 @@ export function SearchAutocomplete({ defaultQuery = "" }: { defaultQuery?: strin
         {open && trimmedQuery.length >= 2 ? (
           <div
             id="global-search-suggestions"
-            className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 overflow-hidden rounded-lg border border-line bg-white shadow-xl"
+            className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-50 overflow-hidden rounded-lg border border-line bg-white shadow-xl"
             role="listbox"
           >
             {suggestions.length > 0 ? (
