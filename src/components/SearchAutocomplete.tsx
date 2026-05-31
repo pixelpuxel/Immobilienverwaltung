@@ -36,7 +36,7 @@ export function SearchAutocomplete({ defaultQuery = "" }: { defaultQuery?: strin
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [loading, setLoading] = useState(false);
-  const wrapperRef = useRef<HTMLDivElement>(null);
+  const wrapperRef = useRef<HTMLFormElement>(null);
   const trimmedQuery = query.trim();
 
   useEffect(() => {
@@ -107,9 +107,9 @@ export function SearchAutocomplete({ defaultQuery = "" }: { defaultQuery?: strin
   }
 
   return (
-    <form className="relative z-30 mt-5 grid gap-3" action="/search" autoComplete="off">
+    <form ref={wrapperRef} className="relative z-30 mt-5 grid gap-3" action="/search" autoComplete="off">
       <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_10rem]">
-        <div ref={wrapperRef} className="relative min-w-0">
+        <div className="relative min-w-0">
           <label className="sr-only" htmlFor="global-search">Suchbegriff</label>
           <input
             id="global-search"
