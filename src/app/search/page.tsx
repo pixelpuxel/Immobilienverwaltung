@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Role } from "@prisma/client";
 import { AppShell } from "@/components/AppShell";
+import { SearchAutocomplete } from "@/components/SearchAutocomplete";
 import { requireUser } from "@/lib/auth";
 import { globalSearch, type SearchResult } from "@/lib/search";
 
@@ -33,18 +34,7 @@ export default async function SearchPage({
         <p className="mt-2 max-w-3xl text-sm text-muted">
           Durchsucht Immobilien, Einheiten, Dokumente, Mieter, Vertraege und Benutzer, soweit sie fuer deine aktuelle Ansicht freigegeben sind.
         </p>
-        <form className="mt-5 flex flex-col gap-3 sm:flex-row" action="/search">
-          <label className="sr-only" htmlFor="global-search">Suchbegriff</label>
-          <input
-            id="global-search"
-            name="q"
-            defaultValue={query}
-            placeholder="Name, Adresse, Dokument, Mieter, Vertrag ..."
-            autoFocus
-            className="min-h-12 text-base"
-          />
-          <button className="min-h-12 shrink-0 px-6" type="submit">Suchen</button>
-        </form>
+        <SearchAutocomplete defaultQuery={query} />
       </div>
 
       <section className="mt-6">
