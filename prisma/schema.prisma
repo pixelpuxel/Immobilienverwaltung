@@ -53,6 +53,7 @@ model PortalInstance {
   categories  DocumentCategory[]
   templates   ContractTemplate[]
   auditLogs   AuditLog[]
+  apiTokens   ApiToken[]
 }
 
 model User {
@@ -82,7 +83,23 @@ model User {
   brokerValuations BrokerValuation[]
   tenantProfile TenantProfile?
   auditLogs    AuditLog[]
+  apiTokens    ApiToken[]
   portalInstance PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
+}
+
+model ApiToken {
+  id              String          @id @default(cuid())
+  portalInstanceId String?
+  userId          String
+  name            String
+  tokenHash       String          @unique
+  scopes          String[]        @default([])
+  lastUsedAt      DateTime?
+  expiresAt       DateTime?
+  revokedAt       DateTime?
+  createdAt       DateTime        @default(now())
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  portalInstance  PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
 }
 
 model Property {

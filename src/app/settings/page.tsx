@@ -1,6 +1,7 @@
 import { Role } from "@prisma/client";
 import { AccountSettingsForm } from "@/components/AccountSettingsForm";
 import { AppShell } from "@/components/AppShell";
+import { ApiTokenManager } from "@/components/ApiTokenManager";
 import { BackupTools } from "@/components/BackupTools";
 import { CategoryVisibilityForm } from "@/components/CategoryVisibilityForm";
 import { JsonForm } from "@/components/JsonForm";
@@ -14,9 +15,14 @@ export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   const user = await requireUser([Role.ADMIN]);
-  const [categories, ownerProfile] = await Promise.all([
+  const [categories, ownerProfile, apiTokens] = await Promise.all([
     prisma.documentCategory.findMany({ orderBy: [{ group: "asc" }, { name: "asc" }] }),
-    prisma.user.findUniqueOrThrow({ where: { id: user.id } })
+    prisma.user.findUniqueOrThrow({ where: { id: user.id } }),
+    prisma.apiToken.findMany({
+      where: { user: user.portalInstanceId ? { portalInstanceId: user.portalInstanceId } : {} },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, name: true, scopes: true, lastUsedAt: true, expiresAt: true, revokedAt: true, createdAt: true }
+    })
   ]);
   return (
     <AppShell role={user.role} userId={user.id} email={user.email} canSwitchView={user.role === Role.ADMIN || Boolean(user.impersonatedByAdminId)}>
@@ -50,6 +56,13 @@ export default async function SettingsPage() {
         </section>
         <div className="grid gap-6">
           <BackupTools />
+          <ApiTokenManager initialTokens={apiTokens.map((token) => ({
+            ...token,
+            createdAt: token.createdAt.toISOString(),
+            lastUsedAt: token.lastUsedAt?.toISOString() || null,
+            expiresAt: token.expiresAt?.toISOString() || null,
+            revokedAt: token.revokedAt?.toISOString() || null
+          }))} />
           {user.platformAdmin ? <PortalInstanceManager /> : null}
           <AccountSettingsForm userId={user.id} profile={ownerProfile} />
           <OwnerProfileForm userId={user.id} profile={ownerProfile} />
