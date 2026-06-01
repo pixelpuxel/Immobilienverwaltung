@@ -455,6 +455,34 @@ Body:
 GET /api/integrations/v1/contracts?tenantId=<TENANT_ID>
 ```
 
+### Vertrag erzeugen
+
+Scope: `write:contracts`
+
+```http
+POST /api/integrations/v1/contracts
+```
+
+Body:
+
+```json
+{
+  "tenantProfileId": "cm...",
+  "unitId": "cm...",
+  "templateId": "cm..."
+}
+```
+
+`templateId` ist optional. Ohne Vorlage erzeugt das Portal den internen Standardvertrag.
+
+### Vertragsvorlagen listen
+
+Scope: `read:contracts`
+
+```http
+GET /api/integrations/v1/templates
+```
+
 ### Suche
 
 ```http
@@ -598,6 +626,8 @@ GET  /api/integrations/v1/documents/:id/download
 GET  /api/integrations/v1/tenants
 PATCH /api/integrations/v1/tenants/:id
 GET  /api/integrations/v1/contracts
+POST /api/integrations/v1/contracts
+GET  /api/integrations/v1/templates
 GET  /api/integrations/v1/search
 GET  /api/integrations/v1/backup/export
 POST /api/integrations/v1/backup/import

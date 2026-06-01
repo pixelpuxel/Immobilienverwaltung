@@ -5,6 +5,7 @@ import { useState } from "react";
 const scopeGroups = [
   ["Lesen", ["read:properties", "read:units", "read:documents", "download:documents", "read:tenants", "read:contracts"]],
   ["Schreiben", ["write:properties", "write:units", "write:documents", "write:tenants"]],
+  ["Vertraege", ["write:contracts"]],
   ["Backup", ["backup:export", "backup:import"]]
 ];
 
@@ -124,4 +125,3 @@ export function ApiTokenManager({ initialTokens }: { initialTokens: ApiTokenRow[
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("de-DE", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
 }
-
