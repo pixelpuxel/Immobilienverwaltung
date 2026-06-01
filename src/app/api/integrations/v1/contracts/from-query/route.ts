@@ -9,7 +9,7 @@ import { portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 
 const schema = z.object({
-  query: z.string().trim().min(1),
+  query: z.string().trim(),
   dryRun: z.boolean().optional().default(false)
 });
 
@@ -19,7 +19,27 @@ export async function POST(request: NextRequest) {
   const forbidden = requireAdminIntegration(user);
   if (forbidden) return forbidden;
   const body = schema.safeParse(await request.json());
-  if (!body.success) return integrationError("BAD_REQUEST", "Bitte Suchbegriff uebergeben.", 400);
+  if (!body.success) return integrationError("BAD_REQUEST", "Ungueltige Anfrage.", 400);
+  if (!body.data.query) {
+    return NextResponse.json({
+      ok: false,
+      status: "missing_query",
+      reply: [
+        "Bitte gib einen Mieter an.",
+        "",
+        "Beispiele:",
+        "/vertrag Max",
+        "/vertrag Alina",
+        "",
+        "Ich suche dann den aktuellen Mieter, waehle die passende Vorlage und erzeuge den Mietvertrag im Portal."
+      ].join("\n"),
+      debug: {
+        query: "",
+        dryRun: body.data.dryRun,
+        expectedInput: "/vertrag Name"
+      }
+    });
+  }
 
   const tenants = await prisma.tenantProfile.findMany({
     where: { user: portalWhere(user), isCurrent: true },
@@ -46,7 +66,7 @@ export async function POST(request: NextRequest) {
         tenantCount: tenants.length,
         availableTenants: tenants.slice(0, 20).map(compactTenant)
       }
-    }, { status: 404 });
+    });
   }
 
   if (matches.length > 1) {
@@ -58,7 +78,7 @@ export async function POST(request: NextRequest) {
         query: body.data.query,
         matches: matches.slice(0, 20).map(compactTenant)
       }
-    }, { status: 409 });
+    });
   }
 
   const tenant = matches[0];
@@ -68,7 +88,7 @@ export async function POST(request: NextRequest) {
       status: "tenant_without_unit",
       reply: `Bei ${tenant.firstName} ${tenant.lastName} ist keine Einheit hinterlegt.`,
       debug: { query: body.data.query, tenant: compactTenant(tenant) }
-    }, { status: 409 });
+    });
   }
 
   const templates = await prisma.contractTemplate.findMany({
