@@ -46,7 +46,7 @@ export function CategoryVisibilityForm({
   }
 
   return (
-    <div className="grid gap-2 sm:grid-cols-[92px_92px_minmax(70px,1fr)] sm:items-center">
+    <div className="grid gap-2 sm:grid-cols-[minmax(92px,110px)_minmax(92px,110px)_minmax(90px,1fr)] sm:items-center">
       <Toggle
         checked={broker}
         disabled={saving}

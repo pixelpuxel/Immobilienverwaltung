@@ -41,13 +41,13 @@ export default async function SettingsPage() {
             <div className="font-bold">Dokumentenkategorien</div>
             <p className="mt-1 text-sm text-muted">Eigentümer sehen alles. Hier steuerst du, welche Dokumentarten Makler oder Mieter grundsätzlich sehen dürfen.</p>
           </div>
-          <div className="hidden border-b border-line bg-panel px-4 py-2 text-xs font-bold uppercase text-muted md:grid md:grid-cols-[150px_minmax(180px,1fr)_290px]">
+          <div className="hidden border-b border-line bg-panel px-4 py-2 text-xs font-bold uppercase text-muted md:grid md:grid-cols-[130px_minmax(220px,1fr)_minmax(260px,auto)]">
             <div>Bereich</div>
             <div>Dokumentart</div>
             <div className="text-right">Sichtbar für</div>
           </div>
           {categories.map((category) => (
-            <div className="grid gap-3 border-b border-line p-4 text-sm md:grid-cols-[150px_minmax(180px,1fr)_290px] md:items-center" key={category.id}>
+            <div className="grid gap-3 border-b border-line p-4 text-sm md:grid-cols-[130px_minmax(220px,1fr)_minmax(260px,auto)] md:items-center" key={category.id}>
               <div className="font-semibold">{category.group}</div>
               <div>{category.name}</div>
               <CategoryVisibilityForm category={category} />

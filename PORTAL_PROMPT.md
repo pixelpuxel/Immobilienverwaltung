@@ -114,11 +114,17 @@ docker compose up -d --build
 - Mieter können minimal angelegt werden: Benutzername oder Vorname oder Nachname reicht; weitere Daten dürfen später ergänzt werden. Fehlermeldungen beim Speichern müssen konkrete Feldhinweise enthalten.
 - Einheiten enthalten Kaltmiete, Nebenkosten und Warmmiete.
 - Einheiten und Mieterprofile enthalten zusätzlich Tiefgarage/Garagenmiete.
+- Tiefgarage/Garagenmiete soll in der Oberfläche nicht als reines Freitextfeld erscheinen, sondern über sinnvolle Standardwerte auswählbar sein. Individuelle Beträge bleiben möglich, wo Vertragsdaten manuell ergänzt werden.
 - Einheiten können als WG / Mehrfachvermietung markiert werden. Dann dürfen mehrere laufende Mieterprofile gleichzeitig derselben Einheit zugeordnet sein; ohne WG-Kennzeichen beendet ein neuer laufender Mieter die bisherigen laufenden Mieter derselben Einheit.
 - Ein Mieterprofil enthält Einzug, Auszug, ein Kennzeichen `laufend`, Zahlungsziel, Vermieterbankverbindung, Mietgegenstand, Gemeinschaftsräume, Staffelmiete, Vertragsnotizen und besondere Vereinbarungen.
 - Vertragsplatzhalter enthalten `{{garage_rent}}` für die Tiefgarage und `{{cold_rent_total}}` für Kaltmiete inklusive Tiefgarage.
 - Wird ein Mieter für eine Einheit auf `laufend` gesetzt, werden andere laufende Mieter derselben Einheit beendet.
 - Wohnungsgeberbestätigung muss mindestens Wohnungsgeber, Einzugsdatum, strukturierte Anschrift der Wohnung und meldepflichtige Personen enthalten.
+- Wohnungsgeberbestätigung wird als einseitiges Formular erzeugt; Ort/Datum kommen aus den Eigentümer-/Objektdaten. Eigentümer können eine JPG-Unterschrift hinterlegen, die beim Generieren in das PDF gesetzt wird.
+- Der Mietverlauf muss als Jahreskalender pro Einheit nutzbar sein: Mieter-Namen und belegte Tage sind klickbar und springen zur Benutzerverwaltung; vorhandene Vor-/Folgejahre sind über Pfeiltasten erreichbar.
+- Dokumente können in der Dokumentenverwaltung nicht nur zugeordnet, sondern auch mit sinnvollem Vorschlag umbenannt werden. Dabei wird der geschützte Dateipfad im lokalen Speicher mit umbenannt.
+- Die Benutzeransicht ist ein eigenständiger Umschalter oben in der Oberfläche; Instanzwechsel erfolgen ausschließlich über Einstellungen/Portal-Instanzen.
+- API-Zugänge heißen in der Oberfläche API-Token. Technisch werden sie weiterhin als Bearer-Token im Authorization-Header gesendet.
 
 ## Docker / Betrieb
 
@@ -151,7 +157,7 @@ docker compose up -d --build
 - `/dashboard`
 - `/properties`
 - `/properties/[id]`
-- `/map` als OpenStreetMap-Kartenansicht mit klickbaren Immobilien-Pins
+- `/map` als OpenStreetMap-Kartenansicht mit klickbaren Immobilien-Pins, Mausrad-Zoom, Drag und Zwei-Finger-Zoom auf Mobilgeräten
 - `/documents`
 - `/users`
 - `/broker` als Immobilienbereich für Makler

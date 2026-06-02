@@ -146,7 +146,17 @@ export default async function TenantPage() {
           <label className="flex items-center gap-2"><input name="isCurrent" type="checkbox" defaultChecked={profile?.isCurrent ?? true} /> laufend</label>
           <label>Mietbeginn<input name="leaseStartDate" type="date" defaultValue={toDateInput(profile?.leaseStartDate)} /></label>
           <label>Miethoehe<input name="rentAmount" type="number" step="0.01" defaultValue={profile?.rentAmount?.toString()} /></label>
-          <label>Tiefgarage<input name="garageRent" type="number" step="0.01" defaultValue={profile?.garageRent?.toString()} /></label>
+          <label>Tiefgarage<select name="garageRent" defaultValue={profile?.garageRent?.toString() || ""}>
+            <option value="">Keine Angabe</option>
+            <option value="0">Keine Tiefgarage / 0 EUR</option>
+            <option value="50">50 EUR</option>
+            <option value="75">75 EUR</option>
+            <option value="80">80 EUR</option>
+            <option value="90">90 EUR</option>
+            <option value="100">100 EUR</option>
+            <option value="120">120 EUR</option>
+            <option value="150">150 EUR</option>
+          </select></label>
           <label>Nebenkosten<input name="serviceCharges" type="number" step="0.01" defaultValue={profile?.serviceCharges?.toString()} /></label>
           <label>Kaution<input name="deposit" type="number" step="0.01" defaultValue={profile?.deposit?.toString()} /></label>
           <label>Anzahl Bewohner<input name="occupantCount" type="number" defaultValue={profile?.occupantCount?.toString()} /></label>

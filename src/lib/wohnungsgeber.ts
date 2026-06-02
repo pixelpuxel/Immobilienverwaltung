@@ -32,6 +32,7 @@ export async function generateWohnungsgeberbestaetigung(input: { tenantProfileId
   await fs.mkdir(env.contractsPath, { recursive: true });
   const baseName = safeFilename(`Wohnungsgeberbestaetigung-${tenant.lastName}-${tenant.unit.unitNumber}-${Date.now()}`);
   const storagePath = path.join(env.contractsPath, `${baseName}.pdf`);
+  const signature = owner?.ownerSignaturePath ? await readJpegSignature(owner.ownerSignaturePath).catch(() => null) : null;
   await fs.writeFile(storagePath, createWohnungsgeberPdf({
     tenantName: `${tenant.firstName} ${tenant.lastName}`,
     address: formatPropertyAddress(tenant.unit.property),
@@ -39,7 +40,8 @@ export async function generateWohnungsgeberbestaetigung(input: { tenantProfileId
     moveInDate: formatDate(tenant.moveInDate),
     ownerName: owner?.contactPerson || owner?.name || "Eigentümer / Verwaltung",
     ownerAddress: owner?.contactAddress || owner?.contactEmail || owner?.email || "",
-    city: "Musterstadt"
+    city: cityFromAddress(owner?.contactAddress) || tenant.unit.property.city || "Musterstadt",
+    signature
   }), { flag: "wx" });
   const stat = await fs.stat(storagePath);
   const document = await prisma.document.create({
@@ -87,6 +89,7 @@ function createWohnungsgeberPdf(values: {
   ownerName: string;
   ownerAddress: string;
   city: string;
+  signature: PdfImage | null;
 }) {
   const page1 = [
     line("Wohnungsgeberbestätigung nach § 19 des Bundesmeldegesetzes", 42, 800, 13, true),
@@ -122,54 +125,33 @@ function createWohnungsgeberPdf(values: {
     line("Ein Verstoß stellt eine Ordnungswidrigkeit dar (§ 54 i.V.m. § 19 BMG).", 42, 94, 9),
     field(`${values.city}, ${new Intl.DateTimeFormat("de-DE").format(new Date())}`, 42, 58, 10),
     line("Ort, Datum", 42, 43, 8),
+    values.signature ? "q 120 0 0 42 330 63 cm /Sig1 Do Q" : "",
     field("", 310, 58, 10),
     line("Unterschrift des Wohnungsgebers oder der beauftragten Person", 310, 43, 8)
   ].join("\n");
-  const page2 = legalPage("§ 19 Mitwirkung des Wohnungsgebers", [
-    "(1) Der Wohnungsgeber ist verpflichtet, bei der Anmeldung mitzuwirken. Hierzu hat der Wohnungsgeber",
-    "oder eine von ihm beauftragte Person der meldepflichtigen Person den Einzug schriftlich oder gegenüber",
-    "der Meldebehörde elektronisch innerhalb der gesetzlichen Frist zu bestätigen.",
-    "",
-    "(2) Verweigert der Wohnungsgeber die Bestätigung oder erhält die meldepflichtige Person sie nicht",
-    "rechtzeitig, so hat die meldepflichtige Person dies der Meldebehörde unverzüglich mitzuteilen.",
-    "",
-    "(3) Die Bestätigung des Wohnungsgebers enthält folgende Daten:",
-    "1. Name und Anschrift des Wohnungsgebers und, wenn dieser nicht Eigentümer ist, auch den Namen",
-    "   und die Anschrift des Eigentümers,",
-    "2. Einzugsdatum,",
-    "3. Anschrift der Wohnung sowie",
-    "4. Namen der meldepflichtigen Personen.",
-    "",
-    "(6) Es ist verboten, eine Wohnungsanschrift für eine Anmeldung anzubieten oder zur Verfügung zu",
-    "stellen, obwohl ein tatsächlicher Bezug der Wohnung weder stattfindet noch beabsichtigt ist."
-  ]);
-  const page3 = legalPage("Information gemäß Artikel 13 DSGVO im Zusammenhang mit Wohnungsgeberbestätigungen", [
-    "Die Datenverarbeitung erfolgt zur Erfüllung der Mitwirkungspflicht des Wohnungsgebers nach § 19",
-    "Bundesmeldegesetz. Verantwortlich ist die zuständige Meldebehörde der Stadt Musterstadt.",
-    "",
-    "Die Daten werden zur Durchführung des Meldeverfahrens verarbeitet. Betroffene Personen haben",
-    "nach Maßgabe der DSGVO Rechte auf Auskunft, Berichtigung, Löschung, Einschränkung der Verarbeitung",
-    "und Beschwerde bei der zuständigen Datenschutzaufsicht.",
-    "",
-    "Pflicht zur Angabe der Daten: Gemäß § 19 BMG ist der Wohnungsgeber verpflichtet, bei der Anmeldung",
-    "mitzuwirken und die hierfür erforderlichen personenbezogenen Daten anzugeben."
-  ]);
-  return createPdf([page1, page2, page3]);
+  return createPdf([page1], values.signature);
 }
 
-function createPdf(pageStreams: string[]) {
+type PdfImage = { width: number; height: number; bytes: Buffer };
+
+function createPdf(pageStreams: string[], image: PdfImage | null = null) {
   const pageObjectIds = pageStreams.map((_, index) => 3 + index * 2);
   const contentObjectIds = pageStreams.map((_, index) => 4 + index * 2);
   const fontObjectId = 3 + pageStreams.length * 2;
+  const imageObjectId = image ? fontObjectId + 1 : null;
   const objects = [
     `<< /Type /Catalog /Pages 2 0 R >>`,
     `<< /Type /Pages /Kids [${pageObjectIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pageStreams.length} >>`
   ];
   for (let index = 0; index < pageStreams.length; index += 1) {
-    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 ${fontObjectId} 0 R >> >> /Contents ${contentObjectIds[index]} 0 R >>`);
+    const xObject = imageObjectId && index === 0 ? ` /XObject << /Sig1 ${imageObjectId} 0 R >>` : "";
+    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 ${fontObjectId} 0 R >>${xObject} >> /Contents ${contentObjectIds[index]} 0 R >>`);
     objects.push(`<< /Length ${Buffer.byteLength(pageStreams[index], "latin1")} >>\nstream\n${pageStreams[index]}\nendstream`);
   }
   objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>");
+  if (image && imageObjectId) {
+    objects.push(`<< /Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${image.bytes.length} >>\nstream\n${image.bytes.toString("latin1")}\nendstream`);
+  }
   let pdf = "%PDF-1.4\n";
   const offsets = [0];
   objects.forEach((object, index) => {
@@ -203,9 +185,29 @@ function field(text: string, x: number, y: number, size = 10) {
   ].join("\n");
 }
 
-function legalPage(title: string, lines: string[]) {
-  return [
-    line(title, 42, 800, 12, true),
-    ...lines.map((text, index) => line(text, 42, 760 - index * 20, 9))
-  ].join("\n");
+function cityFromAddress(value?: string | null) {
+  if (!value) return "";
+  const match = value.match(/\b\d{5}\s+([^,\n]+)/);
+  return match?.[1]?.trim() || "";
+}
+
+async function readJpegSignature(storagePath: string): Promise<PdfImage | null> {
+  const bytes = await fs.readFile(storagePath);
+  const size = jpegSize(bytes);
+  return size ? { ...size, bytes } : null;
+}
+
+function jpegSize(bytes: Buffer) {
+  if (bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
+  let offset = 2;
+  while (offset < bytes.length) {
+    if (bytes[offset] !== 0xff) return null;
+    const marker = bytes[offset + 1];
+    const length = bytes.readUInt16BE(offset + 2);
+    if (marker >= 0xc0 && marker <= 0xc3) {
+      return { height: bytes.readUInt16BE(offset + 5), width: bytes.readUInt16BE(offset + 7) };
+    }
+    offset += 2 + length;
+  }
+  return null;
 }

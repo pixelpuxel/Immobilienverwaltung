@@ -39,6 +39,9 @@ export function TenancyCalendar({ units }: { units: CalendarUnit[] }) {
     return Array.from(available).sort((a, b) => b - a);
   }, [currentYear, units]);
   const [selectedYear, setSelectedYear] = useState(currentYear);
+  const currentIndex = years.indexOf(selectedYear);
+  const newerYear = currentIndex > 0 ? years[currentIndex - 1] : null;
+  const olderYear = currentIndex >= 0 && currentIndex < years.length - 1 ? years[currentIndex + 1] : null;
   return (
     <section className="rounded-lg border border-line p-4 sm:p-5">
       <div className="grid gap-1 sm:flex sm:items-end sm:justify-between">
@@ -65,7 +68,7 @@ export function TenancyCalendar({ units }: { units: CalendarUnit[] }) {
                 <span className="text-xs font-semibold text-muted">{unit.tenants.length} Mieterprofile</span>
               </summary>
               <div className="grid gap-4 p-4">
-                <YearCalendar tenants={unit.tenants} year={selectedYear} />
+                <YearCalendar onYearChange={setSelectedYear} olderYear={olderYear} newerYear={newerYear} tenants={unit.tenants} year={selectedYear} />
               </div>
             </details>
           );
@@ -75,7 +78,19 @@ export function TenancyCalendar({ units }: { units: CalendarUnit[] }) {
   );
 }
 
-function YearCalendar({ tenants, year }: { tenants: CalendarTenant[]; year: number }) {
+function YearCalendar({
+  newerYear,
+  olderYear,
+  onYearChange,
+  tenants,
+  year
+}: {
+  newerYear: number | null;
+  olderYear: number | null;
+  onYearChange: (year: number) => void;
+  tenants: CalendarTenant[];
+  year: number;
+}) {
   const tenantColors = new Map(tenants.map((tenant, index) => [tenant.id, colors[index % colors.length]]));
   const activeTenants = tenants.filter((tenant) => overlapsYear(tenant, year));
   return (
@@ -84,10 +99,10 @@ function YearCalendar({ tenants, year }: { tenants: CalendarTenant[]; year: numb
         <h3 className="font-bold">{year}</h3>
         <div className="flex flex-wrap gap-2 text-xs">
           {activeTenants.map((tenant) => (
-            <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 font-semibold text-muted" key={tenant.id}>
+            <a className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 font-semibold text-muted hover:text-accent" href={`/users#user-${tenant.id}`} key={tenant.id}>
               <span className={`h-2.5 w-2.5 rounded-full ${tenantColors.get(tenant.id)}`} />
               {tenantName(tenant)}
-            </span>
+            </a>
           ))}
           {activeTenants.length ? null : <span className="text-muted">keine belegten Zeitraeume</span>}
         </div>
@@ -101,8 +116,10 @@ function YearCalendar({ tenants, year }: { tenants: CalendarTenant[]; year: numb
               const valid = day <= daysInMonth(year, monthIndex);
               const occupyingTenant = valid ? tenantForDay(tenants, year, monthIndex, day) : null;
               return (
-                <div
+                <a
+                  aria-label={valid ? `${day}.${monthIndex + 1}.${year}${occupyingTenant ? ` - ${tenantName(occupyingTenant)}` : " - frei"}` : undefined}
                   className={`h-3 min-w-2 rounded-[2px] ${!valid ? "bg-transparent" : occupyingTenant ? tenantColors.get(occupyingTenant.id) : "bg-white"}`}
+                  href={occupyingTenant ? `/users#user-${occupyingTenant.id}` : undefined}
                   key={day}
                   title={valid ? `${day}.${monthIndex + 1}.${year}${occupyingTenant ? ` - ${tenantName(occupyingTenant)}` : " - frei"}` : ""}
                 />
@@ -110,6 +127,10 @@ function YearCalendar({ tenants, year }: { tenants: CalendarTenant[]; year: numb
             })}
           </div>
         ))}
+      </div>
+      <div className="mt-3 flex justify-between gap-2">
+        {olderYear ? <button className="button-secondary px-3 py-2 text-xs" type="button" onClick={() => onYearChange(olderYear)}>‹ {olderYear}</button> : <span />}
+        {newerYear ? <button className="button-secondary px-3 py-2 text-xs" type="button" onClick={() => onYearChange(newerYear)}>{newerYear} ›</button> : <span />}
       </div>
     </div>
   );

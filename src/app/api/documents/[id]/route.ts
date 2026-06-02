@@ -1,15 +1,18 @@
 import { AuditAction, DocumentScope, DocumentStatus, Role } from "@prisma/client";
 import fs from "fs/promises";
+import path from "path";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { auditLog } from "@/lib/audit";
 import { assertSameOrigin, clientIp, requireApiUser } from "@/lib/auth";
 import { buildDocumentMetadata } from "@/lib/document-metadata";
+import { safeFilename } from "@/lib/files";
 import { assertPropertyInPortal, assertUnitInPortal, portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 
 const documentUpdateSchema = z.object({
   title: z.string().min(1).optional(),
+  filename: z.string().min(1).optional(),
   status: z.nativeEnum(DocumentStatus).optional(),
   scope: z.nativeEnum(DocumentScope).optional(),
   propertyId: z.string().nullable().optional(),
@@ -34,6 +37,11 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   if (!existing) return NextResponse.json({ error: "Dokument wurde nicht gefunden." }, { status: 404 });
 
   const data = normalizeEmptyStrings(body.data);
+  const rename = data.filename ? await renameStoredFile(existing.storagePath, existing.filename, data.filename) : null;
+  if (rename) {
+    data.filename = rename.filename;
+    Object.assign(data, { storagePath: rename.storagePath });
+  }
   if (data.unitId) {
     const unit = await prisma.unit.findFirst({ where: { id: data.unitId, property: { portalInstanceId: user.portalInstanceId } } });
     if (unit) data.propertyId = unit.propertyId;
@@ -101,4 +109,20 @@ function normalizeEmptyStrings(data: z.infer<typeof documentUpdateSchema>) {
     if (normalized[key] === "") normalized[key] = null;
   }
   return normalized;
+}
+
+async function renameStoredFile(storagePath: string, currentFilename: string, requestedFilename: string) {
+  const safeRequested = safeDocumentFilename(requestedFilename, currentFilename);
+  if (safeRequested === currentFilename) return null;
+  const directory = path.dirname(storagePath);
+  const nextStoragePath = path.join(directory, `${Date.now()}-${safeFilename(safeRequested)}`);
+  await fs.rename(storagePath, nextStoragePath);
+  return { filename: safeRequested, storagePath: nextStoragePath };
+}
+
+function safeDocumentFilename(requested: string, current: string) {
+  const currentExt = path.extname(current);
+  const requestedExt = path.extname(requested);
+  const filename = requestedExt ? requested : `${requested}${currentExt}`;
+  return safeFilename(filename);
 }

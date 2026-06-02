@@ -2,7 +2,7 @@
 
 ## Ziel
 
-N8N soll das Immobilienportal automatisiert ansprechen koennen, ohne sich wie ein Browser per Login-Formular und Session-Cookie anmelden zu muessen. Dafuer sollte das Portal eine stabile, dokumentierte Integrations-API mit Bearer Tokens bekommen.
+N8N soll das Immobilienportal automatisiert ansprechen koennen, ohne sich wie ein Browser per Login-Formular und Session-Cookie anmelden zu muessen. Dafuer hat das Portal eine stabile, dokumentierte Integrations-API mit API-Token. Die Token werden technisch als Bearer-Token im `Authorization`-Header gesendet.
 
 Die bestehende Web-API bleibt fuer die Oberflaeche erhalten. Fuer N8N wird eine eigene Integrationsschicht empfohlen:
 
@@ -635,7 +635,7 @@ POST /api/integrations/v1/backup/import
 
 Der Import-Endpunkt ist aus Sicherheitsgruenden zunaechst nur als vorbereitete Route vorhanden und antwortet mit `501 NOT_IMPLEMENTED`. Fuer produktive Imports bleibt vorerst der bestehende Cookie-Endpunkt `/api/backup/import` die freigeschaltete Variante.
 
-API-Tokens koennen in der Oberflaeche unter `Einstellungen -> N8N API-Tokens` erstellt und widerrufen werden.
+API-Token koennen in der Oberflaeche unter `Einstellungen -> N8N API-Tokens` erstellt und widerrufen werden.
 
 ## Umsetzungsvorschlag in Etappen
 

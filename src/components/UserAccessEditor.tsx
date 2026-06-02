@@ -59,7 +59,7 @@ export function UserAccessEditor({
       setMessage(body.error || "Rechte konnten nicht gespeichert werden.");
       return;
     }
-    setMessage("Rechte gespeichert.");
+    setMessage("Änderungen übernommen.");
     refreshCurrentView(router);
   }
 
@@ -96,7 +96,7 @@ export function UserAccessEditor({
         </>
       )}
       {message ? <div className="text-xs text-muted">{message}</div> : null}
-      <button className="px-3 py-2 text-sm" type="submit">Rechte speichern</button>
+      <button className="px-3 py-2 text-sm" type="submit">Änderungen übernehmen</button>
     </form>
   );
 }

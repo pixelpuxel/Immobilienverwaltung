@@ -49,7 +49,7 @@ export default async function UsersPage() {
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_420px]">
         <div className="rounded-lg border border-line">
           {users.map((item) => (
-            <div key={item.id} className="grid gap-4 border-b border-line p-4 text-sm lg:grid-cols-[minmax(0,1fr)_minmax(260px,360px)]">
+            <div id={`user-${item.id}`} key={item.id} className="scroll-mt-24 grid gap-4 border-b border-line p-4 text-sm lg:grid-cols-[minmax(0,1fr)_minmax(260px,360px)]">
               <div>
                 <strong>{item.name || item.email}</strong>
                 <div className="mt-2 flex flex-wrap gap-2 text-xs">

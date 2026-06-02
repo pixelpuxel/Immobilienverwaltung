@@ -2,7 +2,7 @@
 
 Diese Datei beschreibt die wichtigsten internen HTTP-Endpunkte des Portals. Die API ist aktuell vor allem fuer Admin-Werkzeuge, Backup/Restore und interne UI-Funktionen gedacht. Beispiele sind mit `curl` formuliert.
 
-Fuer N8N und andere externe Automationen ist eine eigene Bearer-Token-Integrations-API empfohlen. Der Vorschlag und die geplanten Endpunkte stehen in [N8N_API.md](./N8N_API.md).
+Fuer N8N und andere externe Automationen gibt es eine eigene API-Token-Integrations-API. Die Token werden technisch als Bearer-Token gesendet; Endpunkte und Beispiele stehen in [N8N_API.md](./N8N_API.md).
 
 ## Basis-URLs
 

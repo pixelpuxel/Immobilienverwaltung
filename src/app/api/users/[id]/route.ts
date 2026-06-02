@@ -20,7 +20,8 @@ const ownerProfileSchema = z.object({
   ownerBankName: z.string().optional(),
   ownerIban: z.string().optional(),
   ownerTaxId: z.string().optional(),
-  ownerNotes: z.string().optional()
+  ownerNotes: z.string().optional(),
+  ownerSignaturePath: z.string().optional()
 });
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
@@ -67,7 +68,8 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       ownerBankName: textField(body.data, "ownerBankName", target.ownerBankName),
       ownerIban: textField(body.data, "ownerIban", target.ownerIban),
       ownerTaxId: textField(body.data, "ownerTaxId", target.ownerTaxId),
-      ownerNotes: textField(body.data, "ownerNotes", target.ownerNotes)
+      ownerNotes: textField(body.data, "ownerNotes", target.ownerNotes),
+      ownerSignaturePath: textField(body.data, "ownerSignaturePath", target.ownerSignaturePath)
     }
   });
   await auditLog({
@@ -141,6 +143,7 @@ function safeUser(user: {
   ownerIban: string | null;
   ownerTaxId: string | null;
   ownerNotes: string | null;
+  ownerSignaturePath?: string | null;
   role: Role;
   active: boolean;
 }) {
@@ -157,6 +160,7 @@ function safeUser(user: {
     ownerIban: user.ownerIban,
     ownerTaxId: user.ownerTaxId,
     ownerNotes: user.ownerNotes,
+    ownerSignaturePath: user.ownerSignaturePath || null,
     role: user.role,
     active: user.active
   };

@@ -102,7 +102,7 @@ export function TenantCreateForm({ units, defaultUnitId = "", compact = false }:
           <label>Einzugsdatum<input name="moveInDate" type="date" /></label>
           <label>Mietbeginn<input name="leaseStartDate" type="date" /></label>
           <label>Kaltmiete<input name="rentAmount" inputMode="decimal" value={rentAmount} onChange={(event) => setRentAmount(event.target.value)} /></label>
-          <label>Tiefgarage<input name="garageRent" inputMode="decimal" value={garageRent} onChange={(event) => setGarageRent(event.target.value)} /></label>
+          <GarageRentField value={garageRent} onChange={setGarageRent} />
           <label>Nebenkosten<input name="serviceCharges" inputMode="decimal" value={serviceCharges} onChange={(event) => setServiceCharges(event.target.value)} /></label>
           <label>Kaution<input name="deposit" inputMode="decimal" value={deposit} onChange={(event) => setDeposit(event.target.value)} /></label>
           <label>Anzahl Bewohner<input name="occupantCount" inputMode="numeric" /></label>
@@ -119,6 +119,30 @@ export function TenantCreateForm({ units, defaultUnitId = "", compact = false }:
       </details>
       <button type="submit" disabled={busy}>{busy ? "Speichert..." : "Mieter anlegen"}</button>
     </form>
+  );
+}
+
+const garageRentOptions = ["", "0", "50", "75", "80", "90", "100", "120", "150"];
+
+function GarageRentField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const isCustom = value && !garageRentOptions.includes(value);
+  return (
+    <label>
+      Tiefgarage
+      <select value={isCustom ? "__custom__" : value} onChange={(event) => onChange(event.target.value === "__custom__" ? value : event.target.value)}>
+        <option value="">Keine Angabe</option>
+        <option value="0">Keine Tiefgarage / 0 EUR</option>
+        <option value="50">50 EUR</option>
+        <option value="75">75 EUR</option>
+        <option value="80">80 EUR</option>
+        <option value="90">90 EUR</option>
+        <option value="100">100 EUR</option>
+        <option value="120">120 EUR</option>
+        <option value="150">150 EUR</option>
+        <option value="__custom__">Anderer Betrag</option>
+      </select>
+      <input name="garageRent" inputMode="decimal" value={value} onChange={(event) => onChange(event.target.value)} placeholder="Betrag in EUR" />
+    </label>
   );
 }
 

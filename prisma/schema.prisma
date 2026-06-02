@@ -71,6 +71,7 @@ model User {
   ownerIban    String?
   ownerTaxId   String?
   ownerNotes   String?
+  ownerSignaturePath String?
   passwordHash String
   role         Role            @default(TENANT)
   active       Boolean         @default(true)

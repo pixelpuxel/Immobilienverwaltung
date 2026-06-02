@@ -145,7 +145,9 @@ export async function POST(request: NextRequest) {
     createdAt: contract.createdAt,
     previewUrl: absoluteUrl(request, `/api/contracts/${contract.id}/preview`),
     docxDownloadUrl: absoluteUrl(request, `/api/contracts/${contract.id}/download?format=docx`),
-    pdfDownloadUrl: absoluteUrl(request, `/api/contracts/${contract.id}/download?format=pdf`)
+    pdfDownloadUrl: absoluteUrl(request, `/api/contracts/${contract.id}/download?format=pdf`),
+    integrationDocxDownloadUrl: absoluteUrl(request, `/api/integrations/v1/contracts/${contract.id}/download?format=docx`),
+    integrationPdfDownloadUrl: absoluteUrl(request, `/api/integrations/v1/contracts/${contract.id}/download?format=pdf`)
   };
 
   return NextResponse.json({

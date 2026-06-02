@@ -62,7 +62,7 @@ export function ApiTokenManager({ initialTokens }: { initialTokens: ApiTokenRow[
     <section className="rounded-lg border border-line bg-white">
       <div className="border-b border-line p-4">
         <div className="font-bold">N8N API-Tokens</div>
-        <p className="mt-1 text-sm text-muted">Erstelle Bearer Tokens fuer N8N. Der Token wird nur einmal angezeigt.</p>
+        <p className="mt-1 text-sm text-muted">Erstelle API-Token fuer N8N und andere Automationen. Technisch werden sie im Header als Bearer-Token gesendet, der Klartext wird nur einmal angezeigt.</p>
       </div>
       <form action={createToken} className="grid gap-4 p-4">
         <label className="grid gap-1 text-sm font-semibold">
@@ -92,7 +92,7 @@ export function ApiTokenManager({ initialTokens }: { initialTokens: ApiTokenRow[
       </form>
       {plainToken ? (
         <div className="border-t border-line bg-amber-50 p-4">
-          <div className="font-bold text-amber-900">Token jetzt kopieren</div>
+          <div className="font-bold text-amber-900">API-Token jetzt kopieren</div>
           <p className="mt-1 text-sm text-amber-900">Dieser Klartext wird danach nicht mehr angezeigt.</p>
           <code className="mt-3 block overflow-auto rounded-md bg-white p-3 text-xs">{plainToken}</code>
         </div>
@@ -116,7 +116,7 @@ export function ApiTokenManager({ initialTokens }: { initialTokens: ApiTokenRow[
               {token.scopes.map((scope) => <span className="rounded-full bg-panel px-2 py-1 font-mono text-[11px] text-muted" key={scope}>{scope}</span>)}
             </div>
           </div>
-        )) : <div className="p-4 text-sm text-muted">Noch keine API-Tokens angelegt.</div>}
+        )) : <div className="p-4 text-sm text-muted">Noch keine API-Token angelegt.</div>}
       </div>
     </section>
   );

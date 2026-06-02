@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { DeleteDocumentButton } from "@/components/DeleteDocumentButton";
 import { DocumentAssignmentForm } from "@/components/DocumentAssignmentForm";
+import { DocumentRenameForm } from "@/components/DocumentRenameForm";
 import { DocumentThumbnail } from "@/components/DocumentThumbnail";
 
 type Option = { id: string; label: string; propertyId?: string };
@@ -10,6 +11,7 @@ type Option = { id: string; label: string; propertyId?: string };
 type LazyDocument = {
   id: string;
   title: string;
+  filename: string;
   storagePath: string | null;
   mimeType: string;
   status: string;
@@ -205,15 +207,18 @@ function DocumentFolderItem({
                 </div>
               ) : null}
               {isAdmin ? (
-                <DocumentAssignmentForm
-                  documentId={doc.id}
-                  propertyId={doc.propertyId || ""}
-                  unitId={doc.unitId || ""}
-                  categoryId={doc.categoryId || ""}
-                  properties={properties}
-                  units={units}
-                  categories={categories}
-                />
+                <>
+                  <DocumentRenameForm documentId={doc.id} filename={doc.filename} title={doc.title} />
+                  <DocumentAssignmentForm
+                    documentId={doc.id}
+                    propertyId={doc.propertyId || ""}
+                    unitId={doc.unitId || ""}
+                    categoryId={doc.categoryId || ""}
+                    properties={properties}
+                    units={units}
+                    categories={categories}
+                  />
+                </>
               ) : null}
               <div className="mt-3 flex flex-wrap gap-2">
                 {doc.storagePath ? (

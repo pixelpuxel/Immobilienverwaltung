@@ -61,11 +61,17 @@ export function AppShell({
           ))}
         </nav>
         <div className="absolute bottom-6 left-5 right-5 grid gap-3">
-          {canSwitchView ? <ViewSwitcher currentUserId={userId} /> : null}
           <LogoutButton />
         </div>
       </aside>
       <main className="w-full overflow-x-hidden lg:pl-64">
+        {canSwitchView ? (
+          <div className="sticky top-0 z-30 hidden border-b border-line bg-white/95 px-5 py-3 backdrop-blur lg:block">
+            <div className="mx-auto flex w-full max-w-7xl justify-end">
+              <ViewSwitcher currentUserId={userId} compact />
+            </div>
+          </div>
+        ) : null}
         <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-5 sm:py-8">{children}</div>
       </main>
     </div>

@@ -20,6 +20,8 @@ const MAX_ZOOM = 17;
 export function PropertyMap({ properties }: { properties: MapProperty[] }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ pointerId: number; x: number; y: number; centerPixel: { x: number; y: number } } | null>(null);
+  const pointersRef = useRef(new Map<number, { x: number; y: number }>());
+  const pinchRef = useRef<{ distance: number; zoom: number } | null>(null);
   const [size, setSize] = useState({ width: 900, height: 560 });
   const initialCenter = useMemo(() => centerOf(properties), [properties]);
   const [center, setCenter] = useState(initialCenter);
@@ -68,8 +70,15 @@ export function PropertyMap({ properties }: { properties: MapProperty[] }) {
   }
 
   function handlePointerDown(event: React.PointerEvent<HTMLDivElement>) {
-    if (event.button !== 0 || !containerRef.current) return;
+    if (event.pointerType === "mouse" && event.button !== 0 || !containerRef.current) return;
     event.currentTarget.setPointerCapture(event.pointerId);
+    pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pointersRef.current.size === 2) {
+      const [first, second] = Array.from(pointersRef.current.values());
+      pinchRef.current = { distance: distance(first, second), zoom };
+      dragRef.current = null;
+      return;
+    }
     dragRef.current = {
       pointerId: event.pointerId,
       x: event.clientX,
@@ -79,6 +88,18 @@ export function PropertyMap({ properties }: { properties: MapProperty[] }) {
   }
 
   function handlePointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    if (pointersRef.current.has(event.pointerId)) {
+      pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    }
+    if (pointersRef.current.size >= 2 && pinchRef.current) {
+      const [first, second] = Array.from(pointersRef.current.values());
+      const nextDistance = distance(first, second);
+      if (nextDistance > 0) {
+        const delta = Math.log2(nextDistance / pinchRef.current.distance);
+        setZoom(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(pinchRef.current.zoom + delta))));
+      }
+      return;
+    }
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     const dx = event.clientX - drag.x;
@@ -87,6 +108,8 @@ export function PropertyMap({ properties }: { properties: MapProperty[] }) {
   }
 
   function handlePointerUp(event: React.PointerEvent<HTMLDivElement>) {
+    pointersRef.current.delete(event.pointerId);
+    if (pointersRef.current.size < 2) pinchRef.current = null;
     if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null;
   }
 
@@ -188,6 +211,10 @@ function centerOf(properties: MapProperty[]) {
     latitude: properties.reduce((sum, property) => sum + property.latitude, 0) / properties.length,
     longitude: properties.reduce((sum, property) => sum + property.longitude, 0) / properties.length
   };
+}
+
+function distance(first: { x: number; y: number }, second: { x: number; y: number }) {
+  return Math.hypot(first.x - second.x, first.y - second.y);
 }
 
 function buildView(properties: MapProperty[], center: { latitude: number; longitude: number }, zoom: number, size: { width: number; height: number }) {
