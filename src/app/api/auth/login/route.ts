@@ -2,13 +2,14 @@ import { AuditAction } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { auditLog } from "@/lib/audit";
-import { assertSameOrigin, clientIp, createSessionToken, setSessionCookie, verifyPassword } from "@/lib/auth";
+import { assertSameOrigin, clientIp, createSessionToken, REMEMBERED_SESSION_TTL_SECONDS, setSessionCookie, verifyPassword } from "@/lib/auth";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { prisma } from "@/lib/prisma";
 
 const schema = z.object({
   identifier: z.string().min(1),
-  password: z.string().min(1)
+  password: z.string().min(1),
+  rememberDevice: z.boolean().optional()
 });
 
 export async function POST(request: NextRequest) {
@@ -34,6 +35,7 @@ export async function POST(request: NextRequest) {
 
   await auditLog({ userId: user.id, action: AuditAction.LOGIN, ipAddress: ip });
   const response = NextResponse.json({ ok: true, role: user.role });
-  setSessionCookie(response, createSessionToken(user));
+  const maxAgeSeconds = body.data.rememberDevice ? REMEMBERED_SESSION_TTL_SECONDS : undefined;
+  setSessionCookie(response, createSessionToken(user, { maxAgeSeconds }), { maxAgeSeconds });
   return response;
 }

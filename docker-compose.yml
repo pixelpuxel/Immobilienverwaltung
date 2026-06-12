@@ -6,6 +6,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      postfix:
+        condition: service_started
     ports:
       - "${APP_PORT:-8088}:8088"
     environment:
@@ -22,6 +24,12 @@ services:
       CONTRACTS_PATH: ${CONTRACTS_PATH:-/app/contracts}
       RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-60}
       RATE_LIMIT_MAX_REQUESTS: ${RATE_LIMIT_MAX_REQUESTS:-120}
+      SMTP_HOST: ${SMTP_HOST:-postfix}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_FROM: ${SMTP_FROM:-Immobilienportal <portal@localhost>}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
       STARTUP_LOG_DIR: /app/logs
     volumes:
       - uploads_data:/app/uploads
@@ -50,6 +58,19 @@ services:
     restart: unless-stopped
     profiles: ["redis"]
 
+  postfix:
+    image: boky/postfix:latest
+    container_name: immobilienportal_postfix
+    restart: unless-stopped
+    hostname: ${MAIL_HOSTNAME:-mail.localhost}
+    environment:
+      ALLOWED_SENDER_DOMAINS: ${MAIL_ALLOWED_SENDER_DOMAINS:-localhost}
+      POSTFIX_myhostname: ${MAIL_HOSTNAME:-mail.localhost}
+      POSTFIX_myorigin: ${MAIL_ORIGIN:-localhost}
+      POSTFIX_mydestination: localhost
+    volumes:
+      - postfix_spool:/var/spool/postfix
+
   deploy-hook:
     build: ./deploy-hook
     container_name: immobilienportal_deploy_hook
@@ -69,3 +90,4 @@ volumes:
   postgres_data:
   uploads_data:
   contracts_data:
+  postfix_spool:

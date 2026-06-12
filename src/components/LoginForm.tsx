@@ -10,7 +10,7 @@ export function LoginForm() {
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [identifier, setIdentifier] = useState("");
-  const [rememberLogin, setRememberLogin] = useState(true);
+  const [rememberDevice, setRememberDevice] = useState(true);
   const [hasRememberedLogin, setHasRememberedLogin] = useState(false);
   const passwordRef = useRef<HTMLInputElement>(null);
 
@@ -30,14 +30,14 @@ export function LoginForm() {
     const response = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ identifier: loginName, password: form.get("password") })
+      body: JSON.stringify({ identifier: loginName, password: form.get("password"), rememberDevice })
     });
     if (!response.ok) {
       const body = await response.json().catch(() => ({ error: "Login fehlgeschlagen." }));
       setError(body.error || "Login fehlgeschlagen.");
       return;
     }
-    if (rememberLogin) {
+    if (rememberDevice) {
       window.localStorage.setItem(rememberedLoginKey, loginName);
     } else {
       window.localStorage.removeItem(rememberedLoginKey);
@@ -83,9 +83,10 @@ export function LoginForm() {
         </span>
       </label>
       <label className="flex items-center gap-2 text-sm font-semibold text-muted">
-        <input checked={rememberLogin} className="h-4 w-4" name="rememberLogin" onChange={(event) => setRememberLogin(event.target.checked)} type="checkbox" />
-        Login-Namen auf diesem Geraet merken
+        <input checked={rememberDevice} className="h-4 w-4" name="rememberDevice" onChange={(event) => setRememberDevice(event.target.checked)} type="checkbox" />
+        Auf diesem Gerät angemeldet bleiben
       </label>
+      <p className="-mt-2 text-xs leading-5 text-muted">Das Portal speichert dafür eine geschützte Session auf diesem Gerät, nicht dein Passwort.</p>
       <button type="submit">Einloggen</button>
     </form>
   );

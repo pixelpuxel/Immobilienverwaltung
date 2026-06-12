@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { auditLog } from "@/lib/audit";
 import { assertSameOrigin, clientIp, hashPassword, requireApiUser } from "@/lib/auth";
+import { sendWelcomeMail } from "@/lib/mail";
 import { assertUnitInPortal, portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 
@@ -77,7 +78,7 @@ export async function POST(request: NextRequest) {
   const selectedUnit = body.data.unitId
     ? await prisma.unit.findFirst({
       where: { id: body.data.unitId, property: portalWhere(actor) },
-      select: { rentAmount: true, garageRent: true, serviceCharges: true }
+      select: { unitNumber: true, rentAmount: true, garageRent: true, serviceCharges: true, property: { select: { name: true } } }
     })
     : null;
 
@@ -133,7 +134,19 @@ export async function POST(request: NextRequest) {
     }
   }
   await auditLog({ userId: actor.id, action: AuditAction.USER_INVITED, entity: "TenantProfile", entityId: profile.id, ipAddress: clientIp(request) });
-  return NextResponse.json(profile, { status: 201 });
+  const mail = await sendWelcomeMail({
+    to: user.email,
+    name: user.name,
+    roleLabel: "Mieter",
+    identifier: user.username || user.email,
+    password,
+    portalInstanceId: actor.portalInstanceId,
+    context: {
+      property: selectedUnit?.property.name,
+      unit: selectedUnit?.unitNumber
+    }
+  }).catch((error) => ({ sent: false, reason: error instanceof Error ? error.message : "unknown" }));
+  return NextResponse.json({ ...profile, mail }, { status: 201 });
 }
 
 function accountIdentity(email?: string, username?: string) {

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { auditLog } from "@/lib/audit";
 import { assertSameOrigin, clientIp, hashPassword, requireApiUser } from "@/lib/auth";
+import { sendWelcomeMail } from "@/lib/mail";
 import { portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 
@@ -38,6 +39,7 @@ export async function POST(request: NextRequest) {
   if (!propertyIds.length) return NextResponse.json({ error: "Bitte mindestens eine Immobilie auswaehlen." }, { status: 400 });
   const allowedPropertyCount = await prisma.property.count({ where: { id: { in: propertyIds }, ...portalWhere(admin) } });
   if (allowedPropertyCount !== propertyIds.length) return NextResponse.json({ error: "Mindestens eine Immobilie gehoert nicht zu dieser Instanz." }, { status: 403 });
+  const properties = await prisma.property.findMany({ where: { id: { in: propertyIds }, ...portalWhere(admin) }, select: { name: true } });
   const user = existingUser
     ? await prisma.user.update({ where: { id: existingUser.id }, data: { portalInstanceId: admin.portalInstanceId, username: identity.username, name: body.data.name, role: Role.BROKER, active: true } })
     : await prisma.user.create({
@@ -70,7 +72,16 @@ export async function POST(request: NextRequest) {
   }
 
   await auditLog({ userId: admin.id, action: AuditAction.USER_INVITED, entity: "User", entityId: user.id, ipAddress: clientIp(request), detail: { propertyIds } });
-  return NextResponse.json({ user: { id: user.id, email: user.email, username: user.username, name: user.name, role: user.role, active: user.active }, links }, { status: 201 });
+  const mail = await sendWelcomeMail({
+    to: user.email,
+    name: user.name,
+    roleLabel: "Makler",
+    identifier: user.username || user.email,
+    password: body.data.password,
+    portalInstanceId: admin.portalInstanceId,
+    context: { properties: properties.map((property) => property.name).join(", ") }
+  }).catch((error) => ({ sent: false, reason: error instanceof Error ? error.message : "unknown" }));
+  return NextResponse.json({ user: { id: user.id, email: user.email, username: user.username, name: user.name, role: user.role, active: user.active }, links, mail }, { status: 201 });
 }
 
 function accountIdentity(email?: string, username?: string) {

@@ -26,7 +26,8 @@ export async function GET(request: NextRequest) {
     contractTemplates,
     leaseContracts,
     auditLogs,
-    portalInstances
+    portalInstances,
+    mailTemplates
   ] = await Promise.all([
     prisma.user.findMany({ where: portalWhere(user) }),
     prisma.property.findMany({ where: portalWhere(user) }),
@@ -40,7 +41,8 @@ export async function GET(request: NextRequest) {
     prisma.contractTemplate.findMany({ where: portalWhere(user) }),
     prisma.leaseContract.findMany({ where: { unit: { property: portalWhere(user) } } }),
     prisma.auditLog.findMany({ where: portalWhere(user) }),
-    prisma.portalInstance.findMany({ where: user.portalInstanceId ? { id: user.portalInstanceId } : {} })
+    prisma.portalInstance.findMany({ where: user.portalInstanceId ? { id: user.portalInstanceId } : {} }),
+    prisma.mailTemplate.findMany({ where: portalWhere(user) })
   ]);
   const filePaths = Array.from(new Set([
     ...documents.map((document) => document.storagePath),
@@ -48,7 +50,7 @@ export async function GET(request: NextRequest) {
     ...leaseContracts.flatMap((contract) => [contract.docxPath, contract.pdfPath].filter(Boolean) as string[])
   ]));
   const fileResults = includeFiles ? await Promise.all(filePaths.map(readBackupFile)) : [];
-  const tables = { users, properties, units, documentCategories, documents, accessPermissions, brokerRequests, brokerValuations, tenantProfiles, contractTemplates, leaseContracts, auditLogs, portalInstances };
+  const tables = { users, properties, units, documentCategories, documents, accessPermissions, brokerRequests, brokerValuations, tenantProfiles, contractTemplates, leaseContracts, auditLogs, portalInstances, mailTemplates };
   const backup = {
     format: "immobilienportal.backup.v1",
     exportedAt: new Date().toISOString(),
@@ -74,4 +76,3 @@ async function readBackupFile(filePath: string) {
     return { file: null, missingPath: filePath };
   }
 }
-

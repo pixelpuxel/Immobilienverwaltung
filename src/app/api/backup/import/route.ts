@@ -62,6 +62,7 @@ export async function POST(request: NextRequest) {
       }
       for (const row of t.tenantProfiles || []) await upsertTenantProfile(tx, row);
       for (const row of t.contractTemplates || []) await tx.contractTemplate.upsert({ where: { id: row.id }, update: withPortal(row, user.portalInstanceId) as any, create: withPortal(row, user.portalInstanceId) as any });
+      for (const row of t.mailTemplates || []) await upsertMailTemplate(tx, withPortal(row, user.portalInstanceId));
       for (const row of t.leaseContracts || []) await tx.leaseContract.upsert({ where: { id: row.id }, update: row as any, create: row as any });
       for (const row of t.brokerRequests || []) {
         await upsertBrokerRequest(tx, row);
@@ -166,6 +167,25 @@ async function upsertTenantProfile(tx: Prisma.TransactionClient, row: Record<str
   await tx.tenantProfile.create({ data: row as any });
 }
 
+async function upsertMailTemplate(tx: Prisma.TransactionClient, row: Record<string, unknown> & { id: string }) {
+  const byId = await tx.mailTemplate.findUnique({ where: { id: row.id }, select: { id: true } });
+  if (byId) {
+    await tx.mailTemplate.update({ where: { id: row.id }, data: row as any });
+    return;
+  }
+  if (row.key) {
+    const byKey = await tx.mailTemplate.findFirst({
+      where: { portalInstanceId: (row.portalInstanceId as string | null | undefined) ?? null, key: String(row.key) },
+      select: { id: true }
+    });
+    if (byKey) {
+      await tx.mailTemplate.update({ where: { id: byKey.id }, data: withoutId(row) as any });
+      return;
+    }
+  }
+  await tx.mailTemplate.create({ data: row as any });
+}
+
 async function upsertBrokerRequest(tx: Prisma.TransactionClient, row: Record<string, unknown> & { id: string }) {
   const byId = await tx.brokerRequest.findUnique({ where: { id: row.id }, select: { id: true } });
   if (byId) {
@@ -253,6 +273,7 @@ async function deletePortalData(tx: Prisma.TransactionClient, portalInstanceId?:
     }
   });
   await tx.documentCategory.deleteMany({ where: { portalInstanceId } });
+  await tx.mailTemplate.deleteMany({ where: { portalInstanceId } });
 }
 
 function withPortal<T extends Record<string, unknown>>(row: T, portalInstanceId?: string | null): T {

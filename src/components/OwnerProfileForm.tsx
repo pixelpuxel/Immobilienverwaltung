@@ -44,7 +44,7 @@ export function OwnerProfileForm({ userId, profile }: { userId: string; profile:
     event.preventDefault();
     setMessage("");
     if (!signatureFile) {
-      setMessage("Bitte eine JPG-Datei auswählen.");
+      setMessage("Bitte eine PNG- oder JPG-Datei auswählen.");
       return;
     }
     const formData = new FormData();
@@ -81,9 +81,9 @@ export function OwnerProfileForm({ userId, profile }: { userId: string; profile:
       </form>
       <div className="rounded-md border border-line bg-white p-3">
         <div className="text-sm font-bold">Unterschrift für Wohnungsgeberbestätigung</div>
-        <p className="mt-1 text-xs text-muted">Bitte als JPG hochladen. Die Grafik wird unten im Formular eingefügt.</p>
+        <p className="mt-1 text-xs text-muted">Am besten als PNG mit transparentem Hintergrund hochladen. Die Unterschrift wird direkt auf die Unterschriftslinie gesetzt.</p>
         <form className="mt-3 grid gap-2" onSubmit={uploadSignature}>
-          <input name="signature" type="file" accept="image/jpeg" required onChange={(event) => setSignatureFile(event.target.files?.[0] || null)} />
+          <input name="signature" type="file" accept="image/png,image/jpeg" required onChange={(event) => setSignatureFile(event.target.files?.[0] || null)} />
           <button className="button-secondary w-fit px-3 py-2 text-sm" type="submit">Unterschrift speichern</button>
         </form>
         {profile.ownerSignaturePath ? <div className="mt-2 text-xs font-semibold text-accent">Unterschrift ist hinterlegt.</div> : null}

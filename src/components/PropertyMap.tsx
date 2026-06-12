@@ -14,7 +14,7 @@ type MapProperty = {
 };
 
 const TILE_SIZE = 256;
-const MIN_ZOOM = 8;
+const MIN_ZOOM = 4;
 const MAX_ZOOM = 17;
 
 export function PropertyMap({ properties }: { properties: MapProperty[] }) {
@@ -67,6 +67,17 @@ export function PropertyMap({ properties }: { properties: MapProperty[] }) {
   function handleWheel(event: React.WheelEvent<HTMLDivElement>) {
     event.preventDefault();
     zoomBy(event.deltaY < 0 ? 1 : -1, event);
+  }
+
+  function fitAllProperties() {
+    const fitted = fittedView(properties, size);
+    setCenter(fitted.center);
+    setZoom(fitted.zoom);
+  }
+
+  function handleDoubleClick(event: React.MouseEvent<HTMLDivElement>) {
+    event.preventDefault();
+    fitAllProperties();
   }
 
   function handlePointerDown(event: React.PointerEvent<HTMLDivElement>) {
@@ -126,7 +137,7 @@ export function PropertyMap({ properties }: { properties: MapProperty[] }) {
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-[linear-gradient(90deg,#ecfdf5,#eff6ff)] p-4">
         <div>
           <h2 className="text-xl font-bold">Immobilienkarte</h2>
-          <p className="mt-1 text-sm text-muted">Karte verschieben, mit dem Mausrad zoomen und Pins fuer Details anklicken.</p>
+          <p className="mt-1 text-sm text-muted">Karte verschieben, mit dem Mausrad zoomen, doppelklicken zum Einpassen und Pins fuer Details anklicken.</p>
         </div>
         <div className="flex items-center gap-2">
           <button className="button-secondary grid h-10 w-10 place-items-center p-0" type="button" onClick={() => zoomBy(-1)}>-</button>
@@ -137,6 +148,7 @@ export function PropertyMap({ properties }: { properties: MapProperty[] }) {
       <div
         ref={containerRef}
         className="relative h-[62vh] min-h-[440px] touch-none overflow-hidden bg-[#dce8e2] cursor-grab active:cursor-grabbing"
+        onDoubleClick={handleDoubleClick}
         onPointerCancel={handlePointerUp}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
@@ -159,19 +171,25 @@ export function PropertyMap({ properties }: { properties: MapProperty[] }) {
         {view.pins.map((pin) => (
           <button
             aria-label={`${pin.name} anzeigen`}
-            className={`absolute z-10 -translate-x-1/2 -translate-y-full rounded-md px-3 py-2 text-left text-xs font-bold text-ink shadow-lg ring-2 transition hover:scale-[1.02] ${selectedId === pin.id ? "bg-accent text-white ring-white" : "bg-white ring-accent/20 hover:ring-accent"}`}
+            className={`group absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg bg-white p-1 shadow-lg ring-2 transition hover:scale-[1.05] ${selectedId === pin.id ? "ring-accent" : "ring-white/90 hover:ring-accent/70"}`}
             key={pin.id}
             onClick={(event) => {
               event.stopPropagation();
               setSelectedId(pin.id);
             }}
+            onDoubleClick={(event) => event.stopPropagation()}
             onPointerDown={(event) => event.stopPropagation()}
             style={{ left: pin.left, top: pin.top }}
             type="button"
           >
-            <span className={`absolute -bottom-2 left-1/2 h-4 w-4 -translate-x-1/2 rotate-45 ring-2 ${selectedId === pin.id ? "bg-accent ring-white" : "bg-white ring-accent/20"}`} />
-            <span className="relative block max-w-[190px] truncate">{pin.name}</span>
-            <span className={`relative mt-1 block max-w-[190px] truncate font-medium ${selectedId === pin.id ? "text-white/80" : "text-muted"}`}>{pin.address}</span>
+            <span className={`absolute -bottom-2 left-1/2 h-4 w-4 -translate-x-1/2 rotate-45 ring-2 ${selectedId === pin.id ? "bg-accent ring-accent" : "bg-white ring-white/90 group-hover:ring-accent/70"}`} />
+            <span className="relative block h-14 w-14 overflow-hidden rounded-md bg-[linear-gradient(135deg,#ecfdf5,#dbeafe)]">
+              {pin.primaryImageId ? (
+                <img className="h-full w-full object-cover" src={`/api/documents/${pin.primaryImageId}/preview`} alt="" loading="lazy" draggable={false} />
+              ) : (
+                <HousePinIcon />
+              )}
+            </span>
           </button>
         ))}
         {selectedProperty ? (
@@ -211,6 +229,55 @@ function centerOf(properties: MapProperty[]) {
     latitude: properties.reduce((sum, property) => sum + property.latitude, 0) / properties.length,
     longitude: properties.reduce((sum, property) => sum + property.longitude, 0) / properties.length
   };
+}
+
+function fittedView(properties: MapProperty[], size: { width: number; height: number }) {
+  if (!properties.length) return { center: centerOf(properties), zoom: 10 };
+  if (properties.length === 1) return { center: centerOf(properties), zoom: 14 };
+
+  const padding = Math.min(96, Math.max(36, Math.min(size.width, size.height) * 0.12));
+  const availableWidth = Math.max(160, size.width - padding * 2);
+  const availableHeight = Math.max(160, size.height - padding * 2);
+
+  for (let zoom = MAX_ZOOM; zoom >= MIN_ZOOM; zoom -= 1) {
+    const points = properties.map((property) => project(property.latitude, property.longitude, zoom));
+    const xs = points.map((point) => point.x);
+    const ys = points.map((point) => point.y);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    if (maxX - minX <= availableWidth && maxY - minY <= availableHeight) {
+      return {
+        center: unproject((minX + maxX) / 2, (minY + maxY) / 2, zoom),
+        zoom
+      };
+    }
+  }
+
+  const points = properties.map((property) => project(property.latitude, property.longitude, MIN_ZOOM));
+  const xs = points.map((point) => point.x);
+  const ys = points.map((point) => point.y);
+  return {
+    center: unproject((Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2, MIN_ZOOM),
+    zoom: MIN_ZOOM
+  };
+}
+
+function HousePinIcon() {
+  return (
+    <svg className="h-full w-full" viewBox="0 0 56 56" role="img" aria-label="Immobilie ohne Bild">
+      <rect width="56" height="56" rx="10" fill="#dffcf2" />
+      <path d="M0 0h56v56H0z" fill="#e0f2fe" opacity=".55" />
+      <path d="M12 28.5 28 15l16 13.5v17a2 2 0 0 1-2 2H14a2 2 0 0 1-2-2v-17Z" fill="#fff" />
+      <path d="M9.5 29.5 28 13.5l18.5 16" fill="none" stroke="#0f766e" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M13.5 31 28 18.5 42.5 31" fill="none" stroke="#06b6d4" strokeWidth="2" strokeLinecap="round" opacity=".7" />
+      <path d="M19 46V32h18v14" fill="#ecfdf5" />
+      <path d="M22 46V35h12v11" fill="#14b8a6" opacity=".92" />
+      <path d="M18 28h20" stroke="#99f6e4" strokeWidth="3" strokeLinecap="round" />
+      <circle cx="36" cy="23" r="3" fill="#f59e0b" />
+    </svg>
+  );
 }
 
 function distance(first: { x: number; y: number }, second: { x: number; y: number }) {

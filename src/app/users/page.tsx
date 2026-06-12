@@ -46,8 +46,8 @@ export default async function UsersPage() {
   return (
     <AppShell role={user.role} userId={user.id} email={user.email} canSwitchView={user.role === Role.ADMIN || Boolean(user.impersonatedByAdminId)}>
       <h1 className="text-3xl font-bold">Benutzerverwaltung</h1>
-      <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_420px]">
-        <div className="rounded-lg border border-line">
+      <div className="mt-6 grid items-start gap-6 lg:grid-cols-[1fr_420px]">
+        <div className="rounded-lg border border-line self-start">
           {users.map((item) => (
             <div id={`user-${item.id}`} key={item.id} className="scroll-mt-24 grid gap-4 border-b border-line p-4 text-sm lg:grid-cols-[minmax(0,1fr)_minmax(260px,360px)]">
               <div>
@@ -119,7 +119,7 @@ export default async function UsersPage() {
             </div>
           ))}
         </div>
-        <div className="grid gap-6">
+        <div className="grid content-start gap-6 self-start">
           <JsonForm endpoint="/api/admin-users" submitLabel="Eigentümerzugang anlegen">
             <h2 className="text-xl font-bold">Weiteren Eigentümerzugang anlegen</h2>
             <p className="text-sm text-muted">Für Geschäftspartner mit weitgehend gleichen Rechten wie der Eigentümer.</p>

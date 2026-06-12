@@ -52,6 +52,8 @@ model PortalInstance {
   documents   Document[]
   categories  DocumentCategory[]
   templates   ContractTemplate[]
+  mailTemplates MailTemplate[]
+  telegramBotConfig TelegramBotConfig?
   auditLogs   AuditLog[]
   apiTokens   ApiToken[]
 }
@@ -306,6 +308,48 @@ model LeaseContract {
   unit            Unit              @relation(fields: [unitId], references: [id], onDelete: Cascade)
   tenantProfile   TenantProfile     @relation(fields: [tenantProfileId], references: [id], onDelete: Cascade)
   template        ContractTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+}
+
+model MailTemplate {
+  id              String          @id @default(cuid())
+  portalInstanceId String?
+  key             String
+  name            String
+  description     String
+  trigger         String
+  subject         String
+  text            String
+  placeholders    String[]        @default([])
+  active          Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  portalInstance  PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
+
+  @@unique([portalInstanceId, key])
+}
+
+model TelegramBotConfig {
+  id              String          @id @default(cuid())
+  portalInstanceId String?        @unique
+  botTokenEncrypted String
+  botUsername     String?
+  chatId          String?
+  chatTitle       String?
+  threadId        String?
+  threadTitle     String?
+  pendingChatId   String?
+  pendingChatTitle String?
+  pendingThreadId String?
+  pendingThreadTitle String?
+  pendingFrom     String?
+  pendingText     String?
+  pendingAt       DateTime?
+  lastUpdateId    Int?
+  webhookSecret   String          @default(cuid())
+  webhookEnabled  Boolean         @default(false)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  portalInstance  PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
 }
 
 model AuditLog {

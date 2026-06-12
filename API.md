@@ -179,6 +179,43 @@ GET  /api/backup/export?includeFiles=true|false
 POST /api/backup/import
 ```
 
+Telegram-Bot:
+
+```text
+GET    /api/telegram/config
+POST   /api/telegram/config
+POST   /api/telegram/updates
+POST   /api/telegram/apply-chat
+POST   /api/telegram/webhook
+DELETE /api/telegram/webhook
+POST   /api/telegram/webhook/:secret
+```
+
+Einrichtung:
+
+1. In Telegram mit BotFather einen Bot erzeugen und den Token kopieren.
+2. Im Portal unter `Einstellungen -> Telegram-Bot` den Token speichern.
+3. Dem Bot im gewuenschten Chat oder Thread eine Nachricht schreiben, zum Beispiel `/hilfe`.
+4. Im Portal `Letzte Bot-Nachricht auslesen` klicken.
+5. Die erkannten Chat-/Thread-Daten pruefen und mit `Diese Daten uebernehmen` speichern.
+6. Bei oeffentlicher HTTPS-URL `Webhook aktivieren` klicken.
+
+Der Bot-Token wird verschluesselt in der Datenbank gespeichert und nie wieder im Klartext angezeigt.
+
+Unterstuetzte Bot-Kommandos:
+
+```text
+/hilfe
+/suche <Begriff>
+/immobilien
+/mieter [Name]
+/dokumente <Begriff>
+/vertraege [Name]
+/vertrag <Mieter>
+```
+
+`/vertrag <Mieter>` erzeugt einen Mietvertrag mit der passenden Vorlage und sendet die PDF-Datei an Telegram, falls die PDF-Erzeugung erfolgreich war. Andernfalls wird die DOCX-Datei gesendet.
+
 Portal-Instanzen:
 
 ```text

@@ -9,6 +9,7 @@ import { prisma } from "./prisma";
 
 export const SESSION_COOKIE = "portal_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 12;
+export const REMEMBERED_SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
 
 type SessionPayload = {
   userId: string;
@@ -36,14 +37,15 @@ function sign(data: string) {
   return crypto.createHmac("sha256", env.jwtSecret).update(data).digest("base64url");
 }
 
-export function createSessionToken(user: Pick<User, "id" | "email" | "role" | "portalInstanceId" | "platformAdmin">, options?: { impersonatedByAdminId?: string | null }) {
+export function createSessionToken(user: Pick<User, "id" | "email" | "role" | "portalInstanceId" | "platformAdmin">, options?: { impersonatedByAdminId?: string | null; maxAgeSeconds?: number }) {
+  const maxAgeSeconds = options?.maxAgeSeconds || SESSION_TTL_SECONDS;
   const payload: SessionPayload = {
     userId: user.id,
     email: user.email,
     role: user.role,
     portalInstanceId: user.portalInstanceId,
     platformAdmin: user.platformAdmin,
-    exp: Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS
+    exp: Math.floor(Date.now() / 1000) + maxAgeSeconds
   };
   if (options?.impersonatedByAdminId) payload.impersonatedByAdminId = options.impersonatedByAdminId;
   const body = base64url(JSON.stringify(payload));
@@ -63,13 +65,13 @@ export function readSessionToken(token?: string | null): SessionPayload | null {
   }
 }
 
-export function setSessionCookie(response: NextResponse, token: string) {
+export function setSessionCookie(response: NextResponse, token: string, options?: { maxAgeSeconds?: number }) {
   response.cookies.set(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
     secure: isProductionUrl(),
     path: "/",
-    maxAge: SESSION_TTL_SECONDS
+    maxAge: options?.maxAgeSeconds || SESSION_TTL_SECONDS
   });
 }
 

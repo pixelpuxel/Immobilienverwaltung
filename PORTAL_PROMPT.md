@@ -22,7 +22,9 @@ docker compose up -d --build
 - Prisma ORM
 - Tailwind CSS
 - sichere Session-basierte Authentifizierung mit signiertem HttpOnly-Cookie
+- Login kann auf Wunsch pro Gerät gemerkt werden. Das Portal speichert dafür keinen Klartext-Passwortwert im Browser, sondern setzt eine länger gültige HttpOnly-Session und merkt lokal nur den zuletzt genutzten Login-Namen vor.
 - Docker Compose
+- E-Mail-Versand erfolgt über einen eigenen Postfix-Container im gleichen Docker-Compose-Paket. Die App spricht intern per `SMTP_HOST=postfix` mit Postfix. Passwörter und Zugangsdaten dürfen nur bei der initialen Benutzeranlage versendet werden; langfristig ist ein Einmal-Link zum Passwortsetzen vorzuziehen.
 - lokaler Dateispeicher über Docker Volumes
 - docxtemplater für DOCX-Verträge
 - LibreOffice Headless für PDF-Generierung aus DOCX
@@ -45,7 +47,7 @@ docker compose up -d --build
 - Eigentümerprofil mit Kontaktperson, Anschrift, Telefon, Kontakt-E-Mail, Bank, IBAN, Steuer-ID und Notizen für Verkauf/Mietvertrag.
 - Immobilien und Einheiten verwalten
 - Immobilien haben neben einer freien lesbaren Adresse strukturierte Adressfelder: Straße, Hausnummer, PLZ, Ort und Land. Die freie Adresse darf weiter existieren, aber Formulare, Verträge und Wohnungsgeberbestätigungen sollen bevorzugt die strukturierten Felder nutzen.
-- Immobilien können Koordinaten `latitude` und `longitude` enthalten. Eine eigene Kartenseite zeigt alle Immobilien mit Koordinaten auf OpenStreetMap mit klickbaren Pins, die zur Detailansicht führen. Eigentümer sehen alle Objekte der Instanz, Makler nur freigegebene Objekte.
+- Immobilien können Koordinaten `latitude` und `longitude` enthalten. Eine eigene Kartenseite zeigt alle Immobilien mit Koordinaten auf OpenStreetMap. Pins sind kleine quadratische Bildkacheln aus dem Hauptbild der Immobilie; ohne Bild wird ein farbiges Haus-Icon angezeigt. Ein Klick auf den Pin öffnet zuerst eine kompakte Objektkarte mit Bild und Stammdaten, erst dort führt ein Button zur Detailansicht. Eigentümer sehen alle Objekte der Instanz, Makler nur freigegebene Objekte.
 - Bestandsobjekte können beim Seed/Import anhand bekannter Freitextadressen mit strukturierten Adressdaten und Koordinaten ergänzt werden, damit behördliche Formulare und Kartenansicht sofort nutzbar sind.
 - Zu jeder Immobilie können mehrere Objektbilder hochgeladen werden. Bilder werden sicher im privaten Dateispeicher abgelegt, in der Objekt-Detailansicht als Galerie angezeigt und ein Bild kann als Hauptbild markiert werden. Das Hauptbild erscheint in Immobilienübersichten als großes Thumbnail.
 - Dokumente hochladen, kategorisieren, freigeben und geschützte Downloads bereitstellen
@@ -107,6 +109,7 @@ docker compose up -d --build
 - Dokumentrechte hängen zusätzlich an Dokumentfreigaben.
 - Immobilien, Benutzer, Dokumente, Vertragsvorlagen, generierte Verträge, Maklerzugriffe, Mieterprofile und Aktivitäten sind nach Portal-Instanz getrennt. API-Routen und Seiten müssen immer auf die aktuelle Instanz des eingeloggten Benutzers filtern.
 - E-Mail-Adressen und Benutzernamen sind aktuell portalweit eindeutig; bei späterer Subdomain-/Instanz-Anmeldung kann das zu instanzbezogener Eindeutigkeit erweitert werden.
+- Einstellungen enthalten einen eigenen Block `Mail-Templates`. Das System legt instanzbezogene Standardvorlagen fuer Zugangsmails, Maklerfreigaben, Dokumentfreigaben, Dokumentanforderungen, erzeugte Mietvertraege, Wohnungsgeberbestaetigungen, Passwortaenderungen und Backup-Exporte an. Jede Vorlage zeigt Ausloeser, editierbaren Betreff, editierbaren Text, aktive/inaktive Schaltung, Platzhalter und Vorschau mit Beispieldaten. Zugangsmails fuer Eigentuemer, Makler und Mieter verwenden diese Templates produktiv.
 - Energieausweise sind nicht nur Textfelder, sondern als geschützte Dokumente direkt am Objekt hochladbar.
 - Mieterrechte hängen an einer Einheit und an freigegebenen/eigenen Dokumenten.
 - Mieter-Dashboard zeigt keine Immobilien-/Einheitenanzahl, sondern nur für Mieter relevante Dokumente und Verträge.
@@ -120,7 +123,7 @@ docker compose up -d --build
 - Vertragsplatzhalter enthalten `{{garage_rent}}` für die Tiefgarage und `{{cold_rent_total}}` für Kaltmiete inklusive Tiefgarage.
 - Wird ein Mieter für eine Einheit auf `laufend` gesetzt, werden andere laufende Mieter derselben Einheit beendet.
 - Wohnungsgeberbestätigung muss mindestens Wohnungsgeber, Einzugsdatum, strukturierte Anschrift der Wohnung und meldepflichtige Personen enthalten.
-- Wohnungsgeberbestätigung wird als einseitiges Formular erzeugt; Ort/Datum kommen aus den Eigentümer-/Objektdaten. Eigentümer können eine JPG-Unterschrift hinterlegen, die beim Generieren in das PDF gesetzt wird.
+- Wohnungsgeberbestätigung wird als einseitiges Formular erzeugt; Ort/Datum kommen aus den Eigentümer-/Objektdaten. Eigentümer können eine Unterschrift hinterlegen, bevorzugt als transparentes PNG, alternativ als JPG. Die Unterschrift wird beim Generieren direkt über der Unterschriftslinie im PDF platziert.
 - Der Mietverlauf muss als Jahreskalender pro Einheit nutzbar sein: Mieter-Namen und belegte Tage sind klickbar und springen zur Benutzerverwaltung; vorhandene Vor-/Folgejahre sind über Pfeiltasten erreichbar.
 - Dokumente können in der Dokumentenverwaltung nicht nur zugeordnet, sondern auch mit sinnvollem Vorschlag umbenannt werden. Dabei wird der geschützte Dateipfad im lokalen Speicher mit umbenannt.
 - Die Benutzeransicht ist ein eigenständiger Umschalter oben in der Oberfläche; Instanzwechsel erfolgen ausschließlich über Einstellungen/Portal-Instanzen.

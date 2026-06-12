@@ -174,6 +174,7 @@ http://SERVER-IP:8088
 - Audit-Logs protokollieren Login, Upload, Download, Rechteaenderung und Vertragsgenerierung.
 - `.env` und lokale Daten sind per `.gitignore` ausgeschlossen.
 - Rate Limiting ist als In-Memory-MVP vorbereitet.
+- Telegram-Bot-Token werden verschluesselt in der Datenbank gespeichert.
 
 ## Funktionen
 
@@ -191,6 +192,7 @@ Eigentümer:
 - Vertragsvorlagen hochladen
 - Mietvertraege als DOCX und PDF generieren
 - Audit-Logs ansehen
+- Telegram-Bot fuer Suche, Listen und Mietvertragserzeugung konfigurieren
 
 Makler:
 
@@ -206,6 +208,32 @@ Mieter:
 - Stammdaten und Mietvertragsdaten pflegen
 - Dokumente hochladen
 - generierte Mietvertraege herunterladen
+
+## Telegram-Bot
+
+Unter `Einstellungen -> Telegram-Bot` kann ein BotFather-Token hinterlegt werden. Der Token wird verschluesselt gespeichert und nicht wieder angezeigt.
+
+Einrichtung:
+
+1. Token speichern.
+2. Dem Bot im Zielchat oder Zielthread eine Nachricht senden, z.B. `/hilfe`.
+3. Im Portal `Letzte Bot-Nachricht auslesen` klicken.
+4. Erkannte Chat-ID und Thread-ID pruefen und uebernehmen.
+5. Bei oeffentlicher HTTPS-URL den Webhook aktivieren.
+
+Kommandos:
+
+```text
+/hilfe
+/suche <Begriff>
+/immobilien
+/mieter [Name]
+/dokumente <Begriff>
+/vertraege [Name]
+/vertrag <Mieter>
+```
+
+`/vertrag <Mieter>` erzeugt den Mietvertrag im Portal und sendet die PDF-Datei an Telegram. Wenn LibreOffice keine PDF erzeugen kann, wird die DOCX-Datei gesendet.
 
 ## Vertragsvorlagen
 
@@ -251,6 +279,52 @@ Die PDF-Datei wird aus der erzeugten DOCX-Datei mit LibreOffice Headless erstell
 Das Portal ist mandantenfaehig. Die beim ersten Start erzeugte Installation bleibt als eigene Instanz erhalten; ein Plattform-Eigentuemer kann unter `Einstellungen` weitere, leere Portal-Instanzen mit eigenem Eigentümerzugang anlegen. Immobilien, Benutzer, Dokumente, Vertragsvorlagen, generierte Vertraege und Aktivitaeten werden pro Instanz getrennt.
 
 Hinweis: E-Mail-Adressen und Benutzernamen muessen aktuell portalweit eindeutig sein. Fuer Kunden mit gleicher E-Mail wird spaeter ein Instanz-Login oder eine eigene Domain/Subdomain pro Instanz empfohlen.
+
+## E-Mail-Versand
+
+Die Docker-Installation enthaelt einen eigenen Postfix-Container. Die App verschickt E-Mails intern ueber den Compose-Servicenamen `postfix`.
+
+Relevante ENV-Werte:
+
+```env
+SMTP_HOST=postfix
+SMTP_PORT=587
+SMTP_FROM=Immobilienportal <portal@example.com>
+SMTP_SECURE=false
+
+MAIL_HOSTNAME=mail.example.com
+MAIL_ORIGIN=example.com
+MAIL_ALLOWED_SENDER_DOMAINS=example.com
+```
+
+Beim Anlegen von Eigentuemern, Maklern und Mietern wird eine Zugangsmail verschickt, sofern eine echte E-Mail-Adresse vorhanden ist. Interne Platzhalter-Adressen wie `@portal.local` werden nicht angeschrieben.
+
+Unter `Einstellungen` kann eine Testmail versendet werden. Im Block `Mail-Templates` koennen die Texte fuer automatische Mails bearbeitet werden. Jede Vorlage zeigt den Ausloeser, die verfuegbaren Platzhalter und eine Vorschau mit Beispieldaten.
+
+Vorbereitet sind Templates fuer:
+
+- neue Eigentuemer-/Admin-Zugaenge
+- neue Makler-Zugaenge
+- neue Mieter-Zugaenge
+- Maklerfreigaben
+- Dokumentfreigaben und Dokumentanforderungen
+- erzeugte Mietvertraege
+- Wohnungsgeberbestaetigungen
+- Passwortaenderungen
+- Backup-Exporte
+
+Produktiv verdrahtet sind aktuell die Zugangsmails beim Anlegen von Eigentuemer, Makler und Mieter. Die weiteren Vorlagen sind sichtbar vorbereitet und koennen an die jeweiligen Aktionen angeschlossen werden, sobald diese Benachrichtigungen ausloesen sollen.
+
+Der Postfix-Container ist standardmaessig nur im Docker-Netzwerk erreichbar. Fuer ausgehenden Mailversand reicht das aus; die App spricht intern `postfix:25` an. Auf dem Host muss kein Port 25 belegt werden. Wichtig ist aber, dass der Server ausgehend auf Port 25 senden darf.
+
+Fuer produktive Zustellung an Gmail, Outlook und andere Anbieter muessen DNS und Server-Reputation stimmen:
+
+- `A`-Record fuer `mail.example.com`
+- `MX`-Record fuer die Domain
+- `SPF` fuer die Server-IP
+- `DKIM` und `DMARC`
+- Reverse DNS/PTR beim VPS-Anbieter
+- Port 25 ausgehend und eingehend erlaubt
 
 ## Entwicklung
 

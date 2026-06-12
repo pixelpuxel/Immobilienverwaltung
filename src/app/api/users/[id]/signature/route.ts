@@ -15,8 +15,8 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   const form = await request.formData();
   const file = form.get("signature");
   if (!(file instanceof File)) return NextResponse.json({ error: "Signaturdatei fehlt." }, { status: 400 });
-  if (!["image/jpeg", "image/jpg"].includes(file.type)) {
-    return NextResponse.json({ error: "Bitte eine JPG-Datei als Unterschrift hochladen." }, { status: 400 });
+  if (!["image/png", "image/jpeg", "image/jpg"].includes(file.type)) {
+    return NextResponse.json({ error: "Bitte eine PNG-Datei mit transparentem Hintergrund oder eine JPG-Datei hochladen." }, { status: 400 });
   }
   const saved = await saveUpload(file, path.join(process.env.UPLOAD_PATH || "/app/uploads", "signatures"));
   await prisma.user.update({ where: { id: target.id }, data: { ownerSignaturePath: saved.storagePath } });

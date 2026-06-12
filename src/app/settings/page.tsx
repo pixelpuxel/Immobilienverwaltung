@@ -5,23 +5,51 @@ import { ApiTokenManager } from "@/components/ApiTokenManager";
 import { BackupTools } from "@/components/BackupTools";
 import { CategoryVisibilityForm } from "@/components/CategoryVisibilityForm";
 import { JsonForm } from "@/components/JsonForm";
+import { MailSettingsCard } from "@/components/MailSettingsCard";
+import { MailTemplateManager } from "@/components/MailTemplateManager";
 import { OwnerProfileForm } from "@/components/OwnerProfileForm";
 import { PortalInstanceManager } from "@/components/PortalInstanceManager";
+import { TelegramBotSettings } from "@/components/TelegramBotSettings";
 import { requireUser } from "@/lib/auth";
 import { env } from "@/lib/env";
+import { ensureMailTemplates, mailTemplatePreviewContext, renderMailTemplate } from "@/lib/mail-templates";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   const user = await requireUser([Role.ADMIN]);
-  const [categories, ownerProfile, apiTokens] = await Promise.all([
+  await ensureMailTemplates(user.portalInstanceId);
+  const [categories, ownerProfile, apiTokens, mailTemplates, telegramConfig] = await Promise.all([
     prisma.documentCategory.findMany({ orderBy: [{ group: "asc" }, { name: "asc" }] }),
     prisma.user.findUniqueOrThrow({ where: { id: user.id } }),
     prisma.apiToken.findMany({
       where: { user: user.portalInstanceId ? { portalInstanceId: user.portalInstanceId } : {} },
       orderBy: { createdAt: "desc" },
       select: { id: true, name: true, scopes: true, lastUsedAt: true, expiresAt: true, revokedAt: true, createdAt: true }
+    }),
+    prisma.mailTemplate.findMany({
+      where: { portalInstanceId: user.portalInstanceId ?? null },
+      orderBy: [{ name: "asc" }],
+      select: { id: true, key: true, name: true, description: true, trigger: true, subject: true, text: true, placeholders: true, active: true }
+    }),
+    prisma.telegramBotConfig.findFirst({
+      where: { portalInstanceId: user.portalInstanceId ?? null },
+      select: {
+        botUsername: true,
+        chatId: true,
+        chatTitle: true,
+        threadId: true,
+        threadTitle: true,
+        pendingChatId: true,
+        pendingChatTitle: true,
+        pendingThreadId: true,
+        pendingThreadTitle: true,
+        pendingFrom: true,
+        pendingText: true,
+        pendingAt: true,
+        webhookEnabled: true
+      }
     })
   ]);
   return (
@@ -54,8 +82,20 @@ export default async function SettingsPage() {
             </div>
           ))}
         </section>
-        <div className="grid gap-6">
+        <div className="grid content-start gap-6">
           <BackupTools />
+          <MailSettingsCard
+            configured={Boolean(env.smtpHost && env.smtpFrom)}
+            smtpHost={env.smtpHost}
+            smtpPort={env.smtpPort}
+            smtpFrom={env.smtpFrom}
+            defaultTo={ownerProfile.contactEmail || ownerProfile.email}
+          />
+          <TelegramBotSettings initialConfig={telegramConfig ? {
+            configured: true,
+            ...telegramConfig,
+            pendingAt: telegramConfig.pendingAt?.toISOString() || null
+          } : { configured: false }} />
           <ApiTokenManager initialTokens={apiTokens.map((token) => ({
             ...token,
             createdAt: token.createdAt.toISOString(),
@@ -72,6 +112,12 @@ export default async function SettingsPage() {
             <label>Beschreibung<textarea name="description" /></label>
           </JsonForm>
         </div>
+      </div>
+      <div className="mt-8">
+        <MailTemplateManager initialTemplates={mailTemplates.map((template) => ({
+          ...template,
+          preview: renderMailTemplate(template, mailTemplatePreviewContext(template))
+        }))} />
       </div>
     </AppShell>
   );
