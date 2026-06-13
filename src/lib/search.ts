@@ -67,14 +67,14 @@ export async function globalSearch(user: ScopedUser, query: string) {
         tenant.isCurrent ? "laufend" : "beendet",
         tenant.moveInDate ? `Einzug ${formatDate(tenant.moveInDate)}` : null
       ].filter(Boolean).join(" · "),
-      href: user.role === Role.ADMIN ? "/users" : tenant.unitId ? `/properties/${tenant.unit?.propertyId}` : "/tenant",
+      href: user.role === Role.ADMIN ? `/users?tenantId=${tenant.id}` : tenant.unitId ? `/properties/${tenant.unit?.propertyId}?unitId=${tenant.unitId}` : "/tenant",
       badge: tenant.email
     })),
     ...users.map<SearchResult>((item) => ({
       type: "Benutzer",
       title: item.name || item.username || item.email,
       description: [item.email, item.username, item.role].filter(Boolean).join(" · "),
-      href: "/users",
+      href: `/users?userId=${item.id}`,
       badge: item.active ? "aktiv" : "inaktiv"
     })),
     ...contracts.map<SearchResult>((contract) => ({
@@ -86,7 +86,7 @@ export async function globalSearch(user: ScopedUser, query: string) {
         contract.template?.name,
         formatDate(contract.createdAt)
       ].filter(Boolean).join(" · "),
-      href: "/contracts",
+      href: `/api/contracts/${contract.id}/preview`,
       badge: "Mietvertrag"
     }))
   ].slice(0, 80);

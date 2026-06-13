@@ -1,9 +1,13 @@
-import { Role, type AgentConfig } from "@prisma/client";
+import fs from "fs/promises";
+import { AuditAction, Role, type AgentConfig } from "@prisma/client";
+import { auditLog } from "./audit";
 import { AGENT_MEMORY_COLLECTION, createEmbedding, ensureVectorCollection, getAiConfig, qdrantRequest, vectorPointId } from "./ai-search";
+import { contractTemplateCandidates, generateContract, selectContractTemplate } from "./contracts";
 import { portalWhere, type ScopedUser } from "./portal-instance";
 import { prisma } from "./prisma";
 import { globalSearch } from "./search";
 import { decryptSecret } from "./secrets";
+import { generateWohnungsgeberbestaetigung } from "./wohnungsgeber";
 
 export const DEFAULT_AGENT_SYSTEM_PROMPT = "Du bist ein Agent für ein Immobilienportal. Du hast die API-Dokumentation und die fachlichen Regeln als Kontext. Analysiere Nutzeranfragen: Bei fachlichen Aktionen wähle den passenden API-Endpunkt und führe ihn aus. Bei allgemeinen Fragen zum System beantworte sie basierend auf dem System-Prompt. Merke dir den Kontext, wie aktuelle Objekte, und greife auf gespeicherte Zusammenfassungen zurück, um sinnvoll zu reagieren.";
 
@@ -19,6 +23,7 @@ type AgentToolResult = {
   name: string;
   summary: string;
   href?: string;
+  attachments?: Array<{ kind: "contract" | "document" | "wohnungsgeberbestaetigung"; format: "pdf" | "docx"; path: string; filename: string }>;
 };
 
 export async function ensureAgentConfig(portalInstanceId: string | null) {
@@ -47,10 +52,12 @@ export async function processAgentMessage(input: AgentMessageInput) {
     searchAgentMemory(input.user, input.message, 6),
     runAgentTools(input.user, input.message)
   ]);
-  const answer = await answerWithProvider(config, input.user, input.message, history.reverse(), memory, tools);
+  const answer = tools.find((tool) => tool.name.endsWith("_action"))?.summary
+    || await answerWithProvider(config, input.user, input.message, history.reverse(), memory, tools);
   const assistantMessage = await prisma.agentMessage.create({ data: { conversationId: conversation.id, role: "assistant", content: answer } });
+  await prisma.agentConversation.update({ where: { id: conversation.id }, data: { updatedAt: new Date() } });
   await indexAgentMemory(input.user, conversation.id, `${input.message}\n${answer}`, assistantMessage.id).catch((error) => console.error("Agent memory index failed", error));
-  return { conversationId: conversation.id, answer, tools };
+  return { conversationId: conversation.id, answer, tools, attachments: tools.flatMap((tool) => tool.attachments || []) };
 }
 
 async function getOrCreateConversation(input: AgentMessageInput) {
@@ -78,6 +85,14 @@ async function getOrCreateConversation(input: AgentMessageInput) {
 async function runAgentTools(user: ScopedUser, message: string): Promise<AgentToolResult[]> {
   const normalized = normalize(message);
   const tools: AgentToolResult[] = [];
+  if (/mietvertrag.*(erstellen|anlegen|generieren|erzeugen)|vertrag.*(erstellen|anlegen|generieren|erzeugen)|generier.*mietvertrag/i.test(normalized)) {
+    tools.push(await createContractAction(user, message));
+    return tools;
+  }
+  if (/wohnungsgeber|geberbestaetigung|geberbestätigung|meldebestaetigung|meldebestätigung/i.test(normalized) && /(erstellen|anlegen|generieren|erzeugen)/i.test(normalized)) {
+    tools.push(await createWohnungsgeberAction(user, message));
+    return tools;
+  }
   const searchNeeded = /\b(suche|finde|zeig|zeige|liste|uebersicht|übersicht|dokument|mieter|immobilie|vertrag|einheit)\b/i.test(normalized);
   if (searchNeeded || message.trim().length >= 2) {
     const results = await globalSearch(user, message);
@@ -87,7 +102,7 @@ async function runAgentTools(user: ScopedUser, message: string): Promise<AgentTo
         href: `/search?q=${encodeURIComponent(message)}`,
         summary: [
           `Portalweite Suche: ${results.length} Treffer.`,
-          ...results.slice(0, 8).map((item) => `- ${item.type}: ${item.title}${item.description ? ` (${item.description})` : ""}`)
+          ...results.slice(0, 8).map((item) => `- ${item.type}: ${item.title}${item.description ? ` (${item.description})` : ""}\n  Link: ${item.href}`)
         ].join("\n")
       });
     }
@@ -105,14 +120,167 @@ async function runAgentTools(user: ScopedUser, message: string): Promise<AgentTo
     });
     tools.push({ name: "tenants", href: "/users", summary: tenants.length ? ["Mieter:", ...tenants.map((t) => `- ${t.firstName} ${t.lastName}: ${t.unit ? `${t.unit.property.name} / ${t.unit.unitNumber}` : "keine Einheit"}`)].join("\n") : "Keine Mieter gefunden." });
   }
-  if (/mietvertrag.*(erstellen|anlegen|generieren)|vertrag.*(erstellen|anlegen|generieren)/i.test(normalized)) {
-    tools.push({
-      name: "contract_guidance",
-      href: "/contracts",
-      summary: "Für Mietverträge kann ich im Telegram-Chat den geführten Dialog `Erstelle Mietvertrag` starten. Im Web nutze bitte den Vertragsgenerator oder nenne den Mieter eindeutig."
-    });
-  }
   return tools;
+}
+
+async function createWohnungsgeberAction(user: ScopedUser, message: string): Promise<AgentToolResult> {
+  if (user.role !== Role.ADMIN) {
+    return { name: "wohnungsgeber_action", summary: "Ich kann Wohnungsgeberbestätigungen nur mit Eigentümer-/Adminrechten erzeugen." };
+  }
+  const testMode = /\b(test|testweise|testmodus)\b/i.test(normalize(message));
+  const tenant = await findTenantForMessage(user, message);
+  if (!tenant.match) {
+    return { name: "wohnungsgeber_action", summary: `Ich habe keinen eindeutigen Mieter gefunden und deshalb keine Wohnungsgeberbestätigung erzeugt.\n${tenant.reason}` };
+  }
+  try {
+    const document = await generateWohnungsgeberbestaetigung({ tenantProfileId: tenant.match.id, actorUserId: user.id });
+    const summary = [
+      testMode ? "Testmodus: Wohnungsgeberbestätigung wurde erzeugt, geprüft und danach wieder entfernt." : "Wohnungsgeberbestätigung wurde erzeugt.",
+      `Mieter: ${tenantName(tenant.match)}`,
+      tenant.match.unit ? `Immobilie: ${tenant.match.unit.property.name}` : null,
+      tenant.match.unit ? `Einheit: ${tenant.match.unit.unitNumber}` : null,
+      `Dokument-ID: ${document.id}`,
+      `Vorschau-Link: /api/documents/${document.id}/preview`,
+      `PDF-Link: /api/documents/${document.id}/download`
+    ].filter(Boolean).join("\n");
+    if (testMode) {
+      await prisma.document.delete({ where: { id: document.id } }).catch(() => undefined);
+      if (document.storagePath) await fs.rm(document.storagePath, { force: true }).catch(() => undefined);
+      return { name: "wohnungsgeber_action", summary, attachments: [] };
+    }
+    return {
+      name: "wohnungsgeber_action",
+      summary,
+      href: `/api/documents/${document.id}/preview`,
+      attachments: document.storagePath ? [{ kind: "wohnungsgeberbestaetigung", format: "pdf", path: document.storagePath, filename: document.filename }] : []
+    };
+  } catch (error) {
+    return { name: "wohnungsgeber_action", summary: error instanceof Error ? error.message : "Wohnungsgeberbestätigung konnte nicht erzeugt werden." };
+  }
+}
+
+async function createContractAction(user: ScopedUser, message: string): Promise<AgentToolResult> {
+  if (user.role !== Role.ADMIN) {
+    return { name: "contract_action", summary: "Ich kann Mietverträge nur mit Eigentümer-/Adminrechten erzeugen." };
+  }
+  const testMode = /\b(test|testweise|testmodus)\b/i.test(normalize(message));
+  const tenant = await findTenantForMessage(user, message);
+  if (!tenant.match) {
+    return {
+      name: "contract_action",
+      summary: [
+        "Ich habe keinen eindeutigen Mieter gefunden und deshalb keinen Vertrag erzeugt.",
+        tenant.reason,
+        "Nutze für neue Mieter den geführten Telegram-Dialog `Erstelle Mietvertrag` oder lege den Mieter zuerst im Portal an."
+      ].filter(Boolean).join("\n")
+    };
+  }
+  const profile = tenant.match;
+  if (!profile.unitId || !profile.unit) {
+    return { name: "contract_action", summary: `Für ${tenantName(profile)} ist keine Einheit zugeordnet. Ich habe keinen Vertrag erzeugt.` };
+  }
+  const candidates = await contractTemplateCandidates({ portalInstanceId: user.portalInstanceId, propertyId: profile.unit.propertyId });
+  const propertySpecific = candidates.filter((template) => template.propertyId === profile.unit!.propertyId);
+  const globalTemplates = candidates.filter((template) => template.isGlobalTemplate && !template.propertyId);
+  const selectableTemplates = propertySpecific.length ? propertySpecific : globalTemplates;
+  const mentionedTemplate = findMentionedTemplate(selectableTemplates, message);
+  if (!mentionedTemplate && selectableTemplates.length > 1) {
+    const choices = selectableTemplates.map((template, index) => `${index + 1}. ${template.name}`).join("\n");
+    return {
+      name: "contract_action",
+      summary: [
+        "Ich habe mehrere passende Vorlagen gefunden und deshalb noch keinen Vertrag erzeugt.",
+        choices,
+        "Bitte nenne die gewünschte Vorlage eindeutig."
+      ].join("\n")
+    };
+  }
+  const template = mentionedTemplate || await selectContractTemplate({ portalInstanceId: user.portalInstanceId, propertyId: profile.unit.propertyId });
+  const generated = await generateContract({ tenantProfileId: profile.id, unitId: profile.unitId, templateId: template?.id || null });
+  const contract = await prisma.leaseContract.create({
+    data: {
+      tenantProfileId: profile.id,
+      unitId: profile.unitId,
+      templateId: template?.id || null,
+      docxPath: generated.docxPath,
+      pdfPath: generated.pdfPath
+    }
+  });
+  await auditLog({ userId: user.id, action: AuditAction.CONTRACT_GENERATED, entity: "LeaseContract", entityId: contract.id, detail: { source: "agent", testMode } });
+  const links = contractLinks(contract.id, Boolean(generated.pdfPath));
+  const lines = [
+    testMode ? "Testmodus: Vertrag wurde erzeugt, geprüft und danach wieder entfernt." : "Mietvertrag wurde erzeugt.",
+    `Mieter: ${tenantName(profile)}`,
+    `Immobilie: ${profile.unit.property.name}`,
+    `Einheit: ${profile.unit.unitNumber}`,
+    `Verwendete Vorlage: ${template?.name || "Interner Standardvertrag"}`,
+    `Vertrags-ID: ${contract.id}`,
+    `Vorschau-Link: ${links.preview}`,
+    `DOCX-Link: ${links.docx}`,
+    generated.pdfPath ? `PDF-Link: ${links.pdf}` : "PDF-Link: PDF konnte nicht erzeugt werden, DOCX ist verfügbar."
+  ];
+  const attachments = generated.pdfPath
+    ? [{ kind: "contract" as const, format: "pdf" as const, path: generated.pdfPath, filename: `Mietvertrag_${tenantName(profile)}.pdf` }]
+    : [{ kind: "contract" as const, format: "docx" as const, path: generated.docxPath, filename: `Mietvertrag_${tenantName(profile)}.docx` }];
+  if (testMode) {
+    await prisma.leaseContract.delete({ where: { id: contract.id } }).catch(() => undefined);
+    await fs.rm(generated.docxPath, { force: true }).catch(() => undefined);
+    if (generated.pdfPath) await fs.rm(generated.pdfPath, { force: true }).catch(() => undefined);
+    return { name: "contract_action", summary: lines.join("\n"), attachments: [] };
+  }
+  return { name: "contract_action", summary: lines.join("\n"), href: links.preview, attachments };
+}
+
+function findMentionedTemplate<T extends { name: string }>(templates: T[], message: string) {
+  const normalizedMessage = normalize(message);
+  const scored = templates
+    .map((template) => {
+      const normalizedName = normalize(template.name);
+      const words = normalizedName.split(/[^a-z0-9]+/).filter((word) => word.length > 3);
+      const score = normalizedMessage.includes(normalizedName) ? 100 : words.filter((word) => normalizedMessage.includes(word)).length;
+      return { template, score };
+    })
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score);
+  return scored.length && (scored.length === 1 || scored[0].score > scored[1].score) ? scored[0].template : null;
+}
+
+async function findTenantForMessage(user: ScopedUser, message: string) {
+  const normalizedMessage = normalize(message);
+  const tenants = await prisma.tenantProfile.findMany({
+    where: { user: portalWhere(user) },
+    include: { unit: { include: { property: true } } },
+    orderBy: [{ isCurrent: "desc" }, { updatedAt: "desc" }],
+    take: 200
+  });
+  const scored = tenants
+    .map((tenant) => {
+      const name = normalize(tenantName(tenant));
+      const email = normalize(tenant.email || "");
+      const score = (name && normalizedMessage.includes(name) ? 100 : 0)
+        + name.split(/\s+/).filter((part) => part.length > 2 && normalizedMessage.includes(part)).length * 20
+        + (email && normalizedMessage.includes(email) ? 50 : 0);
+      return { tenant, score };
+    })
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score);
+  if (!scored.length) return { match: null, reason: "Kein vorhandener Mieter passt zur Anfrage." };
+  if (scored.length > 1 && scored[0].score === scored[1].score) {
+    return { match: null, reason: `Mehrere Mieter passen: ${scored.slice(0, 5).map((item) => tenantName(item.tenant)).join(", ")}.` };
+  }
+  return { match: scored[0].tenant, reason: "" };
+}
+
+function tenantName(tenant: { firstName: string; lastName: string; email?: string }) {
+  return `${tenant.firstName} ${tenant.lastName}`.trim() || tenant.email || "Mieter";
+}
+
+function contractLinks(contractId: string, hasPdf: boolean) {
+  return {
+    preview: `/api/contracts/${contractId}/preview`,
+    docx: `/api/contracts/${contractId}/download?format=docx`,
+    pdf: hasPdf ? `/api/contracts/${contractId}/download?format=pdf` : ""
+  };
 }
 
 async function answerWithProvider(config: AgentConfig, user: ScopedUser, message: string, history: Array<{ role: string; content: string }>, memory: string[], tools: AgentToolResult[]) {

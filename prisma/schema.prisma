@@ -143,6 +143,7 @@ model Property {
   documents             Document[]
   brokerRequests        BrokerRequest[]
   brokerValuations      BrokerValuation[]
+  templates             ContractTemplate[]
   portalInstance        PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
 }
 
@@ -290,6 +291,8 @@ model TenantProfile {
 model ContractTemplate {
   id          String          @id @default(cuid())
   portalInstanceId String?
+  propertyId  String?
+  isGlobalTemplate Boolean    @default(true)
   name        String
   filename    String
   storagePath String
@@ -297,6 +300,7 @@ model ContractTemplate {
   size        Int
   createdAt   DateTime        @default(now())
   contracts   LeaseContract[]
+  property    Property?        @relation(fields: [propertyId], references: [id], onDelete: SetNull)
   portalInstance PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
 }
 

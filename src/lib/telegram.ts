@@ -6,7 +6,7 @@ import { auditLog } from "./audit";
 import { processAgentMessage } from "./agent";
 import { getAiConfig, semanticDocumentSearch, transcribeAudio } from "./ai-search";
 import { hashPassword } from "./auth";
-import { generateContract } from "./contracts";
+import { generateContract, selectContractTemplate } from "./contracts";
 import { readPrivateFile } from "./files";
 import { globalSearch } from "./search";
 import { decryptSecret } from "./secrets";
@@ -205,7 +205,7 @@ export async function handleTelegramUpdate(config: TelegramConfig, update: Teleg
       await sendTelegramMessage(token, chatId, `Das habe ich nicht erkannt.\n\n${telegramHelpText()}`, threadId);
       return;
     }
-    await sendTelegramMessage(token, chatId, await agentTelegramReply(user, text, chatId, threadId), threadId);
+    await agentTelegramReply(token, user, text, chatId, threadId);
   } catch (error) {
     await sendTelegramMessage(token, chatId, error instanceof Error ? `Fehler: ${error.message}` : "Fehler bei der Verarbeitung.", threadId);
   }
@@ -250,17 +250,21 @@ async function handleVoiceSearch(config: TelegramConfig, token: string, chatId: 
     await sendTelegramMessage(token, chatId, "Kein aktiver Eigentümer/Admin fuer diese Portalinstanz gefunden.", threadId);
     return;
   }
-  await sendTelegramMessage(token, chatId, [`Transkription: ${transcript}`, "", await agentTelegramReply(user, transcript, chatId, threadId)].join("\n"), threadId);
+  await sendTelegramMessage(token, chatId, `Transkription: ${transcript}`, threadId);
+  await agentTelegramReply(token, user, transcript, chatId, threadId);
 }
 
-async function agentTelegramReply(user: NonNullable<Awaited<ReturnType<typeof botUser>>>, text: string, chatId: string, threadId: string | null) {
+async function agentTelegramReply(token: string, user: NonNullable<Awaited<ReturnType<typeof botUser>>>, text: string, chatId: string, threadId: string | null) {
   const result = await processAgentMessage({
     user,
     message: text,
     channel: "telegram",
     externalKey: `${chatId}:${threadId || ""}`
   });
-  return result.answer;
+  await sendTelegramMessage(token, chatId, result.answer, threadId);
+  for (const attachment of result.attachments || []) {
+    await sendTelegramDocument(token, chatId, attachment.path, attachment.filename, threadId);
+  }
 }
 
 async function propertiesReply(portalInstanceId: string | null) {
@@ -339,8 +343,7 @@ async function generateContractReply(config: TelegramConfig, token: string, chat
     return;
   }
   await sendTelegramMessage(token, chatId, `Erzeuge Mietvertrag fuer ${tenant.firstName} ${tenant.lastName}...`, threadId);
-  const templates = await prisma.contractTemplate.findMany({ where: { portalInstanceId: config.portalInstanceId }, orderBy: { createdAt: "desc" } });
-  const template = pickTemplate(templates, tenant.unit.property.name);
+  const template = await selectContractTemplate({ portalInstanceId: config.portalInstanceId, propertyId: tenant.unit.propertyId });
   const generated = await generateContract({ tenantProfileId: tenant.id, unitId: tenant.unitId!, templateId: template?.id || null });
   const contract = await prisma.leaseContract.create({
     data: {
@@ -354,6 +357,14 @@ async function generateContractReply(config: TelegramConfig, token: string, chat
   await auditLog({ userId, action: AuditAction.CONTRACT_GENERATED, entity: "LeaseContract", entityId: contract.id, detail: { source: "telegram", tenant: `${tenant.firstName} ${tenant.lastName}` } });
   const filePath = generated.pdfPath || generated.docxPath;
   await fs.access(filePath);
+  await sendTelegramMessage(token, chatId, [
+    "Mietvertrag wurde erzeugt.",
+    `Mieter: ${tenant.firstName} ${tenant.lastName}`,
+    `Immobilie: ${tenant.unit.property.name}`,
+    `Einheit: ${tenant.unit.unitNumber}`,
+    `Verwendete Vorlage: ${template?.name || "Interner Standardvertrag"}`,
+    `Vertrags-ID: ${contract.id}`
+  ].join("\n"), threadId);
   await sendTelegramDocument(token, chatId, filePath, `Mietvertrag ${tenant.firstName} ${tenant.lastName}`, threadId);
 }
 
@@ -440,6 +451,14 @@ async function handleContractWizard(
       await sendTelegramMessage(token, chatId, "Erzeuge Mietvertrag als PDF...", threadId);
       const result = await createContractFromWizardDraft(config, draft, user.id);
       await clearContractConversation(config, chatId, threadId);
+      await sendTelegramMessage(token, chatId, [
+        "Mietvertrag wurde erzeugt.",
+        `Mieter: ${result.tenantName}`,
+        `Immobilie: ${result.propertyName}`,
+        `Einheit: ${result.unitNumber}`,
+        `Verwendete Vorlage: ${result.templateName}`,
+        `Vertrags-ID: ${result.contractId}`
+      ].join("\n"), threadId);
       await sendTelegramDocument(token, chatId, result.pdfPath, `Mietvertrag ${result.tenantName}`, threadId);
       return;
     }
@@ -733,8 +752,7 @@ async function createContractFromWizardDraft(config: TelegramConfig, draft: Cont
       data: { isCurrent: false, moveOutDate: parseDateStrict(draft.moveInDate) }
     });
   }
-  const templates = await prisma.contractTemplate.findMany({ where: { portalInstanceId: config.portalInstanceId }, orderBy: { createdAt: "desc" } });
-  const template = pickTemplate(templates, unit.property.name);
+  const template = await selectContractTemplate({ portalInstanceId: config.portalInstanceId, propertyId: unit.propertyId });
   const generated = await generateContract({ tenantProfileId: profile.id, unitId: unit.id, templateId: template?.id || null });
   if (!generated.pdfPath) throw new Error("Der Vertrag wurde erstellt, aber die PDF-Konvertierung ist fehlgeschlagen.");
   const contract = await prisma.leaseContract.create({
@@ -748,7 +766,7 @@ async function createContractFromWizardDraft(config: TelegramConfig, draft: Cont
   });
   await auditLog({ userId, action: AuditAction.CONTRACT_GENERATED, entity: "LeaseContract", entityId: contract.id, detail: { source: "telegram-wizard", tenant: displayName } });
   await fs.access(generated.pdfPath);
-  return { pdfPath: generated.pdfPath, tenantName: displayName };
+  return { pdfPath: generated.pdfPath, tenantName: displayName, templateName: template?.name || "Interner Standardvertrag", propertyName: unit.property.name, unitNumber: unit.unitNumber, contractId: contract.id };
 }
 
 function contractDraftSummary(draft: ContractWizardDraft, final: boolean) {
@@ -841,14 +859,6 @@ function normalize(value: unknown) {
   return String(value || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/ß/g, "ss");
 }
 
-function pickTemplate<T extends { name: string }>(templates: T[], propertyName: string) {
-  const propertyKey = normalize(propertyName);
-  return templates.find((item) => propertyKey && normalize(item.name).includes(propertyKey.split(" ")[0]))
-    || templates.find((item) => propertyKey.includes("mainau") && normalize(item.name).includes("mainau"))
-    || templates.find((item) => propertyKey.includes("tiroler") && normalize(item.name).includes("tiroler"))
-    || templates[0]
-    || null;
-}
 
 function formatDate(value: Date) {
   return new Intl.DateTimeFormat("de-DE", { dateStyle: "short" }).format(value);

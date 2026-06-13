@@ -131,6 +131,8 @@ docker compose up -d --build
 - Das Portal enthält einen Portal-Agenten, der über einen schwebenden Web-Chat und über Telegram-Freitext erreichbar ist. Der System-Prompt ist pro Portal-Instanz unter Einstellungen editierbar.
 - Standard-System-Prompt des Agenten: "Du bist ein Agent für ein Immobilienportal. Du hast die API-Dokumentation und die fachlichen Regeln als Kontext. Analysiere Nutzeranfragen: Bei fachlichen Aktionen wähle den passenden API-Endpunkt und führe ihn aus. Bei allgemeinen Fragen zum System beantworte sie basierend auf dem System-Prompt. Merke dir den Kontext, wie aktuelle Objekte, und greife auf gespeicherte Zusammenfassungen zurück, um sinnvoll zu reagieren."
 - Der Agent darf fachliche Portal-Aktionen vorbereiten oder ausführen, soweit die aktuelle Rolle dazu berechtigt ist. Mindestens Suche, Immobilien-/Mieterlisten, Dokument-/Vertragskontext und Hinweise zur Vertragsgenerierung müssen unterstützt werden.
+- Der Agent darf nicht behaupten, dass ein Vertrag oder Dokument erzeugt wurde, wenn kein Datenbankeintrag und keine Datei erstellt wurden. Bei echten Erzeugungen müssen verwendete Vorlage, Zielobjekte und direkte Links genannt werden.
+- Agent-Testmodus wird durch Formulierungen wie "Testmodus" oder "testweise" aktiviert. Dabei erzeugte LeaseContracts, Testdokumente und Dateien werden nach der Prüfung entfernt.
 - Chatverlauf des Agenten wird in PostgreSQL gespeichert; Langzeitkontext und Zusammenfassungen werden in Qdrant als Vektoren abgelegt.
 - Telegram-Slash-Befehle bleiben erhalten. Freitext und transkribierte Sprachnachrichten laufen über den Portal-Agenten. Der bestehende Dialog "Erstelle Mietvertrag" bleibt priorisiert und wird nicht vom allgemeinen Agenten überschrieben.
 

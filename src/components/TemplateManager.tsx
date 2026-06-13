@@ -9,10 +9,14 @@ type TemplateManagerProps = {
     id: string;
     name: string;
     filename: string;
+    propertyId: string | null;
+    isGlobalTemplate: boolean;
+    property?: { id: string; name: string } | null;
   };
+  properties: Array<{ id: string; label: string }>;
 };
 
-export function TemplateManager({ template }: TemplateManagerProps) {
+export function TemplateManager({ template, properties }: TemplateManagerProps) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -48,6 +52,10 @@ export function TemplateManager({ template }: TemplateManagerProps) {
       <div>
         <div className="font-semibold">{template.name}</div>
         <div className="text-muted">{template.filename}</div>
+        <div className="mt-1 flex flex-wrap gap-2 text-xs">
+          <span className="rounded-full bg-white px-2 py-1 font-semibold text-muted">{template.property ? `Immobilie: ${template.property.name}` : "Keine Immobilie"}</span>
+          <span className="rounded-full bg-white px-2 py-1 font-semibold text-muted">{template.isGlobalTemplate ? "Allgemeine Vorlage" : "Nur zugeordnete Immobilie"}</span>
+        </div>
       </div>
       {message ? <div className="rounded-md border border-line bg-white p-2 text-xs">{message}</div> : null}
       <div className="flex flex-wrap gap-2">
@@ -57,6 +65,14 @@ export function TemplateManager({ template }: TemplateManagerProps) {
       </div>
       <form className="grid gap-2" onSubmit={save}>
         <label>Name<input name="name" defaultValue={template.name} required /></label>
+        <label>Immobilie<select name="propertyId" defaultValue={template.propertyId || ""}>
+          <option value="">Keine bestimmte Immobilie</option>
+          {properties.map((property) => <option key={property.id} value={property.id}>{property.label}</option>)}
+        </select></label>
+        <label className="flex items-center gap-2 text-sm font-semibold">
+          <input name="isGlobalTemplate" type="checkbox" defaultChecked={template.isGlobalTemplate} />
+          Allgemeine Vorlage
+        </label>
         <label className="grid gap-1 text-xs font-semibold text-muted">
           Neue DOCX-Version
           <input name="file" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />

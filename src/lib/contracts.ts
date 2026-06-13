@@ -89,6 +89,44 @@ export async function generateContract(input: { tenantProfileId: string; unitId:
   return { docxPath, pdfPath };
 }
 
+export async function contractTemplateCandidates(input: { portalInstanceId: string | null; propertyId: string }) {
+  return prisma.contractTemplate.findMany({
+    where: {
+      portalInstanceId: input.portalInstanceId,
+      OR: [
+        { propertyId: input.propertyId },
+        { isGlobalTemplate: true, propertyId: null }
+      ]
+    },
+    include: { property: { select: { id: true, name: true } } },
+    orderBy: [
+      { propertyId: "desc" },
+      { createdAt: "desc" }
+    ]
+  });
+}
+
+export async function selectContractTemplate(input: { portalInstanceId: string | null; propertyId: string; templateId?: string | null }) {
+  if (input.templateId) {
+    return prisma.contractTemplate.findFirst({
+      where: {
+        id: input.templateId,
+        portalInstanceId: input.portalInstanceId,
+        OR: [
+          { propertyId: input.propertyId },
+          { isGlobalTemplate: true },
+          { propertyId: null }
+        ]
+      },
+      include: { property: { select: { id: true, name: true } } }
+    });
+  }
+  const candidates = await contractTemplateCandidates(input);
+  return candidates.find((template) => template.propertyId === input.propertyId)
+    || candidates.find((template) => template.isGlobalTemplate)
+    || null;
+}
+
 function contractBaseName(tenant: ContractTenant, unit: ContractUnit) {
   const stamp = new Intl.DateTimeFormat("de-DE", {
     day: "2-digit",

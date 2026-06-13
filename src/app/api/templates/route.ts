@@ -22,9 +22,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Bitte DOCX-Vorlage hochladen." }, { status: 400 });
   }
   const saved = await saveUpload(file, env.contractsPath);
+  const propertyId = String(form.get("propertyId") || "").trim() || null;
+  const isGlobalTemplate = form.get("isGlobalTemplate") === "on" || !propertyId;
+  if (propertyId) {
+    const property = await prisma.property.findFirst({ where: { id: propertyId, ...portalWhere(user) } });
+    if (!property) return NextResponse.json({ error: "Immobilie gehoert nicht zu dieser Instanz." }, { status: 403 });
+  }
   const template = await prisma.contractTemplate.create({
     data: {
       name: String(form.get("name") || file.name),
+      propertyId,
+      isGlobalTemplate,
       filename: saved.filename,
       storagePath: saved.storagePath,
       mimeType: saved.mimeType,

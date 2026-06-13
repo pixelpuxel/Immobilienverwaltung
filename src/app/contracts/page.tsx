@@ -17,11 +17,12 @@ export const dynamic = "force-dynamic";
 export default async function ContractsPage({ searchParams }: { searchParams?: { propertyId?: string } }) {
   const user = await requireUser();
   const selectedPropertyId = searchParams?.propertyId || "";
-  const [contracts, tenants, units, templates] = await Promise.all([
+  const [contracts, tenants, units, templates, properties] = await Promise.all([
     prisma.leaseContract.findMany({ where: { unit: { property: portalWhere(user) } }, include: { tenantProfile: true, unit: { include: { property: true } }, template: true }, orderBy: { createdAt: "desc" } }),
     prisma.tenantProfile.findMany({ where: { user: portalWhere(user) }, orderBy: { lastName: "asc" } }),
     prisma.unit.findMany({ where: { property: portalWhere(user) }, include: { property: true }, orderBy: { unitNumber: "asc" } }),
-    prisma.contractTemplate.findMany({ where: portalWhere(user), orderBy: { createdAt: "desc" } })
+    prisma.contractTemplate.findMany({ where: portalWhere(user), include: { property: { select: { id: true, name: true } } }, orderBy: { createdAt: "desc" } }),
+    prisma.property.findMany({ where: portalWhere(user), orderBy: { name: "asc" }, select: { id: true, name: true } })
   ]);
   const visibleContracts = user.role === Role.TENANT ? contracts.filter((contract) => contract.tenantProfile.userId === user.id) : contracts;
   const contractGroups = groupContracts(visibleContracts);
@@ -35,7 +36,8 @@ export default async function ContractsPage({ searchParams }: { searchParams?: {
     garageRent: unit.garageRent?.toString() || "",
     serviceCharges: unit.serviceCharges?.toString() || ""
   }));
-  const templateOptions = templates.map((template) => ({ id: template.id, label: template.name }));
+  const templateOptions = templates.map((template) => ({ id: template.id, label: `${template.name}${template.property ? ` (${template.property.name})` : template.isGlobalTemplate ? " (allgemein)" : ""}` }));
+  const propertyOptions = properties.map((property) => ({ id: property.id, label: property.name }));
   return (
     <AppShell role={user.role} userId={user.id} email={user.email} canSwitchView={user.role === Role.ADMIN || Boolean(user.impersonatedByAdminId)}>
       <h1 className="text-3xl font-bold">{user.role === Role.ADMIN ? "Vertragsgenerator" : "Meine Verträge"}</h1>
@@ -71,7 +73,7 @@ export default async function ContractsPage({ searchParams }: { searchParams?: {
                     <a className="h-20 w-24 overflow-hidden rounded-md border border-line bg-white" href={`/api/templates/${template.id}/preview`} target="_blank" rel="noreferrer">
                       <img src={`/api/templates/${template.id}/thumbnail`} alt={`Vorschau ${template.name}`} className="h-full w-full object-cover" loading="lazy" />
                     </a>
-                    <TemplateManager template={template} />
+                    <TemplateManager template={template} properties={propertyOptions} />
                   </div>
                 ))}
                 {!templates.length ? <div className="text-sm text-muted">Noch keine Vorlagen hochgeladen.</div> : null}
@@ -125,6 +127,8 @@ export default async function ContractsPage({ searchParams }: { searchParams?: {
           <aside className="grid content-start gap-6 self-start">
             <UploadForm endpoint="/api/templates" submitLabel="Vorlage hochladen">
               <label>Name<input name="name" /></label>
+              <label>Immobilie<select name="propertyId"><option value="">Keine bestimmte Immobilie</option>{propertyOptions.map((property) => <option key={property.id} value={property.id}>{property.label}</option>)}</select></label>
+              <label className="flex items-center gap-2 text-sm font-semibold"><input name="isGlobalTemplate" type="checkbox" defaultChecked /> Allgemeine Vorlage</label>
             </UploadForm>
             <ContractGenerateForm tenants={tenantOptions} units={unitOptions} templates={templateOptions} defaultUnitId={unitOptions[0]?.id || ""} />
             <TenantCreateForm units={tenantUnitOptions} defaultUnitId={unitOptions[0]?.id || ""} compact />

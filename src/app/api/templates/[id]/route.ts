@@ -18,7 +18,13 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   const form = await request.formData();
   const name = String(form.get("name") || template.name).trim();
   const file = form.get("file");
-  const data: { name: string; filename?: string; storagePath?: string; mimeType?: string; size?: number } = { name };
+  const propertyId = String(form.get("propertyId") || "").trim() || null;
+  const isGlobalTemplate = form.get("isGlobalTemplate") === "on" || !propertyId;
+  if (propertyId) {
+    const property = await prisma.property.findFirst({ where: { id: propertyId, ...portalWhere(user) } });
+    if (!property) return NextResponse.json({ error: "Immobilie gehoert nicht zu dieser Instanz." }, { status: 403 });
+  }
+  const data: { name: string; propertyId: string | null; isGlobalTemplate: boolean; filename?: string; storagePath?: string; mimeType?: string; size?: number } = { name, propertyId, isGlobalTemplate };
   if (file instanceof File && file.size > 0) {
     if (!file.name.endsWith(".docx")) return NextResponse.json({ error: "Bitte DOCX-Vorlage hochladen." }, { status: 400 });
     const saved = await saveUpload(file, env.contractsPath);

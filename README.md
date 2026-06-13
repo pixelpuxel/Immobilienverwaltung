@@ -262,6 +262,8 @@ Unter `Einstellungen -> Portal-Agent` kann der System-Prompt pro Portal-Instanz 
 
 Der Chatverlauf wird in PostgreSQL gespeichert. Langzeitkontext wird in Qdrant in der Collection `immobilienportal_agent_memory` als Vektorindex abgelegt.
 
+Der Agent fuehrt fachliche Aktionen nur aus, wenn die Daten eindeutig sind. Bei Mietvertraegen nennt er immer die verwendete Vorlage und gibt direkte Vorschau-, DOCX- und PDF-Links zurueck. In Telegram werden erzeugte PDF-Dateien direkt in den Chat gesendet. Mit dem Wort `Testmodus` koennen Agentenaktionen getestet werden, ohne dass Testvertraege oder Testdokumente dauerhaft gespeichert bleiben.
+
 ## Vertragsvorlagen
 
 DOCX-Vorlagen koennen diese Platzhalter enthalten:

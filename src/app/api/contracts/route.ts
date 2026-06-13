@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { auditLog } from "@/lib/audit";
 import { assertSameOrigin, clientIp, requireApiUser } from "@/lib/auth";
-import { generateContract } from "@/lib/contracts";
+import { generateContract, selectContractTemplate } from "@/lib/contracts";
 import { portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 
@@ -29,16 +29,17 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: "Nicht erlaubt." }, { status: 403 });
   const body = schema.safeParse(await request.json());
   if (!body.success) return NextResponse.json({ error: "Ungueltige Daten." }, { status: 400 });
-  const unit = await prisma.unit.findFirst({ where: { id: body.data.unitId, property: portalWhere(user) } });
+  const unit = await prisma.unit.findFirst({ where: { id: body.data.unitId, property: portalWhere(user) }, include: { property: true } });
   const tenantProfile = await prisma.tenantProfile.findFirst({ where: { id: body.data.tenantProfileId, user: portalWhere(user) } });
-  const template = body.data.templateId ? await prisma.contractTemplate.findFirst({ where: { id: body.data.templateId, ...portalWhere(user) } }) : null;
-  if (!unit || !tenantProfile || (body.data.templateId && !template)) return NextResponse.json({ error: "Auswahl gehoert nicht zu dieser Instanz." }, { status: 403 });
-  const generated = await generateContract(body.data);
+  if (!unit || !tenantProfile) return NextResponse.json({ error: "Auswahl gehoert nicht zu dieser Instanz." }, { status: 403 });
+  const template = await selectContractTemplate({ portalInstanceId: user.portalInstanceId, propertyId: unit.propertyId, templateId: body.data.templateId });
+  if (body.data.templateId && !template) return NextResponse.json({ error: "Vorlage gehoert nicht zu dieser Immobilie oder Instanz." }, { status: 403 });
+  const generated = await generateContract({ ...body.data, templateId: template?.id || null });
   const contract = await prisma.leaseContract.create({
     data: {
       tenantProfileId: body.data.tenantProfileId,
       unitId: body.data.unitId,
-      templateId: body.data.templateId,
+      templateId: template?.id || null,
       docxPath: generated.docxPath,
       pdfPath: generated.pdfPath
     }

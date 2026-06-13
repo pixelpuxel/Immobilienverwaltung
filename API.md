@@ -376,6 +376,14 @@ POST /api/agent/chat
 
 Der Agent nutzt dieselben Rollen- und Instanzrechte wie das Portal. Chatverlauf liegt in PostgreSQL. Langzeitkontext wird in Qdrant in der Collection `immobilienportal_agent_memory` gespeichert. Telegram-Freitext und Sprachnachrichten laufen ebenfalls über diesen Agenten; Slash-Befehle bleiben zusätzlich verfügbar.
 
+Agent-Aktionen:
+
+- Mietverträge werden für vorhandene, eindeutig erkannte Mieter wirklich erzeugt. Die Antwort enthält Mieter, Immobilie, Einheit, verwendete Vorlage, Vertrags-ID sowie Vorschau-/DOCX-/PDF-Link.
+- Bei mehreren passenden Vorlagen fragt der Agent nach. Wird eine Vorlage im Text eindeutig genannt, verwendet er diese.
+- Wohnungsgeberbestätigungen werden für vorhandene, eindeutig erkannte Mieter erzeugt und verlinkt.
+- Telegram sendet bei erzeugten PDFs zusätzlich zur Textantwort das PDF als Dokument.
+- `Testmodus` oder `testweise` erzeugt Testdokumente nur temporär und entfernt LeaseContract/Dokument/Datei danach wieder.
+
 ## Backup-Format
 
 Das Backup ist JSON und absichtlich lesbar:
