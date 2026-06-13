@@ -86,7 +86,7 @@ async function getOrCreateConversation(input: AgentMessageInput) {
 async function runAgentTools(user: ScopedUser, message: string): Promise<AgentToolResult[]> {
   const normalized = normalize(message);
   const tools: AgentToolResult[] = [];
-  if (/mietvertrag.*(erstellen|anlegen|generieren|erzeugen)|vertrag.*(erstellen|anlegen|generieren|erzeugen)|generier.*mietvertrag/i.test(normalized)) {
+  if (isContractCreationRequest(normalized)) {
     tools.push(await createContractAction(user, message));
     return tools;
   }
@@ -122,6 +122,12 @@ async function runAgentTools(user: ScopedUser, message: string): Promise<AgentTo
     tools.push({ name: "tenants", href: "/users", summary: tenants.length ? ["Mieter:", ...tenants.map((t) => `- ${t.firstName} ${t.lastName}: ${t.unit ? `${t.unit.property.name} / ${t.unit.unitNumber}` : "keine Einheit"}`)].join("\n") : "Keine Mieter gefunden." });
   }
   return tools;
+}
+
+function isContractCreationRequest(normalizedMessage: string) {
+  const hasContract = /\b(mietvertrag|vertrag|leasecontract)\b/i.test(normalizedMessage);
+  const hasCreateVerb = /\b(erstelle|erstellen|erzeug|erzeuge|erzeugen|generier|generiere|generieren|anleg|anlege|anlegen|mach|mache)\b/i.test(normalizedMessage);
+  return hasContract && hasCreateVerb;
 }
 
 async function createWohnungsgeberAction(user: ScopedUser, message: string): Promise<AgentToolResult> {

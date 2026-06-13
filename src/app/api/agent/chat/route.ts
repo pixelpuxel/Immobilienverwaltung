@@ -21,7 +21,11 @@ export async function POST(request: NextRequest) {
     conversationId: parsed.data.conversationId,
     channel: "web"
   });
-  return NextResponse.json(result);
+  return NextResponse.json({
+    ...result,
+    tools: result.tools.map(({ attachments: _attachments, ...tool }) => tool),
+    attachments: []
+  });
 }
 
 export async function GET(request: NextRequest) {
