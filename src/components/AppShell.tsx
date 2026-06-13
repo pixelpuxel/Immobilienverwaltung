@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Role } from "@prisma/client";
+import { AgentChatWidget } from "./AgentChatWidget";
 import { LogoutButton } from "./LogoutButton";
 import { MobileNav } from "./MobileNav";
 import { ViewSwitcher } from "./ViewSwitcher";
@@ -74,6 +75,7 @@ export function AppShell({
         ) : null}
         <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-5 sm:py-8">{children}</div>
       </main>
+      <AgentChatWidget />
     </div>
   );
 }

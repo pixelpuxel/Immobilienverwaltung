@@ -1,6 +1,7 @@
 import { AuditAction, DocumentScope, DocumentStatus, Prisma, Role } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { auditLog } from "@/lib/audit";
+import { indexDocument } from "@/lib/ai-search";
 import { assertSameOrigin, clientIp, requireApiUser } from "@/lib/auth";
 import { buildDocumentMetadata, extractDocumentYear } from "@/lib/document-metadata";
 import { saveUpload } from "@/lib/files";
@@ -187,5 +188,6 @@ export async function POST(request: NextRequest) {
     data: metadata
   });
   await auditLog({ userId: user.id, action: AuditAction.FILE_UPLOADED, entity: "Document", entityId: document.id, ipAddress: clientIp(request) });
+  indexDocument(document.id).catch((error) => console.error("Document index failed", document.id, error));
   return NextResponse.json(enrichedDocument, { status: 201 });
 }

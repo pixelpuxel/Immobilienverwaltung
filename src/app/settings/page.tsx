@@ -1,5 +1,7 @@
 import { Role } from "@prisma/client";
 import { AccountSettingsForm } from "@/components/AccountSettingsForm";
+import { AiProviderSettings } from "@/components/AiProviderSettings";
+import { AgentSettings } from "@/components/AgentSettings";
 import { AppShell } from "@/components/AppShell";
 import { ApiTokenManager } from "@/components/ApiTokenManager";
 import { BackupTools } from "@/components/BackupTools";
@@ -12,6 +14,7 @@ import { PortalInstanceManager } from "@/components/PortalInstanceManager";
 import { TelegramBotSettings } from "@/components/TelegramBotSettings";
 import { requireUser } from "@/lib/auth";
 import { env } from "@/lib/env";
+import { DEFAULT_AGENT_SYSTEM_PROMPT, ensureAgentConfig } from "@/lib/agent";
 import { ensureMailTemplates, mailTemplatePreviewContext, renderMailTemplate } from "@/lib/mail-templates";
 import { prisma } from "@/lib/prisma";
 
@@ -20,7 +23,7 @@ export const dynamic = "force-dynamic";
 export default async function SettingsPage() {
   const user = await requireUser([Role.ADMIN]);
   await ensureMailTemplates(user.portalInstanceId);
-  const [categories, ownerProfile, apiTokens, mailTemplates, telegramConfig] = await Promise.all([
+  const [categories, ownerProfile, apiTokens, mailTemplates, telegramConfig, aiConfig, agentConfig] = await Promise.all([
     prisma.documentCategory.findMany({ orderBy: [{ group: "asc" }, { name: "asc" }] }),
     prisma.user.findUniqueOrThrow({ where: { id: user.id } }),
     prisma.apiToken.findMany({
@@ -50,7 +53,12 @@ export default async function SettingsPage() {
         pendingAt: true,
         webhookEnabled: true
       }
-    })
+    }),
+    prisma.aiProviderConfig.findFirst({
+      where: { portalInstanceId: user.portalInstanceId ?? null },
+      select: { provider: true, embeddingModel: true, transcriptionModel: true, apiKeyEncrypted: true }
+    }),
+    ensureAgentConfig(user.portalInstanceId ?? null)
   ]);
   return (
     <AppShell role={user.role} userId={user.id} email={user.email} canSwitchView={user.role === Role.ADMIN || Boolean(user.impersonatedByAdminId)}>
@@ -91,6 +99,18 @@ export default async function SettingsPage() {
             smtpFrom={env.smtpFrom}
             defaultTo={ownerProfile.contactEmail || ownerProfile.email}
           />
+          <AiProviderSettings initialConfig={aiConfig ? {
+            configured: Boolean(aiConfig.apiKeyEncrypted),
+            provider: aiConfig.provider,
+            embeddingModel: aiConfig.embeddingModel,
+            transcriptionModel: aiConfig.transcriptionModel
+          } : {
+            configured: false,
+            provider: "openai",
+            embeddingModel: "text-embedding-3-small",
+            transcriptionModel: "gpt-4o-mini-transcribe"
+          }} />
+          <AgentSettings initialPrompt={agentConfig?.systemPrompt || DEFAULT_AGENT_SYSTEM_PROMPT} initialEnabled={agentConfig?.enabled ?? true} />
           <TelegramBotSettings initialConfig={telegramConfig ? {
             configured: true,
             ...telegramConfig,

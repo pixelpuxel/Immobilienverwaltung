@@ -128,6 +128,11 @@ docker compose up -d --build
 - Dokumente können in der Dokumentenverwaltung nicht nur zugeordnet, sondern auch mit sinnvollem Vorschlag umbenannt werden. Dabei wird der geschützte Dateipfad im lokalen Speicher mit umbenannt.
 - Die Benutzeransicht ist ein eigenständiger Umschalter oben in der Oberfläche; Instanzwechsel erfolgen ausschließlich über Einstellungen/Portal-Instanzen.
 - API-Zugänge heißen in der Oberfläche API-Token. Technisch werden sie weiterhin als Bearer-Token im Authorization-Header gesendet.
+- Das Portal enthält einen Portal-Agenten, der über einen schwebenden Web-Chat und über Telegram-Freitext erreichbar ist. Der System-Prompt ist pro Portal-Instanz unter Einstellungen editierbar.
+- Standard-System-Prompt des Agenten: "Du bist ein Agent für ein Immobilienportal. Du hast die API-Dokumentation und die fachlichen Regeln als Kontext. Analysiere Nutzeranfragen: Bei fachlichen Aktionen wähle den passenden API-Endpunkt und führe ihn aus. Bei allgemeinen Fragen zum System beantworte sie basierend auf dem System-Prompt. Merke dir den Kontext, wie aktuelle Objekte, und greife auf gespeicherte Zusammenfassungen zurück, um sinnvoll zu reagieren."
+- Der Agent darf fachliche Portal-Aktionen vorbereiten oder ausführen, soweit die aktuelle Rolle dazu berechtigt ist. Mindestens Suche, Immobilien-/Mieterlisten, Dokument-/Vertragskontext und Hinweise zur Vertragsgenerierung müssen unterstützt werden.
+- Chatverlauf des Agenten wird in PostgreSQL gespeichert; Langzeitkontext und Zusammenfassungen werden in Qdrant als Vektoren abgelegt.
+- Telegram-Slash-Befehle bleiben erhalten. Freitext und transkribierte Sprachnachrichten laufen über den Portal-Agenten. Der bestehende Dialog "Erstelle Mietvertrag" bleibt priorisiert und wird nicht vom allgemeinen Agenten überschrieben.
 
 ## Docker / Betrieb
 

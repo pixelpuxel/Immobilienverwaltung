@@ -11,7 +11,8 @@ export const env = {
   smtpFrom: process.env.SMTP_FROM || "",
   smtpUser: process.env.SMTP_USER || "",
   smtpPassword: process.env.SMTP_PASSWORD || "",
-  smtpSecure: process.env.SMTP_SECURE === "true"
+  smtpSecure: process.env.SMTP_SECURE === "true",
+  qdrantUrl: process.env.QDRANT_URL || "http://qdrant:6333"
 };
 
 export function isProductionUrl() {

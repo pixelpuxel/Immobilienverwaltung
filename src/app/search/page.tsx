@@ -3,6 +3,7 @@ import { Role } from "@prisma/client";
 import { AppShell } from "@/components/AppShell";
 import { SearchAutocomplete } from "@/components/SearchAutocomplete";
 import { requireUser } from "@/lib/auth";
+import { semanticDocumentSearch } from "@/lib/ai-search";
 import { globalSearch, type SearchResult } from "@/lib/search";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +24,10 @@ export default async function SearchPage({
 }) {
   const user = await requireUser();
   const query = (searchParams?.q || "").trim();
-  const results = query.length >= 2 ? await globalSearch(user, query) : [];
+  const [results, semanticResults] = query.length >= 2 ? await Promise.all([
+    globalSearch(user, query),
+    semanticDocumentSearch(user, query, 12).catch(() => [])
+  ]) : [[], []];
   const grouped = groupResults(results);
 
   return (
@@ -32,7 +36,7 @@ export default async function SearchPage({
         <p className="text-sm font-bold uppercase tracking-wide text-accent">Portalweite Suche</p>
         <h1 className="mt-2 text-3xl font-bold">Suche</h1>
         <p className="mt-2 max-w-3xl text-sm text-muted">
-          Durchsucht Immobilien, Einheiten, Dokumente, Mieter, Vertraege und Benutzer, soweit sie fuer deine aktuelle Ansicht freigegeben sind.
+          Durchsucht Immobilien, Einheiten, Dokumente, Mieter, Vertraege und Benutzer strukturiert und semantisch, soweit sie fuer deine aktuelle Ansicht freigegeben sind.
         </p>
         <SearchAutocomplete defaultQuery={query} />
       </div>
@@ -43,6 +47,25 @@ export default async function SearchPage({
         {query.length >= 2 && results.length === 0 ? <EmptyState title="Keine Treffer" text={`Zu "${query}" wurden in deiner aktuellen Ansicht keine Daten gefunden.`} /> : null}
 
         <div className="grid gap-5">
+          {semanticResults.length ? (
+            <div className="overflow-hidden rounded-lg border border-line bg-white shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-[linear-gradient(135deg,#ecfdf5,#eef4ff)] px-4 py-3">
+                <div>
+                  <h2 className="text-xl font-bold">Semantische Dokumenttreffer</h2>
+                  <p className="text-sm text-muted">{semanticResults.length} Treffer aus dem Dokumentindex</p>
+                </div>
+                <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-800">Vektor</span>
+              </div>
+              <div className="divide-y divide-line">
+                {semanticResults.map((result, index) => (
+                  <Link key={`semantic-${result.href}-${index}`} href={result.href} className="block p-4 transition hover:bg-panel">
+                    <div className="font-bold">{highlight(result.title, query)}</div>
+                    <div className="mt-1 text-sm text-muted">{result.description || "Semantischer Treffer im Dokumentindex."}</div>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          ) : null}
           {grouped.map(([type, items]) => (
             <div key={type} className="overflow-hidden rounded-lg border border-line bg-white shadow-sm">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-panel px-4 py-3">

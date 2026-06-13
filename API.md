@@ -216,6 +216,21 @@ Unterstuetzte Bot-Kommandos:
 
 `/vertrag <Mieter>` erzeugt einen Mietvertrag mit der passenden Vorlage und sendet die PDF-Datei an Telegram, falls die PDF-Erzeugung erfolgreich war. Andernfalls wird die DOCX-Datei gesendet.
 
+AI-Suche:
+
+```text
+GET  /api/ai/config
+POST /api/ai/config
+GET  /api/search/semantic?q=Suchbegriff
+POST /api/search/reindex
+```
+
+`/api/ai/config` speichert Provider und API-Key verschluesselt pro Portalinstanz. Unterstuetzt werden `openai` und `gemini`.
+
+`/api/search/reindex` importiert bestehende Dokumente in Qdrant. Neue Uploads werden nach dem Speichern automatisch indexiert.
+
+Die normale Suche `/search?q=...` kombiniert strukturierte Treffer mit semantischen Dokumenttreffern.
+
 Portal-Instanzen:
 
 ```text
@@ -333,6 +348,33 @@ Aktivitaeten:
 ```text
 GET /api/audit-logs
 ```
+
+AI, Suche und Portal-Agent:
+
+```text
+GET  /api/ai/config
+POST /api/ai/config
+GET  /api/search/semantic?q=Suchbegriff
+POST /api/search/reindex
+
+GET  /api/agent/config
+POST /api/agent/config
+POST /api/agent/chat
+```
+
+`POST /api/agent/config` speichert den System-Prompt des Agenten:
+
+```json
+{ "systemPrompt": "Du bist ein Agent ...", "enabled": true }
+```
+
+`POST /api/agent/chat` wird vom schwebenden Web-Chat genutzt:
+
+```json
+{ "message": "Suche Grundbuch Musterstraße", "conversationId": "optional" }
+```
+
+Der Agent nutzt dieselben Rollen- und Instanzrechte wie das Portal. Chatverlauf liegt in PostgreSQL. Langzeitkontext wird in Qdrant in der Collection `immobilienportal_agent_memory` gespeichert. Telegram-Freitext und Sprachnachrichten laufen ebenfalls über diesen Agenten; Slash-Befehle bleiben zusätzlich verfügbar.
 
 ## Backup-Format
 

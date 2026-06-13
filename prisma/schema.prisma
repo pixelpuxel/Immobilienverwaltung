@@ -54,6 +54,9 @@ model PortalInstance {
   templates   ContractTemplate[]
   mailTemplates MailTemplate[]
   telegramBotConfig TelegramBotConfig?
+  aiProviderConfig AiProviderConfig?
+  agentConfig AgentConfig?
+  agentConversations AgentConversation[]
   auditLogs   AuditLog[]
   apiTokens   ApiToken[]
 }
@@ -350,6 +353,67 @@ model TelegramBotConfig {
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
   portalInstance  PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
+  conversations   TelegramConversation[]
+}
+
+model TelegramConversation {
+  id              String            @id @default(cuid())
+  telegramBotConfigId String
+  chatId          String
+  threadId        String            @default("")
+  flow            String
+  payload         Json
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  telegramBotConfig TelegramBotConfig @relation(fields: [telegramBotConfigId], references: [id], onDelete: Cascade)
+
+  @@unique([telegramBotConfigId, chatId, threadId])
+}
+
+model AiProviderConfig {
+  id              String          @id @default(cuid())
+  portalInstanceId String?        @unique
+  provider        String          @default("openai")
+  apiKeyEncrypted String?
+  embeddingModel  String          @default("text-embedding-3-small")
+  transcriptionModel String       @default("gpt-4o-mini-transcribe")
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  portalInstance  PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
+}
+
+model AgentConfig {
+  id              String          @id @default(cuid())
+  portalInstanceId String?        @unique
+  systemPrompt    String          @db.Text
+  enabled         Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  portalInstance  PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
+}
+
+model AgentConversation {
+  id              String          @id @default(cuid())
+  portalInstanceId String?
+  userId          String?
+  channel         String          @default("web")
+  externalKey     String?
+  title           String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  portalInstance  PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
+  messages        AgentMessage[]
+
+  @@index([portalInstanceId, channel, externalKey])
+}
+
+model AgentMessage {
+  id              String          @id @default(cuid())
+  conversationId  String
+  role            String
+  content         String          @db.Text
+  createdAt       DateTime        @default(now())
+  conversation    AgentConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 }
 
 model AuditLog {

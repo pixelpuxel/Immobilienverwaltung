@@ -84,6 +84,7 @@ Services:
 - `app`: Next.js-Anwendung, intern Port `8088`
 - `postgres`: PostgreSQL 16
 - `deploy-hook`: lokaler Deploy-Webhook, intern Port `8099`
+- `qdrant`: lokale Open-Source-Vektordatenbank fuer semantische Dokumentensuche
 - `redis`: optionales Profil `redis`
 
 Persistente Volumes:
@@ -91,6 +92,7 @@ Persistente Volumes:
 - `postgres_data`
 - `uploads_data`
 - `contracts_data`
+- `qdrant_data`
 
 Port-Mapping:
 
@@ -193,6 +195,7 @@ Eigentümer:
 - Mietvertraege als DOCX und PDF generieren
 - Audit-Logs ansehen
 - Telegram-Bot fuer Suche, Listen und Mietvertragserzeugung konfigurieren
+- AI-Provider fuer Embeddings/Transkription waehlen und Dokumente in den semantischen Suchindex importieren
 
 Makler:
 
@@ -231,9 +234,33 @@ Kommandos:
 /dokumente <Begriff>
 /vertraege [Name]
 /vertrag <Mieter>
+Erstelle Mietvertrag
 ```
 
 `/vertrag <Mieter>` erzeugt den Mietvertrag im Portal und sendet die PDF-Datei an Telegram. Wenn LibreOffice keine PDF erzeugen kann, wird die DOCX-Datei gesendet.
+
+`Erstelle Mietvertrag` startet einen gefuehrten Dialog. Der Bot fragt fehlende Vertragsdaten ab, fasst sie zusammen und erzeugt nach Bestaetigung eine PDF direkt im Telegram-Chat.
+
+## Semantische Suche
+
+Der Stack enthaelt Qdrant als lokale Vektordatenbank. Unter `Einstellungen -> AI-Suche und Transkription` wird ein Provider gewaehlt:
+
+- OpenAI
+- Gemini
+
+Der API-Key wird verschluesselt gespeichert. Das Portal nutzt den Provider fuer Embeddings und fuer Telegram-Sprachnachrichten. Bestehende Dokumente werden per `Alle Dokumente neu indexieren` in Qdrant importiert; neue Uploads werden automatisch indexiert.
+
+Die Websuche kombiniert strukturierte Treffer aus PostgreSQL mit semantischen Dokumenttreffern aus Qdrant. Im Telegram-Bot gilt:
+
+- Textnachrichten ohne Slash-Befehl laufen ueber den Portal-Agenten.
+- `/suche <Begriff>` sucht explizit.
+- Sprachnachrichten werden transkribiert und danach an den Portal-Agenten gegeben.
+
+## Portal-Agent
+
+Unter `Einstellungen -> Portal-Agent` kann der System-Prompt pro Portal-Instanz bearbeitet werden. Der Agent ist ueber einen schwebenden Button in der Weboberflaeche und ueber Telegram-Freitext erreichbar. Er nutzt die aktuelle Rolle und Instanz des Benutzers, kann Portal-Kontext wie Immobilien, Mieter, Dokumente und Vertraege abfragen und beantwortet allgemeine Fragen zur Systemfunktion.
+
+Der Chatverlauf wird in PostgreSQL gespeichert. Langzeitkontext wird in Qdrant in der Collection `immobilienportal_agent_memory` als Vektorindex abgelegt.
 
 ## Vertragsvorlagen
 

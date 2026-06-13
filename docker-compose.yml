@@ -8,6 +8,8 @@ services:
         condition: service_healthy
       postfix:
         condition: service_started
+      qdrant:
+        condition: service_started
     ports:
       - "${APP_PORT:-8088}:8088"
     environment:
@@ -30,6 +32,7 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_SECURE: ${SMTP_SECURE:-false}
+      QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
       STARTUP_LOG_DIR: /app/logs
     volumes:
       - uploads_data:/app/uploads
@@ -71,6 +74,13 @@ services:
     volumes:
       - postfix_spool:/var/spool/postfix
 
+  qdrant:
+    image: qdrant/qdrant:v1.12.5
+    container_name: immobilienportal_qdrant
+    restart: unless-stopped
+    volumes:
+      - qdrant_data:/qdrant/storage
+
   deploy-hook:
     build: ./deploy-hook
     container_name: immobilienportal_deploy_hook
@@ -91,3 +101,4 @@ volumes:
   uploads_data:
   contracts_data:
   postfix_spool:
+  qdrant_data:
