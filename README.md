@@ -303,6 +303,12 @@ Die PDF-Datei wird aus der erzeugten DOCX-Datei mit LibreOffice Headless erstell
 - `GET /api/audit-logs`
 - `GET|POST /api/portal-instances`
 
+### Vertragsgenerierung und Downloads
+
+Bei jeder erfolgreichen Vertragserstellung wird ein `LeaseContract` gespeichert. Die internen Felder `docxPath` und `pdfPath` sind reine Server-Dateipfade und werden nie als oeffentliche Links verwendet. Downloads laufen immer ueber `/api/contracts/:id/download?format=docx|pdf`; Agent und Telegram koennen zusaetzlich signierte 24-Stunden-Links erzeugen.
+
+Telegram sendet nach `/vertrag <Mieter>` oder nach einer Agent-Aktion die erzeugte Datei direkt per `sendDocument`: bevorzugt PDF, falls vorhanden, sonst DOCX. Zum Testen: `/vertrag Max` im konfigurierten Telegram-Thread senden. Erwartung: Textantwort mit Mieter, Immobilie, Einheit, verwendeter Vorlage, Vertrags-ID und Download-Link plus eine angehaengte PDF/DOCX-Datei.
+
 ## Portal-Instanzen
 
 Das Portal ist mandantenfaehig. Die beim ersten Start erzeugte Installation bleibt als eigene Instanz erhalten; ein Plattform-Eigentuemer kann unter `Einstellungen` weitere, leere Portal-Instanzen mit eigenem Eigentümerzugang anlegen. Immobilien, Benutzer, Dokumente, Vertragsvorlagen, generierte Vertraege und Aktivitaeten werden pro Instanz getrennt.

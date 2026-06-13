@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { auditLog } from "@/lib/audit";
 import { assertSameOrigin, clientIp, requireApiUser } from "@/lib/auth";
+import { contractPublicLinks } from "@/lib/contract-downloads";
 import { generateContract, selectContractTemplate } from "@/lib/contracts";
 import { portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
@@ -45,5 +46,9 @@ export async function POST(request: NextRequest) {
     }
   });
   await auditLog({ userId: user.id, action: AuditAction.CONTRACT_GENERATED, entity: "LeaseContract", entityId: contract.id, ipAddress: clientIp(request) });
-  return NextResponse.json(contract, { status: 201 });
+  return NextResponse.json({
+    ...contract,
+    links: contractPublicLinks(contract.id, Boolean(contract.pdfPath)),
+    pdfAvailable: Boolean(contract.pdfPath)
+  }, { status: 201 });
 }

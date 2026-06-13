@@ -2,6 +2,7 @@ import fs from "fs/promises";
 import { AuditAction, Role, type AgentConfig } from "@prisma/client";
 import { auditLog } from "./audit";
 import { AGENT_MEMORY_COLLECTION, createEmbedding, ensureVectorCollection, getAiConfig, qdrantRequest, vectorPointId } from "./ai-search";
+import { bestContractAttachment, contractPublicLinks } from "./contract-downloads";
 import { contractTemplateCandidates, generateContract, selectContractTemplate } from "./contracts";
 import { portalWhere, type ScopedUser } from "./portal-instance";
 import { prisma } from "./prisma";
@@ -207,21 +208,26 @@ async function createContractAction(user: ScopedUser, message: string): Promise<
     }
   });
   await auditLog({ userId: user.id, action: AuditAction.CONTRACT_GENERATED, entity: "LeaseContract", entityId: contract.id, detail: { source: "agent", testMode } });
-  const links = contractLinks(contract.id, Boolean(generated.pdfPath));
+  const links = contractPublicLinks(contract.id, Boolean(generated.pdfPath), { absolute: true, signed: true, expiresInSeconds: 24 * 60 * 60 });
   const lines = [
     testMode ? "Testmodus: Vertrag wurde erzeugt, geprüft und danach wieder entfernt." : "Mietvertrag wurde erzeugt.",
     `Mieter: ${tenantName(profile)}`,
     `Immobilie: ${profile.unit.property.name}`,
     `Einheit: ${profile.unit.unitNumber}`,
     `Verwendete Vorlage: ${template?.name || "Interner Standardvertrag"}`,
-    `Vertrags-ID: ${contract.id}`,
-    `Vorschau-Link: ${links.preview}`,
-    `DOCX-Link: ${links.docx}`,
-    generated.pdfPath ? `PDF-Link: ${links.pdf}` : "PDF-Link: PDF konnte nicht erzeugt werden, DOCX ist verfügbar."
+    `Vertrags-ID: ${contract.id}`
   ];
-  const attachments = generated.pdfPath
-    ? [{ kind: "contract" as const, format: "pdf" as const, path: generated.pdfPath, filename: `Mietvertrag_${tenantName(profile)}.pdf` }]
-    : [{ kind: "contract" as const, format: "docx" as const, path: generated.docxPath, filename: `Mietvertrag_${tenantName(profile)}.docx` }];
+  if (!testMode) {
+    lines.push(
+      `Vorschau-Link: ${links.preview}`,
+      `DOCX-Link: ${links.docx}`,
+      links.pdf ? `PDF-Link: ${links.pdf}` : "PDF-Link: PDF konnte nicht erzeugt werden, DOCX wurde bereitgestellt."
+    );
+  } else {
+    lines.push("Download-Links: im Testmodus nicht dauerhaft, deshalb nicht ausgegeben.");
+  }
+  const attachment = bestContractAttachment(contract, `Mietvertrag_${tenantName(profile)}`);
+  const attachments = [{ kind: "contract" as const, format: attachment.format, path: attachment.path, filename: attachment.filename }];
   if (testMode) {
     await prisma.leaseContract.delete({ where: { id: contract.id } }).catch(() => undefined);
     await fs.rm(generated.docxPath, { force: true }).catch(() => undefined);
@@ -273,14 +279,6 @@ async function findTenantForMessage(user: ScopedUser, message: string) {
 
 function tenantName(tenant: { firstName: string; lastName: string; email?: string }) {
   return `${tenant.firstName} ${tenant.lastName}`.trim() || tenant.email || "Mieter";
-}
-
-function contractLinks(contractId: string, hasPdf: boolean) {
-  return {
-    preview: `/api/contracts/${contractId}/preview`,
-    docx: `/api/contracts/${contractId}/download?format=docx`,
-    pdf: hasPdf ? `/api/contracts/${contractId}/download?format=pdf` : ""
-  };
 }
 
 async function answerWithProvider(config: AgentConfig, user: ScopedUser, message: string, history: Array<{ role: string; content: string }>, memory: string[], tools: AgentToolResult[]) {

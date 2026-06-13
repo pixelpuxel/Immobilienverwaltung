@@ -381,8 +381,23 @@ Agent-Aktionen:
 - Mietverträge werden für vorhandene, eindeutig erkannte Mieter wirklich erzeugt. Die Antwort enthält Mieter, Immobilie, Einheit, verwendete Vorlage, Vertrags-ID sowie Vorschau-/DOCX-/PDF-Link.
 - Bei mehreren passenden Vorlagen fragt der Agent nach. Wird eine Vorlage im Text eindeutig genannt, verwendet er diese.
 - Wohnungsgeberbestätigungen werden für vorhandene, eindeutig erkannte Mieter erzeugt und verlinkt.
-- Telegram sendet bei erzeugten PDFs zusätzlich zur Textantwort das PDF als Dokument.
+- Telegram sendet bei erzeugten Vertraegen zusätzlich zur Textantwort die Datei als Dokument: bevorzugt PDF, falls die PDF-Datei physisch existiert, sonst DOCX.
 - `Testmodus` oder `testweise` erzeugt Testdokumente nur temporär und entfernt LeaseContract/Dokument/Datei danach wieder.
+
+Contract-Links:
+
+- Interne Datenbankfelder `docxPath` und `pdfPath` sind niemals öffentliche Links.
+- Web-Downloads laufen ueber `/api/contracts/{contractId}/download?format=pdf|docx`.
+- Agent/Telegram koennen signierte Links mit `expires` und `token` erzeugen; sie sind standardmaessig 24 Stunden gueltig.
+- Wenn `format=pdf` angefragt wird, aber keine PDF existiert, liefert die Route als Fallback die DOCX mit passendem Content-Type statt eines toten Links.
+
+Testbeispiel Telegram:
+
+```text
+/vertrag Max
+```
+
+Erwartung: Antwort mit “Mietvertrag wurde erzeugt”, verwendeter Vorlage, Vertrags-ID und Download-Link; danach wird die PDF direkt als Telegram-Dokument gesendet. Falls LibreOffice keine PDF erzeugt, wird stattdessen die DOCX direkt gesendet.
 
 ## Backup-Format
 

@@ -6,6 +6,7 @@ import { auditLog } from "./audit";
 import { processAgentMessage } from "./agent";
 import { getAiConfig, semanticDocumentSearch, transcribeAudio } from "./ai-search";
 import { hashPassword } from "./auth";
+import { bestContractAttachment, contractPublicLinks } from "./contract-downloads";
 import { generateContract, selectContractTemplate } from "./contracts";
 import { readPrivateFile } from "./files";
 import { globalSearch } from "./search";
@@ -263,7 +264,11 @@ async function agentTelegramReply(token: string, user: NonNullable<Awaited<Retur
   });
   await sendTelegramMessage(token, chatId, result.answer, threadId);
   for (const attachment of result.attachments || []) {
-    await sendTelegramDocument(token, chatId, attachment.path, attachment.filename, threadId);
+    try {
+      await sendTelegramDocument(token, chatId, attachment.path, attachment.filename, threadId);
+    } catch (error) {
+      await sendTelegramMessage(token, chatId, `Datei konnte nicht per Telegram gesendet werden: ${error instanceof Error ? error.message : "unbekannter Fehler"}`, threadId);
+    }
   }
 }
 
@@ -355,17 +360,24 @@ async function generateContractReply(config: TelegramConfig, token: string, chat
     }
   });
   await auditLog({ userId, action: AuditAction.CONTRACT_GENERATED, entity: "LeaseContract", entityId: contract.id, detail: { source: "telegram", tenant: `${tenant.firstName} ${tenant.lastName}` } });
-  const filePath = generated.pdfPath || generated.docxPath;
-  await fs.access(filePath);
+  const attachment = bestContractAttachment({ docxPath: generated.docxPath, pdfPath: generated.pdfPath }, `Mietvertrag_${tenant.firstName}_${tenant.lastName}`);
+  await fs.access(attachment.path);
+  const links = contractPublicLinks(contract.id, Boolean(generated.pdfPath), { absolute: true, signed: true, expiresInSeconds: 24 * 60 * 60 });
   await sendTelegramMessage(token, chatId, [
     "Mietvertrag wurde erzeugt.",
     `Mieter: ${tenant.firstName} ${tenant.lastName}`,
     `Immobilie: ${tenant.unit.property.name}`,
     `Einheit: ${tenant.unit.unitNumber}`,
     `Verwendete Vorlage: ${template?.name || "Interner Standardvertrag"}`,
-    `Vertrags-ID: ${contract.id}`
+    `Vertrags-ID: ${contract.id}`,
+    generated.pdfPath ? "PDF wurde als Datei gesendet." : "PDF konnte nicht erzeugt werden, DOCX wird als Datei gesendet.",
+    `Download-Link: ${generated.pdfPath ? links.pdf : links.docx}`
   ].join("\n"), threadId);
-  await sendTelegramDocument(token, chatId, filePath, `Mietvertrag ${tenant.firstName} ${tenant.lastName}`, threadId);
+  try {
+    await sendTelegramDocument(token, chatId, attachment.path, `Mietvertrag ${tenant.firstName} ${tenant.lastName}`, threadId);
+  } catch (error) {
+    await sendTelegramMessage(token, chatId, `Telegram-Versand fehlgeschlagen: ${error instanceof Error ? error.message : "unbekannter Fehler"}`, threadId);
+  }
 }
 
 type ContractWizardDraft = {
@@ -448,7 +460,7 @@ async function handleContractWizard(
 
   if (draft.awaitingConfirmation) {
     if (/^(ja|j|ok|okay|bestaetigen|bestätigen|erstellen)$/i.test(text.trim())) {
-      await sendTelegramMessage(token, chatId, "Erzeuge Mietvertrag als PDF...", threadId);
+      await sendTelegramMessage(token, chatId, "Erzeuge Mietvertrag als PDF/DOCX...", threadId);
       const result = await createContractFromWizardDraft(config, draft, user.id);
       await clearContractConversation(config, chatId, threadId);
       await sendTelegramMessage(token, chatId, [
@@ -457,9 +469,15 @@ async function handleContractWizard(
         `Immobilie: ${result.propertyName}`,
         `Einheit: ${result.unitNumber}`,
         `Verwendete Vorlage: ${result.templateName}`,
-        `Vertrags-ID: ${result.contractId}`
+        `Vertrags-ID: ${result.contractId}`,
+        result.fileFormat === "pdf" ? "PDF wurde als Datei gesendet." : "PDF konnte nicht erzeugt werden, DOCX wird als Datei gesendet.",
+        `Download-Link: ${result.downloadLink}`
       ].join("\n"), threadId);
-      await sendTelegramDocument(token, chatId, result.pdfPath, `Mietvertrag ${result.tenantName}`, threadId);
+      try {
+        await sendTelegramDocument(token, chatId, result.filePath, `Mietvertrag ${result.tenantName}`, threadId);
+      } catch (error) {
+        await sendTelegramMessage(token, chatId, `Telegram-Versand fehlgeschlagen: ${error instanceof Error ? error.message : "unbekannter Fehler"}`, threadId);
+      }
       return;
     }
     if (/^(nein|n|korrektur|aendern|ändern)$/i.test(text.trim())) {
@@ -754,7 +772,6 @@ async function createContractFromWizardDraft(config: TelegramConfig, draft: Cont
   }
   const template = await selectContractTemplate({ portalInstanceId: config.portalInstanceId, propertyId: unit.propertyId });
   const generated = await generateContract({ tenantProfileId: profile.id, unitId: unit.id, templateId: template?.id || null });
-  if (!generated.pdfPath) throw new Error("Der Vertrag wurde erstellt, aber die PDF-Konvertierung ist fehlgeschlagen.");
   const contract = await prisma.leaseContract.create({
     data: {
       tenantProfileId: profile.id,
@@ -765,8 +782,19 @@ async function createContractFromWizardDraft(config: TelegramConfig, draft: Cont
     }
   });
   await auditLog({ userId, action: AuditAction.CONTRACT_GENERATED, entity: "LeaseContract", entityId: contract.id, detail: { source: "telegram-wizard", tenant: displayName } });
-  await fs.access(generated.pdfPath);
-  return { pdfPath: generated.pdfPath, tenantName: displayName, templateName: template?.name || "Interner Standardvertrag", propertyName: unit.property.name, unitNumber: unit.unitNumber, contractId: contract.id };
+  const attachment = bestContractAttachment(contract, `Mietvertrag_${displayName}`);
+  await fs.access(attachment.path);
+  const links = contractPublicLinks(contract.id, Boolean(contract.pdfPath), { absolute: true, signed: true, expiresInSeconds: 24 * 60 * 60 });
+  return {
+    filePath: attachment.path,
+    fileFormat: attachment.format,
+    downloadLink: attachment.format === "pdf" ? links.pdf! : links.docx,
+    tenantName: displayName,
+    templateName: template?.name || "Interner Standardvertrag",
+    propertyName: unit.property.name,
+    unitNumber: unit.unitNumber,
+    contractId: contract.id
+  };
 }
 
 function contractDraftSummary(draft: ContractWizardDraft, final: boolean) {

@@ -5,6 +5,7 @@ import { promisify } from "util";
 import Docxtemplater from "docxtemplater";
 import PizZip from "pizzip";
 import { env } from "./env";
+import { checkedContractFiles } from "./contract-downloads";
 import { safeFilename } from "./files";
 import { prisma } from "./prisma";
 import { formatPropertyAddress } from "./property-address";
@@ -77,16 +78,19 @@ export async function generateContract(input: { tenantProfileId: string; unitId:
     await fs.writeFile(docxPath, zip.generate({ type: "nodebuffer" }));
   }
 
+  let convertedPdfPath: string | null = null;
   try {
     await execFileAsync("libreoffice", ["--headless", "--convert-to", "pdf", "--outdir", env.contractsPath, docxPath], {
       timeout: 60_000
     });
     await fs.access(pdfPath);
+    convertedPdfPath = pdfPath;
   } catch {
-    return { docxPath, pdfPath: null };
+    convertedPdfPath = null;
   }
 
-  return { docxPath, pdfPath };
+  const checked = await checkedContractFiles({ docxPath, pdfPath: convertedPdfPath });
+  return checked;
 }
 
 export async function contractTemplateCandidates(input: { portalInstanceId: string | null; propertyId: string }) {
