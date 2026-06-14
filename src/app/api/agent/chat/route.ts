@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { assertSameOrigin, requireApiUser } from "@/lib/auth";
-import { processAgentMessage } from "@/lib/agent";
+import { processAgentMessage, resetAgentConversation, type AgentStreamEvent } from "@/lib/agent";
 import { prisma } from "@/lib/prisma";
 
 const schema = z.object({
@@ -15,6 +15,37 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: "Nicht angemeldet." }, { status: 401 });
   const parsed = schema.safeParse(await request.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: "Bitte Nachricht eingeben." }, { status: 400 });
+  const wantsStream = request.headers.get("accept")?.includes("text/event-stream") || request.nextUrl.searchParams.get("stream") === "1";
+  if (wantsStream) {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        const send = (event: AgentStreamEvent) => {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+        };
+        try {
+          const result = await processAgentMessage({
+            user,
+            message: parsed.data.message,
+            conversationId: parsed.data.conversationId,
+            channel: "web"
+          }, { onEvent: send });
+          send({ type: "final", answer: result.answer, conversationId: result.conversationId, artifacts: result.artifacts });
+          controller.close();
+        } catch (error) {
+          send({ type: "error", message: error instanceof Error ? error.message : "Agent-Anfrage fehlgeschlagen." });
+          controller.close();
+        }
+      }
+    });
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive"
+      }
+    });
+  }
   const result = await processAgentMessage({
     user,
     message: parsed.data.message,
@@ -26,6 +57,15 @@ export async function POST(request: NextRequest) {
     tools: result.tools.map(({ attachments: _attachments, ...tool }) => tool),
     attachments: []
   });
+}
+
+export async function DELETE(request: NextRequest) {
+  if (!assertSameOrigin(request)) return NextResponse.json({ error: "CSRF-Schutz: ungueltiger Ursprung." }, { status: 403 });
+  const user = await requireApiUser(request);
+  if (!user) return NextResponse.json({ error: "Nicht angemeldet." }, { status: 401 });
+  const conversationId = request.nextUrl.searchParams.get("conversationId");
+  await resetAgentConversation(user, conversationId);
+  return NextResponse.json({ ok: true });
 }
 
 export async function GET(request: NextRequest) {

@@ -7,9 +7,18 @@ type ChatMessage = {
   content: string;
 };
 
+type StreamEvent = {
+  type: "status" | "tool_start" | "tool_result" | "clarification" | "artifact" | "final" | "error";
+  message?: string;
+  summary?: string;
+  answer?: string;
+  conversationId?: string | null;
+};
+
 export function AgentChatWidget() {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [statusLines, setStatusLines] = useState<string[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
@@ -30,7 +39,7 @@ export function AgentChatWidget() {
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, open]);
+  }, [messages, statusLines, open]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -38,25 +47,54 @@ export function AgentChatWidget() {
     if (!text || busy) return;
     setInput("");
     setBusy(true);
+    setStatusLines(["Ich nehme den bisherigen Kontext auf."]);
     setMessages((current) => [...current, { role: "user", content: text }]);
     try {
-      const response = await fetch("/api/agent/chat", {
+      const response = await fetch("/api/agent/chat?stream=1", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
         body: JSON.stringify({
           message: text,
           conversationId: window.localStorage.getItem("portal_agent_conversation_id")
         })
       });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.error || "Agent-Anfrage fehlgeschlagen.");
-      if (body.conversationId) window.localStorage.setItem("portal_agent_conversation_id", body.conversationId);
-      setMessages((current) => [...current, { role: "assistant", content: body.answer || "Keine Antwort erhalten." }]);
+      if (!response.ok || !response.body) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error || "Agent-Anfrage fehlgeschlagen.");
+      }
+      await readEventStream(response.body, (event) => {
+        if (event.type === "status" || event.type === "tool_start") {
+          addStatus(event.message || "Ich arbeite daran.");
+        } else if (event.type === "tool_result") {
+          addStatus(event.summary || "Schritt erledigt.");
+        } else if (event.type === "clarification") {
+          setMessages((current) => [...current, { role: "assistant", content: event.message || "Ich brauche noch eine Praezisierung." }]);
+        } else if (event.type === "final") {
+          if (event.conversationId) window.localStorage.setItem("portal_agent_conversation_id", event.conversationId);
+          setMessages((current) => [...current, { role: "assistant", content: event.answer || "Keine Antwort erhalten." }]);
+        } else if (event.type === "error") {
+          setMessages((current) => [...current, { role: "assistant", content: `Fehler: ${event.message || "Agent-Anfrage fehlgeschlagen."}` }]);
+        }
+      });
     } catch (error) {
       setMessages((current) => [...current, { role: "assistant", content: error instanceof Error ? `Fehler: ${error.message}` : "Fehler beim Agenten." }]);
     } finally {
+      setStatusLines([]);
       setBusy(false);
     }
+  }
+
+  function addStatus(message: string) {
+    setStatusLines((current) => [...current.slice(-5), message]);
+  }
+
+  async function resetContext() {
+    if (busy) return;
+    const conversationId = window.localStorage.getItem("portal_agent_conversation_id");
+    await fetch(conversationId ? `/api/agent/chat?conversationId=${encodeURIComponent(conversationId)}` : "/api/agent/chat", { method: "DELETE" }).catch(() => undefined);
+    window.localStorage.removeItem("portal_agent_conversation_id");
+    setStatusLines([]);
+    setMessages([{ role: "assistant", content: "Der Agent-Kontext wurde zurueckgesetzt. Wir starten frisch." }]);
   }
 
   return (
@@ -68,7 +106,10 @@ export function AgentChatWidget() {
               <div className="font-bold">Portal-Agent</div>
               <div className="text-xs text-muted">Web und Telegram teilen denselben Kontext.</div>
             </div>
-            <button className="button-secondary px-3 py-1 text-sm" onClick={() => { window.localStorage.setItem("portal_agent_widget_open", "false"); setOpen(false); }} type="button">Schliessen</button>
+            <div className="flex items-center gap-2">
+              <button className="button-secondary px-3 py-1 text-sm" disabled={busy} onClick={resetContext} title="Agent-Kontext und sichtbaren Verlauf zuruecksetzen" type="button">Reset</button>
+              <button className="button-secondary px-3 py-1 text-sm" onClick={() => { window.localStorage.setItem("portal_agent_widget_open", "false"); setOpen(false); }} type="button">Schliessen</button>
+            </div>
           </div>
           <div className="flex-1 space-y-3 overflow-y-auto p-4 text-sm">
             {messages.map((message, index) => (
@@ -76,7 +117,16 @@ export function AgentChatWidget() {
                 <div className="whitespace-pre-wrap">{renderMessage(message.content)}</div>
               </div>
             ))}
-            {busy ? <div className="mr-8 rounded-lg bg-panel px-3 py-2 text-muted">Denke nach...</div> : null}
+            {busy ? (
+              <div className="mr-8 rounded-lg border border-line bg-panel px-3 py-2 text-muted">
+                <div className="font-semibold text-text">Agent arbeitet</div>
+                <div className="mt-1 space-y-1">
+                  {(statusLines.length ? statusLines : ["Denke nach..."]).map((line, index) => (
+                    <div key={`${line}-${index}`} className="text-xs">· {line}</div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <div ref={endRef} />
           </div>
           <form className="flex gap-2 border-t border-line p-3" onSubmit={submit}>
@@ -94,6 +144,28 @@ export function AgentChatWidget() {
       </button>
     </div>
   );
+}
+
+async function readEventStream(stream: ReadableStream<Uint8Array>, onEvent: (event: StreamEvent) => void) {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const chunks = buffer.split("\n\n");
+    buffer = chunks.pop() || "";
+    for (const chunk of chunks) {
+      const line = chunk.split("\n").find((item) => item.startsWith("data: "));
+      if (!line) continue;
+      try {
+        onEvent(JSON.parse(line.slice(6)) as StreamEvent);
+      } catch {
+        // Ignore malformed stream fragments.
+      }
+    }
+  }
 }
 
 function renderMessage(content: string) {
