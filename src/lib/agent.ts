@@ -529,6 +529,21 @@ function fallbackDecision(message: string, previousResults: AgentToolResult[], s
   const asksTenantDate = /(ab wann|seit wann|einzug|eingezogen|mietbeginn|wohnt.*seit|seit.*wohnt)/i.test(normalized);
   const asksTenantForKnownProperty = /(wer.*mieter|mieter.*wer|wer.*wohnt|bewohner|welche.*mieter)/i.test(normalized) && Boolean(state.facts.propertyId || propertyQuery);
 
+  if (state.goal === "create_landlord_confirmation" && (propertyQuery || state.facts.propertyQuery || state.facts.propertyName || state.facts.tenantId || tenantQuery)) {
+    return {
+      type: "tool_calls",
+      statusMessage: "Ich setze die Wohnungsgeberbestaetigung mit den bekannten Daten fort.",
+      toolCalls: [{
+        tool: "create_landlord_confirmation",
+        args: {
+          tenantId: state.facts.tenantId,
+          tenantQuery: tenantQuery || "",
+          propertyQuery: propertyQuery || state.facts.propertyQuery || state.facts.propertyName || ""
+        }
+      }]
+    };
+  }
+
   if (isAffirmation(message) && state.pendingQuestion && /(mieterdaten|mieter|ab wann|seit wann|einzug|eingezogen|mietbeginn|wohnt)/i.test(normalize(state.pendingQuestion))) {
     if (state.facts.tenantId) {
       return { type: "tool_calls", statusMessage: "Ich lade die gespeicherten Mieterdaten.", toolCalls: [{ tool: "get_tenant", args: { id: state.facts.tenantId } }] };
@@ -658,6 +673,8 @@ function shouldForceFallbackDecision(message: string, fallback: AgentDecision) {
   if (firstTool === "update_tenant_status" && /(nicht mehr laufend|nicht laufend|laufend.*beenden|ausgezogen|auszug|ehemalig|auf nicht.*laufend)/i.test(normalized)) return true;
   if (firstTool === "agent_capabilities" && /(was kannst du|was.*moeglich|was.*möglich|funktionen|faehigkeiten|fähigkeiten|tools|hilfe|help)/i.test(normalized)) return true;
   if (firstTool === "search_properties" && (/(welche|alle|gib|zeige|liste|auflisten|gibt es|was sind).*(immobilien|immobilie|immos|immo|objekte|objekt|haeuser|hauser|haus|adressen)/i.test(normalized) || /(vermietet|teilvermietet|vollvermietet|voll vermietet|mietstatus|vermietungsstatus)/i.test(normalized))) return true;
+  if (firstTool === "search_tenants" && /(wer.*mieter|mieter.*wer|wer.*wohnt|bewohner|welche.*mieter|wohnt|mieter)/i.test(normalized) && extractLikelyPropertyQuery(message)) return true;
+  if (firstTool === "create_landlord_confirmation" && (/wohn|geber|bestaetigung|bestätigung|melde/i.test(normalized) || extractLikelyPropertyQuery(message))) return true;
   return false;
 }
 

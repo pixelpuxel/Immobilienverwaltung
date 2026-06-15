@@ -89,6 +89,11 @@ export function updateStateFromUserMessage(state: AgentConversationStateValue, m
     state.status = state.status === "done" ? "collecting" : state.status || "collecting";
   }
 
+  if (/wohn|geber|bestaetigung|bestätigung|melde/i.test(normalized) && /(mach|mache|erstelle|erzeug|generier)/i.test(normalized)) {
+    state.goal = "create_landlord_confirmation";
+    state.status = state.status === "done" ? "collecting" : state.status || "collecting";
+  }
+
   if (/unbefristet/i.test(text)) facts.leaseDuration = "unbefristet";
   if (/keine weiteren|keine klauseln|ohne.*klauseln/i.test(text)) facts.specialTerms = "keine weiteren Klauseln";
 

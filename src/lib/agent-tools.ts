@@ -263,11 +263,22 @@ export const agentToolRegistry = {
       if (!tenants.length && args.currentOnly && args.query && looksLikeCurrentTenantQuestion(args.query)) {
         tenants = await searchTenantRows(ctx.user, "", args.propertyQuery, true);
       }
+      let fallbackHint = "";
+      if (!tenants.length && args.currentOnly && args.propertyQuery) {
+        const unmarkedCandidates = (await searchTenantRows(ctx.user, "", args.propertyQuery, false))
+          .filter((tenant) => !tenant.moveOutDate)
+          .sort((a, b) => tenantStartTime(b) - tenantStartTime(a))
+          .slice(0, 20);
+        if (unmarkedCandidates.length) {
+          tenants = unmarkedCandidates;
+          fallbackHint = "Keine Mieter sind explizit als laufend markiert. Ich zeige deshalb Mieter zur Immobilie ohne Auszugsdatum:";
+        }
+      }
       return {
         name: "search_tenants",
         ok: true,
         summary: tenants.length
-          ? ["Mieter:", ...tenants.slice(0, 20).map((t) => `- ${tenantName(t)}${t.isCurrent ? " (laufend)" : ""}: ${t.unit ? `${t.unit.property.name} / ${t.unit.unitNumber}` : "keine Einheit"}${tenantDates(t) ? ` · ${tenantDates(t)}` : ""} · /users?tenantId=${t.id}`)].join("\n")
+          ? [fallbackHint || "Mieter:", ...tenants.slice(0, 20).map((t) => `- ${tenantName(t)}${t.isCurrent ? " (laufend)" : ""}: ${t.unit ? `${t.unit.property.name} / ${t.unit.unitNumber}` : "keine Einheit"}${tenantDates(t) ? ` · ${tenantDates(t)}` : ""} · /users?tenantId=${t.id}`)].join("\n")
           : "Keine Mieter gefunden.",
         data: tenants.slice(0, 20).map((t) => ({ id: t.id, name: tenantName(t), unitId: t.unitId, propertyName: t.unit?.property.name, moveInDate: t.moveInDate, leaseStartDate: t.leaseStartDate, moveOutDate: t.moveOutDate, isCurrent: t.isCurrent, href: `/users?tenantId=${t.id}` })),
         artifacts: tenants.slice(0, 10).map((t) => ({ type: "link", label: tenantName(t), url: `/users?tenantId=${t.id}` }))
@@ -523,7 +534,10 @@ function sanitizeToolArgs(toolName: string, args: Record<string, unknown>) {
   }
   if (toolName === "create_landlord_confirmation") {
     const tenantQuery = String(next.tenantQuery || "");
-    if (!next.propertyQuery) next.propertyQuery = extractLikelyPropertyQuery(tenantQuery);
+    const propertyQuery = String(next.propertyQuery || "");
+    const extracted = extractLikelyPropertyQuery(propertyQuery) || extractLikelyPropertyQuery(tenantQuery);
+    if (extracted) next.propertyQuery = extracted;
+    if (!extracted && /wohn|geber|bestaetigung|bestätigung|melde/i.test(normalize(propertyQuery))) next.propertyQuery = "";
     if (looksLikeCurrentTenantQuestion(tenantQuery) || /wohn|geber|bestaetigung|bestätigung|melde/i.test(normalize(tenantQuery))) next.tenantQuery = "";
   }
   return next;
@@ -611,15 +625,30 @@ async function searchTenantRows(user: ScopedUser, query = "", propertyQuery?: st
   const rows = await prisma.tenantProfile.findMany({
     where: {
       ...tenantAccessWhere(user),
-      ...(currentOnly ? { isCurrent: true } : {}),
-      ...(propertyLookup ? { unit: { property: propertyWhere(user, propertyLookup) } } : {})
+      ...(currentOnly ? { isCurrent: true } : {})
     },
     include: { unit: { include: { property: true } }, user: true },
     orderBy: [{ isCurrent: "desc" }, { updatedAt: "desc" }],
     take: 200
   });
-  if (!query) return rows.slice(0, 50);
-  const scored = rows
+  const propertyFiltered = propertyLookup
+    ? rows
+      .map((tenant) => ({
+        tenant,
+        score: scoreText(propertyLookup, [
+          tenant.unit?.property.name,
+          tenant.unit?.property.address,
+          tenant.unit?.property.street,
+          tenant.unit?.property.city,
+          tenant.unit?.unitNumber
+        ])
+      }))
+      .filter((item) => item.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .map((item) => item.tenant)
+    : rows;
+  if (!query) return propertyFiltered.slice(0, 50);
+  const scored = propertyFiltered
     .map((tenant) => ({ tenant, score: scoreText(query, [tenantName(tenant), tenant.email, tenant.unit?.unitNumber, tenant.unit?.property.name, tenant.unit?.property.address]) }))
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score);
@@ -695,7 +724,7 @@ async function createContractTool(ctx: AgentContext, args: z.infer<typeof create
 async function createLandlordConfirmationTool(ctx: AgentContext, args: z.infer<typeof landlordConfirmationSchema>): Promise<AgentToolResult> {
   if (ctx.user.role !== Role.ADMIN) return failed("create_landlord_confirmation", "Wohnungsgeberbestaetigungen koennen nur mit Eigentuemer-/Adminrechten erzeugt werden.");
   const tenantMatch = await resolveTenant(ctx.user, args.tenantId, args.tenantQuery, args.propertyQuery);
-  if (!tenantMatch.ok) return tenantMatch.result;
+  if (!tenantMatch.ok) return { ...tenantMatch.result, name: "create_landlord_confirmation" };
   const document = await generateWohnungsgeberbestaetigung({ tenantProfileId: tenantMatch.tenant.id, actorUserId: ctx.user.id });
   const summary = [
     args.testMode ? "Testmodus: Wohnungsgeberbestaetigung wurde erzeugt und danach wieder entfernt." : "Wohnungsgeberbestaetigung wurde erzeugt.",
@@ -766,7 +795,12 @@ async function resolveTenant(user: ScopedUser, tenantId?: string, tenantQuery?: 
     const tenant = await prisma.tenantProfile.findFirst({ where: { id: tenantId, ...tenantAccessWhere(user) }, include: { unit: { include: { property: true } }, user: true } });
     return tenant ? { ok: true, tenant } : { ok: false, result: failed("create_contract", "Mieter-ID nicht gefunden oder nicht freigegeben.") };
   }
-  const candidates = await searchTenantRows(user, tenantQuery || "", propertyQuery, false);
+  const propertyCurrentCandidates = !tenantQuery && propertyQuery
+    ? await searchTenantRows(user, "", propertyQuery, true)
+    : [];
+  const candidates = propertyCurrentCandidates.length
+    ? propertyCurrentCandidates
+    : await searchTenantRows(user, tenantQuery || "", propertyQuery, false);
   const propertyCandidates = !candidates.length && propertyQuery
     ? await searchTenantRows(user, "", propertyQuery, true)
     : [];
@@ -829,6 +863,10 @@ function tenantDates(tenant: { moveInDate?: Date | null; leaseStartDate?: Date |
     tenant.leaseStartDate ? `Mietbeginn: ${formatDate(tenant.leaseStartDate)}` : null,
     tenant.moveOutDate ? `Auszug: ${formatDate(tenant.moveOutDate)}` : null
   ].filter(Boolean).join(" · ");
+}
+
+function tenantStartTime(tenant: { moveInDate?: Date | null; leaseStartDate?: Date | null }) {
+  return (tenant.moveInDate || tenant.leaseStartDate || new Date(0)).getTime();
 }
 
 function formatDate(value: Date) {
