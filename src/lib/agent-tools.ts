@@ -14,6 +14,7 @@ export type AgentArtifact = {
   type: "link" | "pdf" | "docx" | "document";
   label: string;
   url: string;
+  thumbnailUrl?: string;
 };
 
 export type AgentAttachment = {
@@ -143,11 +144,11 @@ export const agentToolRegistry = {
         where: query ? propertyAccessWhere(ctx.user) : propertyWhere(ctx.user, query),
         orderBy: { updatedAt: "desc" },
         take: query ? 200 : 20,
-        include: { units: { select: { id: true } }, documents: { select: { id: true } } }
+        include: { units: { select: { id: true } }, documents: { select: { id: true, isPrimaryImage: true, isPropertyImage: true, mimeType: true } } }
       });
       const properties = query
         ? candidates
-          .map((property) => ({ property, score: scoreText(query, [property.name, property.address, property.street, property.city, property.objectType]) }))
+          .map((property) => ({ property, score: scoreText(query, [property.name, property.address, property.street, property.city, property.objectType, property.rentalStatus]) }))
           .filter((item) => item.score > 0)
           .sort((a, b) => b.score - a.score)
           .map((item) => item.property)
@@ -159,8 +160,12 @@ export const agentToolRegistry = {
         summary: properties.length
           ? ["Immobilien:", ...properties.map((p) => `- ${p.name}: ${p.address || "keine Adresse"} (${p.units.length} Einheiten, ${p.documents.length} Dokumente) · /properties/${p.id}`)].join("\n")
           : "Keine Immobilien gefunden.",
-        data: properties.map((p) => ({ id: p.id, name: p.name, address: p.address, href: `/properties/${p.id}` })),
-        artifacts: properties.slice(0, 10).map((p) => ({ type: "link", label: p.name, url: `/properties/${p.id}` }))
+        data: properties.map((p) => ({ id: p.id, name: p.name, address: p.address, rentalStatus: p.rentalStatus, href: `/properties/${p.id}` })),
+        artifacts: properties.slice(0, 10).map((p) => {
+          const image = p.documents.find((document) => document.isPrimaryImage && document.isPropertyImage && document.mimeType.startsWith("image/"))
+            || p.documents.find((document) => document.isPropertyImage && document.mimeType.startsWith("image/"));
+          return { type: "link" as const, label: p.name, url: `/properties/${p.id}`, thumbnailUrl: image ? `/api/documents/${image.id}/thumbnail` : undefined };
+        })
       };
     }
   }),
@@ -876,8 +881,8 @@ async function searchTenantRowsByLooseProperty(user: ScopedUser, propertyQuery: 
 function normalizeGenericPropertyQuery(query?: string) {
   if (!query) return "";
   const normalized = normalize(query);
-  const asksForList = /(welche|alle|gib|zeige|liste|auflisten|gibt es|vorhanden)/i.test(normalized);
-  const mentionsProperty = /(immobilien|immobilie|objekte|objekt|haeuser|hauser|haus|adressen)/i.test(normalized);
+  const asksForList = /(welche|alle|gib|zeige|liste|auflisten|gibt es|vorhanden|was sind)/i.test(normalized);
+  const mentionsProperty = /(immobilien|immobilie|immos|immo|objekte|objekt|haeuser|hauser|haus|adressen)/i.test(normalized);
   const hasSpecificAddressSignal = /\d/.test(normalized) || /(strasse|gasse|weg|platz|ring|markt|mainau|tiroler|mozart|jahn|karlsruher|schreiber)/i.test(normalized);
   return asksForList && mentionsProperty && !hasSpecificAddressSignal ? "" : query;
 }

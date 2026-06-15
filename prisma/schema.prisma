@@ -166,6 +166,31 @@ model Unit {
   documents   Document[]
   tenants     TenantProfile[]
   contracts   LeaseContract[]
+  rentPayments RentPayment[]
+}
+
+model RentPayment {
+  id              String    @id @default(cuid())
+  unitId          String
+  tenantProfileId String?
+  year            Int
+  month           Int
+  expectedColdRent Decimal  @db.Decimal(12, 2)
+  expectedServiceCharges Decimal @db.Decimal(12, 2)
+  expectedTotalRent Decimal @db.Decimal(12, 2)
+  paidColdRent    Decimal? @db.Decimal(12, 2)
+  paidServiceCharges Decimal? @db.Decimal(12, 2)
+  paidTotalRent   Decimal? @db.Decimal(12, 2)
+  status          String   @default("OPEN")
+  note            String?
+  paidAt          DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  unit            Unit     @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  tenantProfile   TenantProfile? @relation(fields: [tenantProfileId], references: [id], onDelete: SetNull)
+
+  @@unique([unitId, year, month])
+  @@index([year, month])
 }
 
 model DocumentCategory {
@@ -286,6 +311,7 @@ model TenantProfile {
   user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   unit                  Unit?     @relation(fields: [unitId], references: [id], onDelete: SetNull)
   contracts             LeaseContract[]
+  rentPayments          RentPayment[]
 }
 
 model ContractTemplate {

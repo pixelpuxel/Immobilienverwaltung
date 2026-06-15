@@ -4,6 +4,7 @@ import { ContractGenerateForm } from "@/components/ContractGenerateForm";
 import { ContractThumbnail } from "@/components/ContractThumbnail";
 import { ContractTabs } from "@/components/ContractTabs";
 import { DeleteContractButton } from "@/components/DeleteContractButton";
+import { SteppedRentPlanner } from "@/components/SteppedRentPlanner";
 import { TemplateManager } from "@/components/TemplateManager";
 import { TenantCreateForm } from "@/components/TenantCreateForm";
 import { UploadForm } from "@/components/UploadForm";
@@ -63,6 +64,7 @@ export default async function ContractsPage({ searchParams }: { searchParams?: {
       <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <ContractTabs
           contractsLabel={`Generierte Verträge (${visibleContracts.length})`}
+          steppedRent={user.role === Role.ADMIN ? <SteppedRentPlanner /> : null}
           templatesLabel={`Vorlagen (${templates.length})`}
           templates={user.role === Role.ADMIN ? (
             <section className="rounded-b-lg rounded-tr-lg border border-line bg-white p-4">

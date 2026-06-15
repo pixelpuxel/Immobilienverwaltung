@@ -367,6 +367,7 @@ async function planNextAgentStep(input: {
     "- Bei Fragen nach deinen Faehigkeiten, Grenzen oder moeglichen Aktionen nutze agent_capabilities.",
     "- Wenn Daten fehlen, nutze Suchtools.",
     "- Strassennamen koennen ausgeschrieben, abgekuerzt oder leicht falsch geschrieben sein. Nutze naheliegende Varianten fuer Tool-Argumente, z.B. Kulturstrasse/Kulturstr./Kulturstraße oder Beispielweg/Beispielweg",
+    "- Umgangssprache beachten: Immos meint Immobilien. Vermietet, frei, leer und ohne Mieter sind fachliche Immobilien- oder Einheitenabfragen und keine reine Volltextsuche.",
     "- Wenn ein Mieter auf laufend oder nicht mehr laufend gesetzt werden soll, nutze update_tenant_status. Erzeuge dabei keine Wohnungsgeberbestaetigung.",
     "- Wenn mehrere Treffer moeglich sind, frage nach statt zu raten.",
     "- Schreibende Aktionen wie create_contract nur bei eindeutigem Mieter/Einheit/Vorlage oder wenn das Tool selbst eindeutig aufloesen kann.",
@@ -622,13 +623,16 @@ function fallbackDecision(message: string, previousResults: AgentToolResult[], s
   if (/(wohnt|bewohner|aktuell|mieter)/i.test(normalized)) {
     return { type: "tool_calls", statusMessage: "Ich suche aktuelle Mieter.", toolCalls: [{ tool: "search_tenants", args: { query: "", currentOnly: /aktuell|wohnt/i.test(normalized) } }] };
   }
+  if (/(vermietet|teilvermietet|vollvermietet|voll vermietet|gerade vermietet|mietstatus|vermietungsstatus)/i.test(normalized)) {
+    return { type: "tool_calls", statusMessage: "Ich suche vermietete Immobilien.", toolCalls: [{ tool: "search_properties", args: { query: "vermietet" } }] };
+  }
   if (/(frei|wohnung|einheit)/i.test(normalized)) {
     return { type: "tool_calls", statusMessage: "Ich suche passende Einheiten.", toolCalls: [{ tool: "search_units", args: { query: message, propertyQuery: propertyQuery || message } }] };
   }
-  if (/(welche|alle|gib|zeige|liste|auflisten|gibt es).*(immobilien|immobilie|objekte|objekt|haeuser|hauser|haus|adressen)/i.test(normalized)) {
+  if (/(welche|alle|gib|zeige|liste|auflisten|gibt es|was sind).*(immobilien|immobilie|immos|immo|objekte|objekt|haeuser|hauser|haus|adressen)/i.test(normalized)) {
     return { type: "tool_calls", statusMessage: "Ich lade die Immobilien.", toolCalls: [{ tool: "search_properties", args: { query: "" } }] };
   }
-  if (/(immobilie|objekt|haus|adresse)/i.test(normalized)) {
+  if (/(immobilie|immos|immo|objekt|haus|adresse)/i.test(normalized)) {
     return { type: "tool_calls", statusMessage: "Ich suche passende Immobilien.", toolCalls: [{ tool: "search_properties", args: { query: propertyQuery || message } }] };
   }
   return { type: "tool_calls", statusMessage: "Ich suche im Portal.", toolCalls: [{ tool: "global_search", args: { query: message } }] };
@@ -653,7 +657,7 @@ function shouldForceFallbackDecision(message: string, fallback: AgentDecision) {
   const firstTool = fallback.toolCalls[0]?.tool;
   if (firstTool === "update_tenant_status" && /(nicht mehr laufend|nicht laufend|laufend.*beenden|ausgezogen|auszug|ehemalig|auf nicht.*laufend)/i.test(normalized)) return true;
   if (firstTool === "agent_capabilities" && /(was kannst du|was.*moeglich|was.*möglich|funktionen|faehigkeiten|fähigkeiten|tools|hilfe|help)/i.test(normalized)) return true;
-  if (firstTool === "search_properties" && /(welche|alle|gib|zeige|liste|auflisten|gibt es).*(immobilien|immobilie|objekte|objekt|haeuser|hauser|haus|adressen)/i.test(normalized)) return true;
+  if (firstTool === "search_properties" && (/(welche|alle|gib|zeige|liste|auflisten|gibt es|was sind).*(immobilien|immobilie|immos|immo|objekte|objekt|haeuser|hauser|haus|adressen)/i.test(normalized) || /(vermietet|teilvermietet|vollvermietet|voll vermietet|mietstatus|vermietungsstatus)/i.test(normalized))) return true;
   return false;
 }
 

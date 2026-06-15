@@ -9,13 +9,17 @@ import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
-export default async function DocumentsPage({ searchParams }: { searchParams?: { propertyId?: string; unitId?: string; category?: string } }) {
+export default async function DocumentsPage({ searchParams }: { searchParams?: { propertyId?: string; unitId?: string; category?: string; documentId?: string } }) {
   const user = await requireUser();
-  const [properties, units, categories] = await Promise.all([
+  const [properties, units, rawCategories] = await Promise.all([
     prisma.property.findMany({ where: portalWhere(user), orderBy: { name: "asc" } }),
     prisma.unit.findMany({ where: { property: portalWhere(user) }, include: { property: true }, orderBy: [{ property: { name: "asc" } }, { unitNumber: "asc" }] }),
-    prisma.documentCategory.findMany({ orderBy: [{ group: "asc" }, { name: "asc" }] })
+    prisma.documentCategory.findMany({
+      where: { OR: [{ portalInstanceId: user.portalInstanceId }, { portalInstanceId: null }] },
+      orderBy: [{ group: "asc" }, { name: "asc" }]
+    })
   ]);
+  const categories = dedupeCategories(rawCategories, user.portalInstanceId);
   const propertyOptions = properties.map((property) => ({ id: property.id, label: property.name }));
   const unitOptions = units.map((unit) => ({ id: unit.id, propertyId: unit.propertyId, label: `${unit.property.name} / ${unit.unitNumber}` }));
   const categoryOptions = categories.map((category) => ({ id: category.id, label: `${category.group} / ${category.name}` }));
@@ -78,6 +82,12 @@ export default async function DocumentsPage({ searchParams }: { searchParams?: {
   ]
     .filter((group) => group.count > 0)
     .sort((a, b) => a.label.localeCompare(b.label, "de"));
+  const targetDocumentId = searchParams?.documentId || "";
+  const targetDocument = targetDocumentId ? await prisma.document.findFirst({
+    where: { AND: [documentWhere, { id: targetDocumentId }] },
+    select: { id: true, propertyId: true, unit: { select: { propertyId: true } } }
+  }) : null;
+  const targetGroupId = targetDocument?.propertyId || targetDocument?.unit?.propertyId || (targetDocument ? "general" : "");
   return (
     <AppShell role={user.role} userId={user.id} email={user.email} canSwitchView={user.role === Role.ADMIN || Boolean(user.impersonatedByAdminId)}>
       <h1 className="text-3xl font-bold">Dokumentenverwaltung</h1>
@@ -90,6 +100,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams?: {
               isAdmin={user.role === Role.ADMIN}
               key={group.id}
               properties={propertyOptions}
+              targetDocumentId={group.id === targetGroupId ? targetDocumentId : ""}
               units={unitOptions}
             />
           ))}
@@ -100,11 +111,23 @@ export default async function DocumentsPage({ searchParams }: { searchParams?: {
             <label>Titel<input name="title" /></label>
             <label>Immobilie<select name="propertyId" defaultValue={defaultPropertyId}><option value="">Keine</option>{properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
             <label>Einheit<select name="unitId" defaultValue={defaultUnitId}><option value="">Keine</option>{units.map((u) => <option key={u.id} value={u.id}>{u.property.name} / {u.unitNumber}</option>)}</select></label>
-            <label>Kategorie<select name="categoryId" defaultValue={defaultCategoryId}><option value="">Keine</option>{categories.map((c) => <option key={c.id} value={c.id}>{c.group} / {c.name}</option>)}</select></label>
+            <label>Kategorie<select name="categoryId" defaultValue={defaultCategoryId}><option value="">Keine</option>{categoryOptions.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</select></label>
             <label>Status<select name="status"><option value="AVAILABLE">vorhanden</option><option value="REQUESTED">angefragt</option><option value="SHARED">freigegeben</option><option value="MISSING">fehlt</option><option value="NOT_RELEVANT">nicht relevant</option></select></label>
           </UploadForm>
         ) : null}
       </div>
     </AppShell>
   );
+}
+
+function dedupeCategories<T extends { id: string; group: string; name: string; portalInstanceId: string | null }>(categories: T[], portalInstanceId: string | null) {
+  const byLabel = new Map<string, T>();
+  for (const category of categories) {
+    const key = `${category.group.trim().toLowerCase()}\0${category.name.trim().toLowerCase()}`;
+    const existing = byLabel.get(key);
+    if (!existing || (category.portalInstanceId === portalInstanceId && existing.portalInstanceId !== portalInstanceId)) {
+      byLabel.set(key, category);
+    }
+  }
+  return Array.from(byLabel.values()).sort((a, b) => `${a.group} ${a.name}`.localeCompare(`${b.group} ${b.name}`, "de"));
 }

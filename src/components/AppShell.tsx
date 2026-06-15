@@ -11,6 +11,7 @@ const adminLinks = [
   ["Suche", "/search"],
   ["Immobilien", "/properties"],
   ["Karte", "/map"],
+  ["Mieteinnahmen", "/rent-income"],
   ["Dokumente", "/documents"],
   ["Benutzer", "/users"],
   ["Vertraege", "/contracts"],

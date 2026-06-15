@@ -27,8 +27,11 @@ export default async function SettingsPage() {
   const user = await requireUser([Role.ADMIN]);
   await ensureMailTemplates(user.portalInstanceId);
   const agentTools = agentToolCatalogForUi(user.role);
-  const [categories, ownerProfile, apiTokens, mailTemplates, telegramConfig, aiConfig, agentConfig] = await Promise.all([
-    prisma.documentCategory.findMany({ orderBy: [{ group: "asc" }, { name: "asc" }] }),
+  const [rawCategories, ownerProfile, apiTokens, mailTemplates, telegramConfig, aiConfig, agentConfig] = await Promise.all([
+    prisma.documentCategory.findMany({
+      where: { OR: [{ portalInstanceId: user.portalInstanceId }, { portalInstanceId: null }] },
+      orderBy: [{ group: "asc" }, { name: "asc" }]
+    }),
     prisma.user.findUniqueOrThrow({ where: { id: user.id } }),
     prisma.apiToken.findMany({
       where: { user: user.portalInstanceId ? { portalInstanceId: user.portalInstanceId } : {} },
@@ -64,6 +67,7 @@ export default async function SettingsPage() {
     }),
     ensureAgentConfig(user.portalInstanceId ?? null)
   ]);
+  const categories = dedupeCategories(rawCategories, user.portalInstanceId);
   return (
     <AppShell role={user.role} userId={user.id} email={user.email} canSwitchView={user.role === Role.ADMIN || Boolean(user.impersonatedByAdminId)}>
       <h1 className="text-3xl font-bold">Einstellungen</h1>
@@ -75,9 +79,9 @@ export default async function SettingsPage() {
         <Info label="Rate Limit" value={`${env.rateLimitMaxRequests} / ${env.rateLimitWindowSeconds}s`} />
         <Info label="Reverse Proxy" value="Nginx Proxy Manager, Traefik und Caddy kompatibel" />
       </div>
-      <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_420px]">
-        <details className="rounded-lg border border-line" open>
-          <summary className="cursor-pointer border-b border-line p-4">
+      <div className="mt-8 grid items-start gap-6 xl:grid-cols-2">
+        <details className="overflow-hidden rounded-lg border border-line bg-white shadow-sm" open>
+          <summary className="cursor-pointer list-none bg-[linear-gradient(135deg,#f7fcf8,#eef4ff)] p-4 [&::-webkit-details-marker]:hidden">
             <div className="inline-flex items-center gap-3">
               <span className="rounded bg-accent px-2 py-1 text-sm font-bold text-white">›</span>
               <span>
@@ -86,7 +90,7 @@ export default async function SettingsPage() {
               </span>
             </div>
           </summary>
-          <div className="hidden border-b border-line bg-panel px-4 py-2 text-xs font-bold uppercase text-muted md:grid md:grid-cols-[130px_minmax(220px,1fr)_minmax(260px,auto)]">
+          <div className="hidden border-t border-b border-line bg-panel px-4 py-2 text-xs font-bold uppercase text-muted md:grid md:grid-cols-[130px_minmax(220px,1fr)_minmax(260px,auto)]">
             <div>Bereich</div>
             <div>Dokumentart</div>
             <div className="text-right">Sichtbar für</div>
@@ -190,8 +194,8 @@ function Info({ label, value }: { label: string; value: string }) {
 
 function SettingsFold({ title, description, children, open = false, className = "" }: { title: string; description: string; children: ReactNode; open?: boolean; className?: string }) {
   return (
-    <details className={className} open={open}>
-      <summary className="mb-3 cursor-pointer rounded-lg border border-line bg-[linear-gradient(135deg,#f7fcf8,#eef4ff)] p-4">
+    <details className={`overflow-hidden rounded-lg border border-line bg-white shadow-sm ${className}`} open={open}>
+      <summary className="cursor-pointer list-none bg-[linear-gradient(135deg,#f7fcf8,#eef4ff)] p-4 [&::-webkit-details-marker]:hidden">
         <div className="inline-flex items-center gap-3">
           <span className="rounded bg-accent px-2 py-1 text-sm font-bold text-white">›</span>
           <span>
@@ -200,7 +204,19 @@ function SettingsFold({ title, description, children, open = false, className = 
           </span>
         </div>
       </summary>
-      <div>{children}</div>
+      <div className="border-t border-line p-4">{children}</div>
     </details>
   );
+}
+
+function dedupeCategories<T extends { id: string; group: string; name: string; portalInstanceId: string | null }>(categories: T[], portalInstanceId: string | null) {
+  const byLabel = new Map<string, T>();
+  for (const category of categories) {
+    const key = `${category.group.trim().toLowerCase()}\0${category.name.trim().toLowerCase()}`;
+    const existing = byLabel.get(key);
+    if (!existing || (category.portalInstanceId === portalInstanceId && existing.portalInstanceId !== portalInstanceId)) {
+      byLabel.set(key, category);
+    }
+  }
+  return Array.from(byLabel.values()).sort((a, b) => `${a.group} ${a.name}`.localeCompare(`${b.group} ${b.name}`, "de"));
 }

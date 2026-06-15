@@ -41,6 +41,7 @@ export function activityTitle(action: string, entity?: string | null, entityId?:
 export function activityHref(entity?: string | null, entityId?: string | null) {
   if (!entity) return null;
   if (entity === "Property" && entityId) return `/properties/${entityId}`;
+  if (entity === "Document" && entityId) return `/documents?documentId=${entityId}`;
   if (entity === "Document") return "/documents";
   if (entity === "LeaseContract") return "/contracts";
   if (entity === "TenantProfile" || entity === "User" || entity === "AccessPermission") return "/users";

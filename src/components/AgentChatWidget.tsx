@@ -7,6 +7,14 @@ type ChatMessage = {
   content: string;
   lines?: string[];
   open?: boolean;
+  artifacts?: AgentArtifact[];
+};
+
+type AgentArtifact = {
+  type: "link" | "pdf" | "docx" | "document";
+  label: string;
+  url: string;
+  thumbnailUrl?: string;
 };
 
 type StreamEvent = {
@@ -16,6 +24,8 @@ type StreamEvent = {
   answer?: string;
   conversationId?: string | null;
   steps?: string[];
+  artifact?: AgentArtifact;
+  artifacts?: AgentArtifact[];
 };
 
 export function AgentChatWidget() {
@@ -24,6 +34,7 @@ export function AgentChatWidget() {
   const [statusLines, setStatusLines] = useState<string[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [, setCurrentArtifacts] = useState<AgentArtifact[]>([]);
   const [contextOpen, setContextOpen] = useState(false);
   const [debugContext, setDebugContext] = useState<unknown>(null);
   const [debugLoading, setDebugLoading] = useState(false);
@@ -53,6 +64,8 @@ export function AgentChatWidget() {
     if (!text || busy) return;
     setInput("");
     setBusy(true);
+    setCurrentArtifacts([]);
+    let collectedArtifacts: AgentArtifact[] = [];
     const initialStatus = "Ich nehme den bisherigen Kontext auf.";
     setStatusLines([initialStatus]);
     setMessages((current) => [
@@ -84,13 +97,17 @@ export function AgentChatWidget() {
             ...current.map((message) => message.role === "status" && message.open ? { ...message, content: "Agent-Lauf", open: false } : message),
             { role: "assistant", content: event.message || "Ich brauche noch eine Praezisierung." }
           ]);
+        } else if (event.type === "artifact" && event.artifact) {
+          collectedArtifacts = mergeArtifacts(collectedArtifacts, [event.artifact as AgentArtifact]);
+          setCurrentArtifacts(collectedArtifacts);
         } else if (event.type === "final") {
           addStatus("Antwort erstellt.");
           if (event.conversationId) window.localStorage.setItem("portal_agent_conversation_id", event.conversationId);
           const steps = event.steps?.length ? event.steps : ["Antwort erstellt."];
+          const artifacts = mergeArtifacts(collectedArtifacts, event.artifacts || []);
           setMessages((current) => [
             ...ensureStatusMessage(current, steps).map((message) => message.role === "status" && message.open ? { ...message, content: "Agent-Lauf", open: false } : message),
-            { role: "assistant", content: event.answer || "Keine Antwort erhalten." }
+            { role: "assistant", content: event.answer || "Keine Antwort erhalten.", artifacts }
           ]);
         } else if (event.type === "error") {
           addStatus("Fehler im Agent-Lauf.");
@@ -158,7 +175,10 @@ export function AgentChatWidget() {
   return (
     <div className="fixed bottom-4 right-4 z-50 print:hidden">
       {open ? (
-        <div className="mb-3 flex h-[520px] w-[min(420px,calc(100vw-2rem))] flex-col overflow-hidden rounded-lg border border-line bg-white shadow-2xl">
+        <div
+          className="mb-3 flex h-[520px] min-h-[420px] w-[min(420px,calc(100vw-2rem))] min-w-[320px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-lg border border-line bg-white shadow-2xl"
+          style={{ resize: "both" }}
+        >
           <div className="flex items-center justify-between border-b border-line bg-[linear-gradient(135deg,#ecfdf5,#eef4ff)] px-4 py-3">
             <div>
               <div className="font-bold">Portal-Agent</div>
@@ -205,6 +225,11 @@ export function AgentChatWidget() {
                 ) : (
                   <div className="whitespace-pre-wrap">{renderMessage(message.content)}</div>
                 )}
+                {message.artifacts?.length ? (
+                  <div className="mt-3 grid gap-2">
+                    {message.artifacts.map((artifact) => <ArtifactCard artifact={artifact} key={`${artifact.url}-${artifact.label}`} />)}
+                  </div>
+                ) : null}
               </div>
             ))}
             <div ref={endRef} />
@@ -252,8 +277,53 @@ function renderMessage(content: string) {
   const parts = content.split(/(https?:\/\/[^\s)]+|\/(?:api|properties|users|contracts|documents|tenant|search|map)[^\s)]*)/g);
   return parts.map((part, index) => {
     if (/^(https?:\/\/|\/)/.test(part)) {
-      return <a key={`${part}-${index}`} className="font-semibold underline" href={part} target={part.startsWith("http") ? "_blank" : undefined} rel="noreferrer">{part}</a>;
+      return <a key={`${part}-${index}`} className="font-semibold underline" href={part} target={part.startsWith("http") ? "_blank" : undefined} rel="noreferrer">{prettyLinkLabel(part)}</a>;
     }
     return <span key={`${part}-${index}`}>{part}</span>;
   });
+}
+
+function ArtifactCard({ artifact }: { artifact: AgentArtifact }) {
+  const thumbnailUrl = artifact.thumbnailUrl || inferThumbnailUrl(artifact.url);
+  return (
+    <a className="flex items-center gap-3 rounded-md border border-line bg-white p-2 text-sm no-underline hover:border-accent/50" href={artifact.url} target={artifact.url.startsWith("http") ? "_blank" : undefined} rel="noreferrer">
+      {thumbnailUrl ? (
+        <img alt="" className="h-14 w-14 shrink-0 rounded border border-line object-cover" src={thumbnailUrl} loading="lazy" />
+      ) : (
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded bg-emerald-50 text-xs font-black text-accent">{artifactIcon(artifact)}</span>
+      )}
+      <span className="min-w-0">
+        <span className="block truncate font-bold text-ink">{artifact.label}</span>
+        <span className="text-xs text-muted">{prettyLinkLabel(artifact.url)}</span>
+      </span>
+    </a>
+  );
+}
+
+function inferThumbnailUrl(url: string) {
+  const documentMatch = url.match(/\/api\/documents\/([^/]+)\/(?:preview|download)/);
+  if (documentMatch) return `/api/documents/${documentMatch[1]}/thumbnail`;
+  return "";
+}
+
+function artifactIcon(artifact: AgentArtifact) {
+  if (artifact.type === "pdf") return "PDF";
+  if (artifact.type === "docx") return "DOC";
+  if (artifact.type === "document") return "DU";
+  return "→";
+}
+
+function prettyLinkLabel(url: string) {
+  if (/\/properties\/[^/?#]+/.test(url)) return "Immobilie öffnen";
+  if (/\/users\?tenantId=/.test(url)) return "Mieter öffnen";
+  if (/\/api\/documents\/[^/]+\/preview/.test(url)) return "Vorschau öffnen";
+  if (/\/api\/documents\/[^/]+\/download/.test(url)) return "Dokument herunterladen";
+  if (/\/api\/contracts\/[^/]+\/download/.test(url)) return url.includes("format=docx") ? "DOCX herunterladen" : "PDF herunterladen";
+  return url;
+}
+
+function mergeArtifacts(current: AgentArtifact[], next: AgentArtifact[]) {
+  const map = new Map<string, AgentArtifact>();
+  [...current, ...next].forEach((artifact) => map.set(`${artifact.url}:${artifact.label}`, artifact));
+  return Array.from(map.values()).slice(0, 12);
 }

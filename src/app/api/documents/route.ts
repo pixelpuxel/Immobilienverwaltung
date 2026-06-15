@@ -17,6 +17,7 @@ export async function GET(request: NextRequest) {
   const propertyId = request.nextUrl.searchParams.get("propertyId");
   const unassigned = request.nextUrl.searchParams.get("unassigned") === "1";
   const foldersOnly = request.nextUrl.searchParams.get("folders") === "1";
+  const targetDocumentId = request.nextUrl.searchParams.get("targetDocumentId") || "";
   const categoryId = request.nextUrl.searchParams.get("categoryId");
   const categoryIds = request.nextUrl.searchParams.get("categoryIds")?.split(",").filter(Boolean) || [];
   const folderYear = request.nextUrl.searchParams.get("folderYear");
@@ -46,13 +47,14 @@ export async function GET(request: NextRequest) {
       },
       orderBy: { createdAt: "desc" }
     });
-    const folders = new Map<string, { categoryIds: string[]; categoryId: string | null; categoryLabel: string; year: string; count: number; preview: string[] }>();
+    const folders = new Map<string, { categoryIds: string[]; categoryId: string | null; categoryLabel: string; year: string; count: number; preview: string[]; containsTarget: boolean }>();
     for (const document of rows) {
       const year = extractDocumentYear(document.title, document.filename) || "ohne Jahr";
       const categoryLabel = document.category ? `${document.category.group} / ${document.category.name}` : "Ohne Kategorie";
       const key = `${categoryLabel}:${year}`;
-      const folder = folders.get(key) || { categoryIds: [], categoryId: document.categoryId, categoryLabel, year, count: 0, preview: [] };
+      const folder = folders.get(key) || { categoryIds: [], categoryId: document.categoryId, categoryLabel, year, count: 0, preview: [], containsTarget: false };
       folder.count += 1;
+      if (document.id === targetDocumentId) folder.containsTarget = true;
       if (document.categoryId && !folder.categoryIds.includes(document.categoryId)) folder.categoryIds.push(document.categoryId);
       if (folder.preview.length < 3) folder.preview.push(document.title);
       folders.set(key, folder);
