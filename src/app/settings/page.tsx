@@ -2,6 +2,7 @@ import { Role } from "@prisma/client";
 import { AccountSettingsForm } from "@/components/AccountSettingsForm";
 import { AiProviderSettings } from "@/components/AiProviderSettings";
 import { AgentSettings } from "@/components/AgentSettings";
+import { AgentToolOverview } from "@/components/AgentToolOverview";
 import { AppShell } from "@/components/AppShell";
 import { ApiTokenManager } from "@/components/ApiTokenManager";
 import { BackupTools } from "@/components/BackupTools";
@@ -15,6 +16,7 @@ import { TelegramBotSettings } from "@/components/TelegramBotSettings";
 import { requireUser } from "@/lib/auth";
 import { env } from "@/lib/env";
 import { DEFAULT_AGENT_SYSTEM_PROMPT, ensureAgentConfig } from "@/lib/agent";
+import { agentToolCatalogForUi } from "@/lib/agent-tools";
 import { ensureMailTemplates, mailTemplatePreviewContext, renderMailTemplate } from "@/lib/mail-templates";
 import { prisma } from "@/lib/prisma";
 
@@ -23,6 +25,7 @@ export const dynamic = "force-dynamic";
 export default async function SettingsPage() {
   const user = await requireUser([Role.ADMIN]);
   await ensureMailTemplates(user.portalInstanceId);
+  const agentTools = agentToolCatalogForUi(user.role);
   const [categories, ownerProfile, apiTokens, mailTemplates, telegramConfig, aiConfig, agentConfig] = await Promise.all([
     prisma.documentCategory.findMany({ orderBy: [{ group: "asc" }, { name: "asc" }] }),
     prisma.user.findUniqueOrThrow({ where: { id: user.id } }),
@@ -111,6 +114,7 @@ export default async function SettingsPage() {
             transcriptionModel: "gpt-4o-mini-transcribe"
           }} />
           <AgentSettings initialPrompt={agentConfig?.systemPrompt || DEFAULT_AGENT_SYSTEM_PROMPT} initialEnabled={agentConfig?.enabled ?? true} />
+          <AgentToolOverview tools={agentTools} />
           <TelegramBotSettings initialConfig={telegramConfig ? {
             configured: true,
             ...telegramConfig,

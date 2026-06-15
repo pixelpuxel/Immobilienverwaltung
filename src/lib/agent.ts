@@ -517,7 +517,7 @@ export function fallbackDecisionForTest(message: string, previousResults: AgentT
 function fallbackDecision(message: string, previousResults: AgentToolResult[], state: AgentConversationStateValue): AgentDecision {
   if (previousResults.length) return { type: "final_answer", answer: fallbackAnswer(message, previousResults) };
   const normalized = normalize(message);
-  const propertyQuery = state.facts.propertyQuery || state.facts.propertyName;
+  const propertyQuery = extractLikelyPropertyQuery(message) || state.facts.propertyQuery || state.facts.propertyName;
   const tenantQuery = state.facts.tenantQuery || state.facts.tenantName || extractLikelyTenantName(message);
   const asksTenantDate = /(ab wann|seit wann|einzug|eingezogen|mietbeginn|wohnt.*seit|seit.*wohnt)/i.test(normalized);
   const asksTenantForKnownProperty = /(wer.*mieter|mieter.*wer|wer.*wohnt|bewohner|welche.*mieter)/i.test(normalized) && Boolean(state.facts.propertyId || propertyQuery);
@@ -589,7 +589,11 @@ function fallbackDecision(message: string, previousResults: AgentToolResult[], s
     };
   }
   if (/wohn|geber|bestaetigung|bestätigung|melde/i.test(normalized) && /(mach|mache|erstelle|erzeug|generier)/i.test(normalized)) {
-    return { type: "tool_calls", statusMessage: "Ich suche den Mieter fuer die Wohnungsgeberbestaetigung.", toolCalls: [{ tool: "create_landlord_confirmation", args: { tenantQuery: message } }] };
+    return {
+      type: "tool_calls",
+      statusMessage: "Ich suche den Mieter fuer die Wohnungsgeberbestaetigung.",
+      toolCalls: [{ tool: "create_landlord_confirmation", args: { tenantQuery: tenantQuery || "", propertyQuery: propertyQuery || message } }]
+    };
   }
   if (/(was kannst du|was.*moeglich|was.*möglich|funktionen|faehigkeiten|fähigkeiten|tools|hilfe|help)/i.test(normalized)) {
     return { type: "tool_calls", statusMessage: "Ich pruefe meine verfuegbaren Portal-Tools.", toolCalls: [{ tool: "agent_capabilities", args: { topic: message } }] };
@@ -605,10 +609,13 @@ function fallbackDecision(message: string, previousResults: AgentToolResult[], s
     return { type: "tool_calls", statusMessage: "Ich suche aktuelle Mieter.", toolCalls: [{ tool: "search_tenants", args: { query: "", currentOnly: /aktuell|wohnt/i.test(normalized) } }] };
   }
   if (/(frei|wohnung|einheit)/i.test(normalized)) {
-    return { type: "tool_calls", statusMessage: "Ich suche passende Einheiten.", toolCalls: [{ tool: "search_units", args: { query: message, propertyQuery: message } }] };
+    return { type: "tool_calls", statusMessage: "Ich suche passende Einheiten.", toolCalls: [{ tool: "search_units", args: { query: message, propertyQuery: propertyQuery || message } }] };
+  }
+  if (/(welche|alle|gib|zeige|liste|auflisten|gibt es).*(immobilien|immobilie|objekte|objekt|haeuser|hauser|haus|adressen)/i.test(normalized)) {
+    return { type: "tool_calls", statusMessage: "Ich lade die Immobilien.", toolCalls: [{ tool: "search_properties", args: { query: "" } }] };
   }
   if (/(immobilie|objekt|haus|adresse)/i.test(normalized)) {
-    return { type: "tool_calls", statusMessage: "Ich suche passende Immobilien.", toolCalls: [{ tool: "search_properties", args: { query: message } }] };
+    return { type: "tool_calls", statusMessage: "Ich suche passende Immobilien.", toolCalls: [{ tool: "search_properties", args: { query: propertyQuery || message } }] };
   }
   return { type: "tool_calls", statusMessage: "Ich suche im Portal.", toolCalls: [{ tool: "global_search", args: { query: message } }] };
 }
@@ -618,8 +625,9 @@ function shouldPreferToolLookup(message: string, clarification: string, fallback
   const firstTool = fallback.toolCalls[0]?.tool;
   const normalizedMessage = normalize(message);
   const normalizedClarification = normalize(clarification);
-  const contextLookupTools = new Set(["get_tenant", "search_tenants", "get_property", "search_properties", "search_units"]);
+  const contextLookupTools = new Set(["agent_capabilities", "get_tenant", "search_tenants", "get_property", "search_properties", "search_units", "create_landlord_confirmation"]);
   if (!contextLookupTools.has(firstTool)) return false;
+  if (/(was kannst du|was.*moeglich|was.*möglich|funktionen|faehigkeiten|fähigkeiten|tools|hilfe|help)/i.test(normalizedMessage)) return true;
   if (isAffirmation(message) && state.pendingQuestion) return true;
   if (/(ab wann|seit wann|einzug|eingezogen|mietbeginn|wohnt.*seit|seit.*wohnt|wer.*mieter|mieter.*wer|wer.*wohnt|bewohner)/i.test(normalizedMessage)) return true;
   return /(moechten sie|möchten sie|soll ich|benoetige weitere informationen|benötige weitere informationen).*(mieterdaten|mieter|immobilie|einheit)/i.test(normalizedClarification);
@@ -659,6 +667,14 @@ function fallbackAnswer(message: string, tools: AgentToolResult[]) {
 function extractLikelyTenantName(message: string) {
   const match = message.match(/\b(?:frau|herr|mieter(?:in)?)\s+([A-ZÄÖÜ][a-zäöüß-]+(?:\s+[A-ZÄÖÜ][a-zäöüß-]+)?)\b/);
   return match?.[1]?.trim() || "";
+}
+
+function extractLikelyPropertyQuery(message: string) {
+  const street = message.match(/\b([A-ZÄÖÜ][\wäöüß.-]*(?:strasse|straße|str\.|gasse|weg|platz|ring|markt)\s*\d*[a-z]?(?:,\s*[A-ZÄÖÜ][\wäöüß.-]+)?)\b/i);
+  if (street?.[1]) return street[1].trim();
+  const explicit = message.match(/\b(?:in|bei|fuer|für|objekt|immobilie|adresse)\s+(?:der|die|das|dem)?\s*([A-ZÄÖÜ][\wäöüß.-]+(?:\s+\d+[a-z]?)?(?:,\s*[A-ZÄÖÜ][\wäöüß.-]+)?)/);
+  if (explicit?.[1]) return explicit[1].trim();
+  return "";
 }
 
 function normalizeAgentLinks(answer: string) {
@@ -705,5 +721,5 @@ function chatModel(transcriptionModel: string) {
 }
 
 function normalize(value: string) {
-  return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/ß/g, "ss");
+  return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/ß/g, "ss").replace(/str\./g, "strasse").replace(/\bstr\b/g, "strasse").replace(/straße/g, "strasse");
 }

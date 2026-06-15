@@ -74,6 +74,7 @@ const createContractSchema = z.object({
 const landlordConfirmationSchema = z.object({
   tenantId: z.string().trim().optional(),
   tenantQuery: z.string().trim().max(300).optional(),
+  propertyQuery: z.string().trim().max(300).optional(),
   testMode: z.boolean().optional().default(false)
 });
 
@@ -129,12 +130,21 @@ export const agentToolRegistry = {
     kind: "read",
     getStatusMessage: (args) => args.query ? `Ich suche Immobilien zu "${args.query}".` : "Ich lade die Immobilien.",
     run: async (ctx, args) => {
-      const properties = await prisma.property.findMany({
-        where: propertyWhere(ctx.user, args.query),
+      const query = normalizeGenericPropertyQuery(args.query);
+      const candidates = await prisma.property.findMany({
+        where: query ? propertyAccessWhere(ctx.user) : propertyWhere(ctx.user, query),
         orderBy: { updatedAt: "desc" },
-        take: 20,
+        take: query ? 200 : 20,
         include: { units: { select: { id: true } }, documents: { select: { id: true } } }
       });
+      const properties = query
+        ? candidates
+          .map((property) => ({ property, score: scoreText(query, [property.name, property.address, property.street, property.city, property.objectType]) }))
+          .filter((item) => item.score > 0)
+          .sort((a, b) => b.score - a.score)
+          .map((item) => item.property)
+          .slice(0, 20)
+        : candidates;
       return {
         name: "search_properties",
         ok: true,
@@ -182,9 +192,11 @@ export const agentToolRegistry = {
     kind: "read",
     getStatusMessage: (args) => args.withoutCurrentTenant ? "Ich suche Einheiten ohne aktuellen Mieter." : "Ich suche passende Einheiten.",
     run: async (ctx, args) => {
+      const query = normalizeGenericUnitQuery(args.query);
+      const propertyQuery = normalizeGenericPropertyQuery(args.propertyQuery);
       const units = await prisma.unit.findMany({
         where: {
-          ...unitWhere(ctx.user, args.query, args.propertyId, args.propertyQuery),
+          ...unitWhere(ctx.user, query, args.propertyId, propertyQuery),
           ...(args.withoutCurrentTenant ? { tenants: { none: { isCurrent: true } } } : {})
         },
         include: { property: true, tenants: { where: { isCurrent: true } } },
@@ -395,7 +407,7 @@ export const agentToolRegistry = {
   create_landlord_confirmation: tool({
     name: "create_landlord_confirmation",
     description: "Wohnungsgeberbestaetigung fuer einen eindeutig bestimmten vorhandenen Mieter erzeugen.",
-    parameters: "{ tenantId?: string, tenantQuery?: string, testMode?: boolean }",
+    parameters: "{ tenantId?: string, tenantQuery?: string, propertyQuery?: string, testMode?: boolean }",
     schema: landlordConfirmationSchema,
     kind: "write",
     requiresConfirmation: true,
@@ -423,13 +435,25 @@ export function toolListForPrompt() {
     .join("\n");
 }
 
+export function agentToolCatalogForUi(role?: Role) {
+  return Object.values(agentToolRegistry).map((definition) => ({
+    name: definition.name,
+    kind: definition.kind,
+    description: definition.description,
+    parameters: definition.parameters,
+    requiresConfirmation: Boolean(definition.requiresConfirmation),
+    availableForRole: isToolAvailableForRole(definition.name, role),
+    examples: toolExamples(definition.name)
+  }));
+}
+
 export function validateAgentToolCalls(calls: unknown): Array<{ definition: AgentToolDefinition; args: Record<string, unknown> }> {
   const list = Array.isArray(calls) ? calls : [];
   return list.map((call) => {
     const parsed = z.object({ tool: z.string(), args: z.record(z.unknown()).optional().default({}) }).parse(call);
     const definition = agentToolRegistry[parsed.tool as AgentToolName];
     if (!definition) throw new Error(`Unbekanntes Agent-Tool: ${parsed.tool}`);
-    return { definition, args: definition.schema.parse(parsed.args) as Record<string, unknown> };
+    return { definition, args: definition.schema.parse(sanitizeToolArgs(parsed.tool, parsed.args)) as Record<string, unknown> };
   });
 }
 
@@ -457,6 +481,29 @@ export async function executeValidatedToolCalls(
 
 function tool(definition: AgentToolDefinition) {
   return definition;
+}
+
+function sanitizeToolArgs(toolName: string, args: Record<string, unknown>) {
+  const next = { ...args };
+  if (toolName === "search_properties") {
+    next.query = normalizeGenericPropertyQuery(String(next.query || ""));
+  }
+  if (toolName === "search_units") {
+    next.query = normalizeGenericUnitQuery(String(next.query || ""));
+    next.propertyQuery = normalizeGenericPropertyQuery(String(next.propertyQuery || extractLikelyPropertyQuery(String(args.query || ""))));
+  }
+  if (toolName === "search_tenants") {
+    const query = String(next.query || "");
+    const propertyQuery = String(next.propertyQuery || extractLikelyPropertyQuery(query));
+    if (propertyQuery) next.propertyQuery = propertyQuery;
+    if (propertyQuery && looksLikeCurrentTenantQuestion(query)) next.query = "";
+  }
+  if (toolName === "create_landlord_confirmation") {
+    const tenantQuery = String(next.tenantQuery || "");
+    if (!next.propertyQuery) next.propertyQuery = extractLikelyPropertyQuery(tenantQuery);
+    if (looksLikeCurrentTenantQuestion(tenantQuery) || /wohn|geber|bestaetigung|bestätigung|melde/i.test(normalize(tenantQuery))) next.tenantQuery = "";
+  }
+  return next;
 }
 
 function failed(name: string, summary: string): AgentToolResult {
@@ -536,11 +583,12 @@ function tenantAccessWhere(user: ScopedUser) {
 }
 
 async function searchTenantRows(user: ScopedUser, query = "", propertyQuery?: string, currentOnly = false) {
+  const propertyLookup = normalizeGenericPropertyQuery(propertyQuery);
   const rows = await prisma.tenantProfile.findMany({
     where: {
       ...tenantAccessWhere(user),
       ...(currentOnly ? { isCurrent: true } : {}),
-      ...(propertyQuery ? { unit: { property: propertyWhere(user, propertyQuery) } } : {})
+      ...(propertyLookup ? { unit: { property: propertyWhere(user, propertyLookup) } } : {})
     },
     include: { unit: { include: { property: true } }, user: true },
     orderBy: [{ isCurrent: "desc" }, { updatedAt: "desc" }],
@@ -622,7 +670,7 @@ async function createContractTool(ctx: AgentContext, args: z.infer<typeof create
 
 async function createLandlordConfirmationTool(ctx: AgentContext, args: z.infer<typeof landlordConfirmationSchema>): Promise<AgentToolResult> {
   if (ctx.user.role !== Role.ADMIN) return failed("create_landlord_confirmation", "Wohnungsgeberbestaetigungen koennen nur mit Eigentuemer-/Adminrechten erzeugt werden.");
-  const tenantMatch = await resolveTenant(ctx.user, args.tenantId, args.tenantQuery);
+  const tenantMatch = await resolveTenant(ctx.user, args.tenantId, args.tenantQuery, args.propertyQuery);
   if (!tenantMatch.ok) return tenantMatch.result;
   const document = await generateWohnungsgeberbestaetigung({ tenantProfileId: tenantMatch.tenant.id, actorUserId: ctx.user.id });
   const summary = [
@@ -656,7 +704,10 @@ async function resolveTenant(user: ScopedUser, tenantId?: string, tenantQuery?: 
   const propertyCandidates = !candidates.length && propertyQuery
     ? await searchTenantRows(user, "", propertyQuery, true)
     : [];
-  const effectiveCandidates = candidates.length ? candidates : propertyCandidates;
+  const loosePropertyCandidates = !candidates.length && !propertyCandidates.length && propertyQuery
+    ? await searchTenantRowsByLooseProperty(user, propertyQuery, true)
+    : [];
+  const effectiveCandidates = candidates.length ? candidates : propertyCandidates.length ? propertyCandidates : loosePropertyCandidates;
   if (!effectiveCandidates.length) {
     return {
       ok: false,
@@ -727,11 +778,91 @@ function scoreText(query: string, values: Array<string | null | undefined>) {
 }
 
 function normalize(value: string) {
-  return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/ß/g, "ss");
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/ß/g, "ss")
+    .replace(/str\./g, "strasse")
+    .replace(/\bstr\b/g, "strasse")
+    .replace(/straße/g, "strasse");
 }
 
 const STOP_WORDS = new Set(["bitte", "mach", "mache", "einen", "eine", "vertrag", "mietvertrag", "fuer", "für", "erstelle", "erzeuge", "generiere", "in", "der", "die", "das", "den", "dem", "zur", "zum"]);
 
 function looksLikeCurrentTenantQuestion(value: string) {
   return /(wer|wohnt|bewohner|aktuell|laufend|objekt|objekte|immobilien)/i.test(normalize(value));
+}
+
+async function searchTenantRowsByLooseProperty(user: ScopedUser, propertyQuery: string, currentOnly = true) {
+  const rows = await searchTenantRows(user, "", undefined, currentOnly);
+  const scored = rows
+    .map((tenant) => ({
+      tenant,
+      score: scoreText(propertyQuery, [
+        tenant.unit?.property.name,
+        tenant.unit?.property.address,
+        tenant.unit?.property.street,
+        tenant.unit?.property.city,
+        tenant.unit?.unitNumber
+      ])
+    }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score);
+  return scored.map((item) => item.tenant).slice(0, 20);
+}
+
+function normalizeGenericPropertyQuery(query?: string) {
+  if (!query) return "";
+  const normalized = normalize(query);
+  const asksForList = /(welche|alle|gib|zeige|liste|auflisten|gibt es|vorhanden)/i.test(normalized);
+  const mentionsProperty = /(immobilien|immobilie|objekte|objekt|haeuser|hauser|haus|adressen)/i.test(normalized);
+  const hasSpecificAddressSignal = /\d/.test(normalized) || /(strasse|gasse|weg|platz|ring|markt|mainau|tiroler|mozart|jahn|karlsruher|schreiber)/i.test(normalized);
+  return asksForList && mentionsProperty && !hasSpecificAddressSignal ? "" : query;
+}
+
+function normalizeGenericUnitQuery(query?: string) {
+  if (!query) return "";
+  const normalized = normalize(query);
+  const asksForList = /(welche|alle|gib|zeige|liste|auflisten|gibt es|frei|ohne|keinen|keine)/i.test(normalized);
+  const mentionsUnit = /(einheiten|einheit|wohnungen|wohnung|zimmer)/i.test(normalized);
+  const hasSpecificSignal = /\d/.test(normalized) || /(og|dg|eg|ug|strasse|gasse|weg|platz|ring|markt)/i.test(normalized);
+  return asksForList && mentionsUnit && !hasSpecificSignal ? "" : query;
+}
+
+function extractLikelyPropertyQuery(message: string) {
+  const street = message.match(/\b([A-ZÄÖÜ][\wäöüß.-]*(?:strasse|straße|str\.|gasse|weg|platz|ring|markt)\s*\d*[a-z]?(?:,\s*[A-ZÄÖÜ][\wäöüß.-]+)?)\b/i);
+  if (street?.[1]) return street[1].trim();
+  const explicit = message.match(/\b(?:in|bei|fuer|für|objekt|immobilie|adresse)\s+(?:der|die|das|dem)?\s*([A-ZÄÖÜ][\wäöüß.-]+(?:\s+\d+[a-z]?)?(?:,\s*[A-ZÄÖÜ][\wäöüß.-]+)?)/);
+  if (explicit?.[1]) return explicit[1].trim();
+  return "";
+}
+
+function isToolAvailableForRole(toolName: string, role?: Role) {
+  if (!role) return true;
+  if (["create_contract", "create_landlord_confirmation", "search_templates", "get_template"].includes(toolName)) return role === Role.ADMIN;
+  return true;
+}
+
+function toolExamples(toolName: string) {
+  const examples: Record<string, string[]> = {
+    agent_capabilities: ["Was kannst du?", "Welche Portal-Funktionen kannst du ausfuehren?"],
+    global_search: ["Suche Grundbuch Musterstraße", "Finde Dokumente zu Nebenkosten 2023"],
+    search_properties: ["Welche Immobilien gibt es?", "Zeige Beispielweg 7"],
+    get_property: ["Oeffne diese Immobilie", "Details zur ausgewaehlten Immobilie"],
+    search_units: ["Welche Einheiten sind frei?", "Welche Wohnungen haben keinen Mieter?"],
+    get_unit: ["Details zu dieser Einheit"],
+    search_tenants: ["Wer wohnt in der Kulturstraße?", "Seit wann wohnt Frau Beispiel dort?"],
+    get_tenant: ["Zeige mir diesen Mieter", "Welche Daten sind zu Frau Beispiel gespeichert?"],
+    search_templates: ["Welche Mietvertragsvorlagen gibt es?", "Welche Vorlage passt zur Beispielweg?"],
+    get_template: ["Zeige diese Vertragsvorlage"],
+    search_documents: ["Suche Energieausweis Musterstraße", "Finde Grundbuchauszug Kulturstraße"],
+    get_document: ["Oeffne dieses Dokument"],
+    get_document_download_url: ["Gib mir den Download-Link fuer dieses Dokument"],
+    render_document_pdf: ["Zeige die PDF-Vorschau"],
+    create_contract: ["Erstelle einen Mietvertrag fuer Max Mustermann in der Beispielweg"],
+    create_landlord_confirmation: ["Erstelle eine Wohnungsgeberbestaetigung fuer die Mieterin in der Kulturstraße"],
+    send_telegram_document: ["Sende das erzeugte PDF in Telegram"]
+  };
+  return examples[toolName] || [];
 }

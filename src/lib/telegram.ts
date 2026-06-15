@@ -3,7 +3,7 @@ import path from "path";
 import crypto from "crypto";
 import { AuditAction, Prisma, Role, type TelegramBotConfig } from "@prisma/client";
 import { auditLog } from "./audit";
-import { processAgentMessage } from "./agent";
+import { processAgentMessage, resetAgentConversation } from "./agent";
 import { getAiConfig, semanticDocumentSearch, transcribeAudio } from "./ai-search";
 import { hashPassword } from "./auth";
 import { bestContractAttachment, contractPublicLinks } from "./contract-downloads";
@@ -49,8 +49,17 @@ export function telegramHelpText() {
     "/dokumente <Begriff> - Dokumente suchen",
     "/vertraege [Name] - Mietvertraege suchen",
     "/vertrag <Mieter> - Mietvertrag erzeugen und PDF senden",
+    "/agent kontext - gespeicherten Agent-Kontext anzeigen",
+    "/agent reset - Agent-Kontext fuer diesen Chat/Thread loeschen",
     "Erstelle Mietvertrag - gefuehrten Dialog fuer einen neuen Mietvertrag starten",
     "Freitext - Portal-Agent fragen oder Aktion ausfuehren lassen",
+    "",
+    "Agent-Themen:",
+    "- Was kannst du?",
+    "- Welche Immobilien gibt es?",
+    "- Wer wohnt in der Kulturstraße?",
+    "- Erstelle eine Wohnungsgeberbestaetigung fuer die Mieterin in der Kulturstraße",
+    "- Suche Grundbuchauszug Musterstraße",
     "",
     "Beispiele:",
     "/suche Musterstraße",
@@ -173,6 +182,15 @@ export async function handleTelegramUpdate(config: TelegramConfig, update: Teleg
 
   try {
     const activeConversation = await getContractConversation(config, chatId, threadId);
+    if (/^\/agent\s+(kontext|context)$/i.test(text)) {
+      await sendTelegramMessage(token, chatId, await agentContextReply(user, chatId, threadId), threadId);
+      return;
+    }
+    if (/^\/agent\s+(reset|zuruecksetzen|zurücksetzen|loeschen|löschen)$/i.test(text)) {
+      await resetTelegramAgentContext(user, chatId, threadId);
+      await sendTelegramMessage(token, chatId, "Agent-Kontext fuer diesen Telegram-Chat wurde geloescht.", threadId);
+      return;
+    }
     if (activeConversation || isContractWizardStart(text)) {
       await handleContractWizard(config, token, chatId, threadId, user, text, Boolean(!activeConversation && isContractWizardStart(text)), activeConversation?.payload);
       return;
@@ -286,6 +304,52 @@ async function agentTelegramReply(token: string, user: NonNullable<Awaited<Retur
     } catch (error) {
       await sendTelegramMessage(token, chatId, `Datei konnte nicht per Telegram gesendet werden: ${error instanceof Error ? error.message : "unbekannter Fehler"}`, threadId);
     }
+  }
+}
+
+async function agentContextReply(user: NonNullable<Awaited<ReturnType<typeof botUser>>>, chatId: string, threadId: string | null) {
+  const conversation = await prisma.agentConversation.findFirst({
+    where: {
+      portalInstanceId: user.portalInstanceId,
+      channel: "telegram",
+      externalKey: `${chatId}:${threadId || ""}`
+    },
+    include: {
+      state: true,
+      messages: { orderBy: { createdAt: "desc" }, take: 8 },
+      runLogs: { orderBy: { createdAt: "desc" }, take: 3 }
+    }
+  });
+  if (!conversation) return "Noch kein Agent-Kontext fuer diesen Telegram-Chat vorhanden.";
+  return [
+    "Agent-Kontext:",
+    `Conversation: ${conversation.id}`,
+    conversation.state ? `Status: ${conversation.state.status || "idle"}` : "Status: keiner",
+    conversation.state?.goal ? `Ziel: ${conversation.state.goal}` : null,
+    conversation.state?.pendingQuestion ? `Offene Frage: ${conversation.state.pendingQuestion}` : null,
+    conversation.state?.facts ? `Bekannte Fakten: ${JSON.stringify(conversation.state.facts).slice(0, 1200)}` : "Bekannte Fakten: keine",
+    "",
+    "Letzte Nachrichten:",
+    ...conversation.messages.reverse().map((message) => `- ${message.role}: ${message.content.slice(0, 350)}`),
+    "",
+    "Letzte Laeufe:",
+    ...conversation.runLogs.map((log) => `- ${formatDate(log.createdAt)}: ${log.userInput.slice(0, 160)}${log.error ? ` (Fehler: ${log.error})` : ""}`),
+    "",
+    "Loeschen mit: /agent reset"
+  ].filter(Boolean).join("\n");
+}
+
+async function resetTelegramAgentContext(user: NonNullable<Awaited<ReturnType<typeof botUser>>>, chatId: string, threadId: string | null) {
+  const conversation = await prisma.agentConversation.findFirst({
+    where: {
+      portalInstanceId: user.portalInstanceId,
+      channel: "telegram",
+      externalKey: `${chatId}:${threadId || ""}`
+    },
+    select: { id: true }
+  });
+  if (conversation) {
+    await resetAgentConversation(user, conversation.id);
   }
 }
 
