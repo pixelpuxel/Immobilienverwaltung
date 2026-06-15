@@ -78,6 +78,14 @@ const landlordConfirmationSchema = z.object({
   testMode: z.boolean().optional().default(false)
 });
 
+const updateTenantStatusSchema = z.object({
+  tenantId: z.string().trim().optional(),
+  tenantQuery: z.string().trim().max(300).optional(),
+  propertyQuery: z.string().trim().max(300).optional(),
+  isCurrent: z.boolean(),
+  moveOutDate: z.coerce.date().nullable().optional()
+});
+
 export const agentToolRegistry = {
   agent_capabilities: tool({
     name: "agent_capabilities",
@@ -414,6 +422,16 @@ export const agentToolRegistry = {
     getStatusMessage: () => "Ich erstelle die Wohnungsgeberbestaetigung.",
     run: createLandlordConfirmationTool
   }),
+  update_tenant_status: tool({
+    name: "update_tenant_status",
+    description: "Setzt einen vorhandenen Mieter auf laufend oder nicht mehr laufend und kann ein Auszugsdatum speichern.",
+    parameters: "{ tenantId?: string, tenantQuery?: string, propertyQuery?: string, isCurrent: boolean, moveOutDate?: string | null }",
+    schema: updateTenantStatusSchema,
+    kind: "write",
+    requiresConfirmation: true,
+    getStatusMessage: () => "Ich aktualisiere den Mietstatus.",
+    run: updateTenantStatusTool
+  }),
   send_telegram_document: tool({
     name: "send_telegram_document",
     description: "Telegram-Dateiversand wird serverseitig automatisch fuer erzeugte Vertrags-/PDF-Anhaenge ausgefuehrt.",
@@ -514,6 +532,7 @@ function capabilityList(role: Role, topic = "") {
   const ownerOnly = role === Role.ADMIN ? [
     "Mietvertraege fuer vorhandene Mieter erzeugen, inklusive DOCX/PDF und Download-Link.",
     "Wohnungsgeberbestaetigungen fuer vorhandene Mieter erzeugen.",
+    "Mieterstatus auf laufend oder nicht mehr laufend setzen und Auszugsdatum speichern.",
     "Vertragsvorlagen suchen und passende Vorlagen fuer Objekte erkennen.",
     "Mieter, Einheiten und Immobilien im Eigentuemerkontext suchen und verlinken."
   ] : [
@@ -695,6 +714,48 @@ async function createLandlordConfirmationTool(ctx: AgentContext, args: z.infer<t
   };
 }
 
+async function updateTenantStatusTool(ctx: AgentContext, args: z.infer<typeof updateTenantStatusSchema>): Promise<AgentToolResult> {
+  if (ctx.user.role !== Role.ADMIN) return failed("update_tenant_status", "Mietstatus kann nur mit Eigentuemer-/Adminrechten geaendert werden.");
+  const tenantMatch = await resolveTenant(ctx.user, args.tenantId, args.tenantQuery, args.propertyQuery);
+  if (!tenantMatch.ok) return { ...tenantMatch.result, name: "update_tenant_status" };
+  const tenant = tenantMatch.tenant;
+  const updated = await prisma.tenantProfile.update({
+    where: { id: tenant.id },
+    data: {
+      isCurrent: args.isCurrent,
+      moveOutDate: args.isCurrent ? null : args.moveOutDate ?? tenant.moveOutDate ?? new Date()
+    },
+    include: { unit: { include: { property: true } }, user: true }
+  });
+  await auditLog({
+    userId: ctx.user.id,
+    action: AuditAction.PERMISSION_CHANGED,
+    entity: "TenantProfile",
+    entityId: updated.id,
+    detail: { source: "agent-tool", isCurrent: updated.isCurrent, moveOutDate: updated.moveOutDate }
+  });
+  return {
+    name: "update_tenant_status",
+    ok: true,
+    summary: [
+      `Mietstatus aktualisiert: ${tenantName(updated)}`,
+      updated.unit ? `${updated.unit.property.name} / ${updated.unit.unitNumber}` : "keine Einheit",
+      updated.isCurrent ? "Status: laufend" : "Status: nicht mehr laufend",
+      tenantDates(updated),
+      `Link: /users?tenantId=${updated.id}`
+    ].filter(Boolean).join("\n"),
+    href: `/users?tenantId=${updated.id}`,
+    data: {
+      id: updated.id,
+      name: tenantName(updated),
+      isCurrent: updated.isCurrent,
+      moveOutDate: updated.moveOutDate,
+      href: `/users?tenantId=${updated.id}`
+    },
+    artifacts: [{ type: "link", label: tenantName(updated), url: `/users?tenantId=${updated.id}` }]
+  };
+}
+
 async function resolveTenant(user: ScopedUser, tenantId?: string, tenantQuery?: string, propertyQuery?: string): Promise<{ ok: true; tenant: Awaited<ReturnType<typeof searchTenantRows>>[number] } | { ok: false; result: AgentToolResult }> {
   if (tenantId) {
     const tenant = await prisma.tenantProfile.findFirst({ where: { id: tenantId, ...tenantAccessWhere(user) }, include: { unit: { include: { property: true } }, user: true } });
@@ -840,7 +901,7 @@ function extractLikelyPropertyQuery(message: string) {
 
 function isToolAvailableForRole(toolName: string, role?: Role) {
   if (!role) return true;
-  if (["create_contract", "create_landlord_confirmation", "search_templates", "get_template"].includes(toolName)) return role === Role.ADMIN;
+  if (["create_contract", "create_landlord_confirmation", "update_tenant_status", "search_templates", "get_template"].includes(toolName)) return role === Role.ADMIN;
   return true;
 }
 
@@ -862,6 +923,7 @@ function toolExamples(toolName: string) {
     render_document_pdf: ["Zeige die PDF-Vorschau"],
     create_contract: ["Erstelle einen Mietvertrag fuer Max Mustermann in der Beispielweg"],
     create_landlord_confirmation: ["Erstelle eine Wohnungsgeberbestaetigung fuer die Mieterin in der Kulturstraße"],
+    update_tenant_status: ["Setze Frau Beispiel auf nicht mehr laufend", "Markiere Max Mustermann als laufenden Mieter"],
     send_telegram_document: ["Sende das erzeugte PDF in Telegram"]
   };
   return examples[toolName] || [];

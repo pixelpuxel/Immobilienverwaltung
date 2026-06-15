@@ -366,6 +366,8 @@ async function planNextAgentStep(input: {
     "- Pruefe zuerst, ob die Nutzeranfrage mit den vorhandenen Tools beantwortbar ist. Wenn ja, plane Tool Calls. Wenn nein, sage klar, welches Tool fehlt.",
     "- Bei Fragen nach deinen Faehigkeiten, Grenzen oder moeglichen Aktionen nutze agent_capabilities.",
     "- Wenn Daten fehlen, nutze Suchtools.",
+    "- Strassennamen koennen ausgeschrieben, abgekuerzt oder leicht falsch geschrieben sein. Nutze naheliegende Varianten fuer Tool-Argumente, z.B. Kulturstrasse/Kulturstr./Kulturstraße oder Beispielweg/Beispielweg",
+    "- Wenn ein Mieter auf laufend oder nicht mehr laufend gesetzt werden soll, nutze update_tenant_status. Erzeuge dabei keine Wohnungsgeberbestaetigung.",
     "- Wenn mehrere Treffer moeglich sind, frage nach statt zu raten.",
     "- Schreibende Aktionen wie create_contract nur bei eindeutigem Mieter/Einheit/Vorlage oder wenn das Tool selbst eindeutig aufloesen kann.",
     "- Bei Ziel create_contract: suche erst Mieter, Immobilie/Einheit und Vorlage; nutze vorhandene IDs aus dem State; erstelle danach den Vertrag.",
@@ -395,8 +397,12 @@ async function planNextAgentStep(input: {
   });
   await updateAgentRunLog(input.runLogId, { modelResponses: [{ phase: "planning", raw }] });
   const parsed = parseJsonDecision(raw);
-  if (parsed) return parsed;
-  return fallbackDecision(input.userMessage, input.previousToolResults, input.state);
+  const fallback = fallbackDecision(input.userMessage, input.previousToolResults, input.state);
+  if (parsed) {
+    if (shouldForceFallbackDecision(input.userMessage, fallback)) return fallback;
+    return parsed;
+  }
+  return fallback;
 }
 
 async function finalAnswer(input: {
@@ -552,6 +558,14 @@ function fallbackDecision(message: string, previousResults: AgentToolResult[], s
     };
   }
 
+  if (/(nicht mehr laufend|nicht laufend|laufend.*beenden|beenden|ausgezogen|auszug|ehemalig|auf nicht.*laufend)/i.test(normalized)) {
+    return {
+      type: "tool_calls",
+      statusMessage: "Ich setze den Mieterstatus auf nicht mehr laufend.",
+      toolCalls: [{ tool: "update_tenant_status", args: { tenantId: state.facts.tenantId, tenantQuery: tenantQuery || message, propertyQuery, isCurrent: false } }]
+    };
+  }
+
   if (isAffirmation(message) && state.goal === "create_contract") {
     return {
       type: "tool_calls",
@@ -631,6 +645,16 @@ function shouldPreferToolLookup(message: string, clarification: string, fallback
   if (isAffirmation(message) && state.pendingQuestion) return true;
   if (/(ab wann|seit wann|einzug|eingezogen|mietbeginn|wohnt.*seit|seit.*wohnt|wer.*mieter|mieter.*wer|wer.*wohnt|bewohner)/i.test(normalizedMessage)) return true;
   return /(moechten sie|möchten sie|soll ich|benoetige weitere informationen|benötige weitere informationen).*(mieterdaten|mieter|immobilie|einheit)/i.test(normalizedClarification);
+}
+
+function shouldForceFallbackDecision(message: string, fallback: AgentDecision) {
+  if (fallback.type !== "tool_calls" || !fallback.toolCalls.length) return false;
+  const normalized = normalize(message);
+  const firstTool = fallback.toolCalls[0]?.tool;
+  if (firstTool === "update_tenant_status" && /(nicht mehr laufend|nicht laufend|laufend.*beenden|ausgezogen|auszug|ehemalig|auf nicht.*laufend)/i.test(normalized)) return true;
+  if (firstTool === "agent_capabilities" && /(was kannst du|was.*moeglich|was.*möglich|funktionen|faehigkeiten|fähigkeiten|tools|hilfe|help)/i.test(normalized)) return true;
+  if (firstTool === "search_properties" && /(welche|alle|gib|zeige|liste|auflisten|gibt es).*(immobilien|immobilie|objekte|objekt|haeuser|hauser|haus|adressen)/i.test(normalized)) return true;
+  return false;
 }
 
 function canAnswerWithoutTools(message: string) {

@@ -1,4 +1,5 @@
 import { Role } from "@prisma/client";
+import type { ReactNode } from "react";
 import { AccountSettingsForm } from "@/components/AccountSettingsForm";
 import { AiProviderSettings } from "@/components/AiProviderSettings";
 import { AgentSettings } from "@/components/AgentSettings";
@@ -75,74 +76,105 @@ export default async function SettingsPage() {
         <Info label="Reverse Proxy" value="Nginx Proxy Manager, Traefik und Caddy kompatibel" />
       </div>
       <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_420px]">
-        <section className="rounded-lg border border-line">
-          <div className="border-b border-line p-4">
-            <div className="font-bold">Dokumentenkategorien</div>
-            <p className="mt-1 text-sm text-muted">Eigentümer sehen alles. Hier steuerst du, welche Dokumentarten Makler oder Mieter grundsätzlich sehen dürfen.</p>
-          </div>
+        <details className="rounded-lg border border-line" open>
+          <summary className="cursor-pointer border-b border-line p-4">
+            <div className="inline-flex items-center gap-3">
+              <span className="rounded bg-accent px-2 py-1 text-sm font-bold text-white">›</span>
+              <span>
+                <span className="block font-bold">Dokumentenkategorien</span>
+                <span className="mt-1 block text-sm font-normal text-muted">Eigentümer sehen alles. Hier steuerst du, welche Dokumentarten Makler oder Mieter grundsätzlich sehen dürfen.</span>
+              </span>
+            </div>
+          </summary>
           <div className="hidden border-b border-line bg-panel px-4 py-2 text-xs font-bold uppercase text-muted md:grid md:grid-cols-[130px_minmax(220px,1fr)_minmax(260px,auto)]">
             <div>Bereich</div>
             <div>Dokumentart</div>
             <div className="text-right">Sichtbar für</div>
           </div>
-          {categories.map((category) => (
-            <div className="grid gap-3 border-b border-line p-4 text-sm md:grid-cols-[130px_minmax(220px,1fr)_minmax(260px,auto)] md:items-center" key={category.id}>
-              <div className="font-semibold">{category.group}</div>
-              <div>{category.name}</div>
-              <CategoryVisibilityForm category={category} />
-            </div>
-          ))}
-        </section>
+          <div>
+            {categories.map((category) => (
+              <div className="grid gap-3 border-b border-line p-4 text-sm last:border-b-0 md:grid-cols-[130px_minmax(220px,1fr)_minmax(260px,auto)] md:items-center" key={category.id}>
+                <div className="font-semibold">{category.group}</div>
+                <div>{category.name}</div>
+                <CategoryVisibilityForm category={category} />
+              </div>
+            ))}
+          </div>
+        </details>
         <div className="grid content-start gap-6">
-          <BackupTools />
-          <MailSettingsCard
-            configured={Boolean(env.smtpHost && env.smtpFrom)}
-            smtpHost={env.smtpHost}
-            smtpPort={env.smtpPort}
-            smtpFrom={env.smtpFrom}
-            defaultTo={ownerProfile.contactEmail || ownerProfile.email}
-          />
-          <AiProviderSettings initialConfig={aiConfig ? {
-            configured: Boolean(aiConfig.apiKeyEncrypted),
-            provider: aiConfig.provider,
-            embeddingModel: aiConfig.embeddingModel,
-            transcriptionModel: aiConfig.transcriptionModel
-          } : {
-            configured: false,
-            provider: "openai",
-            embeddingModel: "text-embedding-3-small",
-            transcriptionModel: "gpt-4o-mini-transcribe"
-          }} />
-          <AgentSettings initialPrompt={agentConfig?.systemPrompt || DEFAULT_AGENT_SYSTEM_PROMPT} initialEnabled={agentConfig?.enabled ?? true} />
-          <AgentToolOverview tools={agentTools} />
-          <TelegramBotSettings initialConfig={telegramConfig ? {
-            configured: true,
-            ...telegramConfig,
-            pendingAt: telegramConfig.pendingAt?.toISOString() || null
-          } : { configured: false }} />
-          <ApiTokenManager initialTokens={apiTokens.map((token) => ({
-            ...token,
-            createdAt: token.createdAt.toISOString(),
-            lastUsedAt: token.lastUsedAt?.toISOString() || null,
-            expiresAt: token.expiresAt?.toISOString() || null,
-            revokedAt: token.revokedAt?.toISOString() || null
-          }))} />
-          {user.platformAdmin ? <PortalInstanceManager /> : null}
-          <AccountSettingsForm userId={user.id} profile={ownerProfile} />
-          <OwnerProfileForm userId={user.id} profile={ownerProfile} />
-          <JsonForm endpoint="/api/document-categories" submitLabel="Kategorie anlegen">
-            <label>Gruppe<input name="group" required /></label>
-            <label>Name<input name="name" required /></label>
-            <label>Beschreibung<textarea name="description" /></label>
-          </JsonForm>
+          <SettingsFold title="Backup und Import" description="Daten exportieren, sichern und wiederherstellen." open>
+            <BackupTools />
+          </SettingsFold>
+          <SettingsFold title="Mailversand" description="SMTP/Postfix-Konfiguration und Testmail." open>
+            <MailSettingsCard
+              configured={Boolean(env.smtpHost && env.smtpFrom)}
+              smtpHost={env.smtpHost}
+              smtpPort={env.smtpPort}
+              smtpFrom={env.smtpFrom}
+              defaultTo={ownerProfile.contactEmail || ownerProfile.email}
+            />
+          </SettingsFold>
+          <SettingsFold title="KI-Anbieter" description="Provider, API-Key, Embeddings und Transkription.">
+            <AiProviderSettings initialConfig={aiConfig ? {
+              configured: Boolean(aiConfig.apiKeyEncrypted),
+              provider: aiConfig.provider,
+              embeddingModel: aiConfig.embeddingModel,
+              transcriptionModel: aiConfig.transcriptionModel
+            } : {
+              configured: false,
+              provider: "openai",
+              embeddingModel: "text-embedding-3-small",
+              transcriptionModel: "gpt-4o-mini-transcribe"
+            }} />
+          </SettingsFold>
+          <SettingsFold title="Portal-Agent" description="System-Prompt und Aktivierung für Web und Telegram." open>
+            <AgentSettings initialPrompt={agentConfig?.systemPrompt || DEFAULT_AGENT_SYSTEM_PROMPT} initialEnabled={agentConfig?.enabled ?? true} />
+          </SettingsFold>
+          <SettingsFold title="Agent-Tools" description="Fähigkeiten, Grenzen und Beispielanfragen des Agenten." open>
+            <AgentToolOverview tools={agentTools} />
+          </SettingsFold>
+          <SettingsFold title="Telegram-Bot" description="Bot, Chat, Thread und Verbindung übernehmen.">
+            <TelegramBotSettings initialConfig={telegramConfig ? {
+              configured: true,
+              ...telegramConfig,
+              pendingAt: telegramConfig.pendingAt?.toISOString() || null
+            } : { configured: false }} />
+          </SettingsFold>
+          <SettingsFold title="API-Zugänge" description="Tokens für n8n und andere Integrationen verwalten.">
+            <ApiTokenManager initialTokens={apiTokens.map((token) => ({
+              ...token,
+              createdAt: token.createdAt.toISOString(),
+              lastUsedAt: token.lastUsedAt?.toISOString() || null,
+              expiresAt: token.expiresAt?.toISOString() || null,
+              revokedAt: token.revokedAt?.toISOString() || null
+            }))} />
+          </SettingsFold>
+          {user.platformAdmin ? (
+            <SettingsFold title="Portal-Instanzen" description="Instanzen für weitere Nutzer verwalten.">
+              <PortalInstanceManager />
+            </SettingsFold>
+          ) : null}
+          <SettingsFold title="Login und Konto" description="E-Mail, Benutzername und Passwort verwalten.">
+            <AccountSettingsForm userId={user.id} profile={ownerProfile} />
+          </SettingsFold>
+          <SettingsFold title="Eigentümerdaten" description="Kontakt-, Bank- und Vertragsdaten des Eigentümers.">
+            <OwnerProfileForm userId={user.id} profile={ownerProfile} />
+          </SettingsFold>
+          <SettingsFold title="Neue Dokumentenkategorie" description="Weitere Dokumentart für Berechtigungen und Uploads anlegen.">
+            <JsonForm endpoint="/api/document-categories" submitLabel="Kategorie anlegen">
+              <label>Gruppe<input name="group" required /></label>
+              <label>Name<input name="name" required /></label>
+              <label>Beschreibung<textarea name="description" /></label>
+            </JsonForm>
+          </SettingsFold>
         </div>
       </div>
-      <div className="mt-8">
+      <SettingsFold className="mt-8" title="Mail-Templates" description="Automatische Mailtexte, Platzhalter und Auslöser bearbeiten.">
         <MailTemplateManager initialTemplates={mailTemplates.map((template) => ({
           ...template,
           preview: renderMailTemplate(template, mailTemplatePreviewContext(template))
         }))} />
-      </div>
+      </SettingsFold>
     </AppShell>
   );
 }
@@ -153,5 +185,22 @@ function Info({ label, value }: { label: string; value: string }) {
       <div className="text-sm font-semibold text-muted">{label}</div>
       <div className="mt-1 break-all font-mono text-sm">{value}</div>
     </div>
+  );
+}
+
+function SettingsFold({ title, description, children, open = false, className = "" }: { title: string; description: string; children: ReactNode; open?: boolean; className?: string }) {
+  return (
+    <details className={className} open={open}>
+      <summary className="mb-3 cursor-pointer rounded-lg border border-line bg-[linear-gradient(135deg,#f7fcf8,#eef4ff)] p-4">
+        <div className="inline-flex items-center gap-3">
+          <span className="rounded bg-accent px-2 py-1 text-sm font-bold text-white">›</span>
+          <span>
+            <span className="block font-bold">{title}</span>
+            <span className="mt-1 block text-sm font-normal text-muted">{description}</span>
+          </span>
+        </div>
+      </summary>
+      <div>{children}</div>
+    </details>
   );
 }
