@@ -3,8 +3,10 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 
 type ChatMessage = {
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "status";
   content: string;
+  lines?: string[];
+  open?: boolean;
 };
 
 type StreamEvent = {
@@ -19,7 +21,6 @@ export function AgentChatWidget() {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [statusLines, setStatusLines] = useState<string[]>([]);
-  const [runLogLines, setRunLogLines] = useState<string[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
@@ -51,9 +52,13 @@ export function AgentChatWidget() {
     if (!text || busy) return;
     setInput("");
     setBusy(true);
-    setStatusLines(["Ich nehme den bisherigen Kontext auf."]);
-    setRunLogLines(["Ich nehme den bisherigen Kontext auf."]);
-    setMessages((current) => [...current, { role: "user", content: text }]);
+    const initialStatus = "Ich nehme den bisherigen Kontext auf.";
+    setStatusLines([initialStatus]);
+    setMessages((current) => [
+      ...current,
+      { role: "user", content: text },
+      { role: "status", content: "Agent arbeitet", lines: [initialStatus], open: true }
+    ]);
     try {
       const response = await fetch("/api/agent/chat?stream=1", {
         method: "POST",
@@ -73,17 +78,32 @@ export function AgentChatWidget() {
         } else if (event.type === "tool_result") {
           addStatus(event.summary || "Schritt erledigt.");
         } else if (event.type === "clarification") {
-          setMessages((current) => [...current, { role: "assistant", content: event.message || "Ich brauche noch eine Praezisierung." }]);
+          addStatus("Rueckfrage erforderlich.");
+          setMessages((current) => [
+            ...current.map((message) => message.role === "status" && message.open ? { ...message, content: "Agent-Lauf", open: false } : message),
+            { role: "assistant", content: event.message || "Ich brauche noch eine Praezisierung." }
+          ]);
         } else if (event.type === "final") {
           addStatus("Antwort erstellt.");
           if (event.conversationId) window.localStorage.setItem("portal_agent_conversation_id", event.conversationId);
-          setMessages((current) => [...current, { role: "assistant", content: event.answer || "Keine Antwort erhalten." }]);
+          setMessages((current) => [
+            ...current.map((message) => message.role === "status" && message.open ? { ...message, content: "Agent-Lauf", open: false } : message),
+            { role: "assistant", content: event.answer || "Keine Antwort erhalten." }
+          ]);
         } else if (event.type === "error") {
-          setMessages((current) => [...current, { role: "assistant", content: `Fehler: ${event.message || "Agent-Anfrage fehlgeschlagen."}` }]);
+          addStatus("Fehler im Agent-Lauf.");
+          setMessages((current) => [
+            ...current.map((message) => message.role === "status" && message.open ? { ...message, content: "Agent-Lauf", open: false } : message),
+            { role: "assistant", content: `Fehler: ${event.message || "Agent-Anfrage fehlgeschlagen."}` }
+          ]);
         }
       });
     } catch (error) {
-      setMessages((current) => [...current, { role: "assistant", content: error instanceof Error ? `Fehler: ${error.message}` : "Fehler beim Agenten." }]);
+      addStatus("Fehler im Agent-Lauf.");
+      setMessages((current) => [
+        ...current.map((message) => message.role === "status" && message.open ? { ...message, content: "Agent-Lauf", open: false } : message),
+        { role: "assistant", content: error instanceof Error ? `Fehler: ${error.message}` : "Fehler beim Agenten." }
+      ]);
     } finally {
       setBusy(false);
     }
@@ -91,7 +111,15 @@ export function AgentChatWidget() {
 
   function addStatus(message: string) {
     setStatusLines((current) => [...current.slice(-5), message]);
-    setRunLogLines((current) => [...current, message].slice(-20));
+    setMessages((current) => {
+      const next = [...current];
+      const index = [...next].reverse().findIndex((item) => item.role === "status");
+      if (index === -1) return next;
+      const realIndex = next.length - 1 - index;
+      const status = next[realIndex];
+      next[realIndex] = { ...status, lines: [...(status.lines || []), message].slice(-30) };
+      return next;
+    });
   }
 
   async function resetContext() {
@@ -102,7 +130,6 @@ export function AgentChatWidget() {
     setDebugContext(null);
     setContextOpen(false);
     setStatusLines([]);
-    setRunLogLines([]);
     setMessages([{ role: "assistant", content: "Der Agent-Kontext wurde zurueckgesetzt. Wir starten frisch." }]);
   }
 
@@ -137,22 +164,6 @@ export function AgentChatWidget() {
             </div>
           </div>
           <div className="flex-1 space-y-3 overflow-y-auto p-4 text-sm">
-            {busy || runLogLines.length ? (
-              <div className="sticky top-0 z-10 rounded-lg border border-emerald-200 bg-emerald-50/95 px-3 py-2 shadow-sm backdrop-blur">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="font-semibold text-emerald-950">{busy ? "Agent arbeitet" : "Letzter Agent-Lauf"}</div>
-                  {busy ? <div className="h-2 w-2 animate-pulse rounded-full bg-emerald-600" /> : null}
-                </div>
-                <div className="mt-1 space-y-1 text-xs text-emerald-900">
-                  {(busy ? statusLines : runLogLines.slice(-6)).map((line, index) => (
-                    <div key={`${line}-${index}`} className="flex gap-2">
-                      <span className="text-emerald-600">{index + 1}.</span>
-                      <span>{line}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
             {contextOpen ? (
               <div className="rounded-lg border border-line bg-panel p-3">
                 <div className="mb-2 flex items-center justify-between gap-3">
@@ -168,8 +179,25 @@ export function AgentChatWidget() {
               </div>
             ) : null}
             {messages.map((message, index) => (
-              <div key={`${message.role}-${index}`} className={`rounded-lg px-3 py-2 ${message.role === "user" ? "ml-8 bg-accent text-white" : "mr-8 bg-panel"}`}>
-                <div className="whitespace-pre-wrap">{renderMessage(message.content)}</div>
+              <div key={`${message.role}-${index}`} className={`rounded-lg px-3 py-2 ${message.role === "user" ? "ml-8 bg-accent text-white" : message.role === "status" ? "mr-8 border border-emerald-200 bg-emerald-50 text-emerald-950" : "mr-8 bg-panel"}`}>
+                {message.role === "status" ? (
+                  <details open={message.open}>
+                    <summary className="cursor-pointer font-semibold">
+                      {message.content}
+                      {busy && message.open ? <span className="ml-2 inline-block h-2 w-2 animate-pulse rounded-full bg-emerald-600 align-middle" /> : null}
+                    </summary>
+                    <div className="mt-2 space-y-1 text-xs text-emerald-900">
+                      {(message.lines || []).map((line, lineIndex) => (
+                        <div key={`${line}-${lineIndex}`} className="flex gap-2">
+                          <span className="shrink-0 text-emerald-600">{lineIndex + 1}.</span>
+                          <span>{line}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                ) : (
+                  <div className="whitespace-pre-wrap">{renderMessage(message.content)}</div>
+                )}
               </div>
             ))}
             <div ref={endRef} />
