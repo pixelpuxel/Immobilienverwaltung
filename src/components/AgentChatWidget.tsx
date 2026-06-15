@@ -19,6 +19,7 @@ export function AgentChatWidget() {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [statusLines, setStatusLines] = useState<string[]>([]);
+  const [runLogLines, setRunLogLines] = useState<string[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
@@ -51,6 +52,7 @@ export function AgentChatWidget() {
     setInput("");
     setBusy(true);
     setStatusLines(["Ich nehme den bisherigen Kontext auf."]);
+    setRunLogLines(["Ich nehme den bisherigen Kontext auf."]);
     setMessages((current) => [...current, { role: "user", content: text }]);
     try {
       const response = await fetch("/api/agent/chat?stream=1", {
@@ -73,6 +75,7 @@ export function AgentChatWidget() {
         } else if (event.type === "clarification") {
           setMessages((current) => [...current, { role: "assistant", content: event.message || "Ich brauche noch eine Praezisierung." }]);
         } else if (event.type === "final") {
+          addStatus("Antwort erstellt.");
           if (event.conversationId) window.localStorage.setItem("portal_agent_conversation_id", event.conversationId);
           setMessages((current) => [...current, { role: "assistant", content: event.answer || "Keine Antwort erhalten." }]);
         } else if (event.type === "error") {
@@ -82,13 +85,13 @@ export function AgentChatWidget() {
     } catch (error) {
       setMessages((current) => [...current, { role: "assistant", content: error instanceof Error ? `Fehler: ${error.message}` : "Fehler beim Agenten." }]);
     } finally {
-      setStatusLines([]);
       setBusy(false);
     }
   }
 
   function addStatus(message: string) {
     setStatusLines((current) => [...current.slice(-5), message]);
+    setRunLogLines((current) => [...current, message].slice(-20));
   }
 
   async function resetContext() {
@@ -99,6 +102,7 @@ export function AgentChatWidget() {
     setDebugContext(null);
     setContextOpen(false);
     setStatusLines([]);
+    setRunLogLines([]);
     setMessages([{ role: "assistant", content: "Der Agent-Kontext wurde zurueckgesetzt. Wir starten frisch." }]);
   }
 
@@ -133,6 +137,22 @@ export function AgentChatWidget() {
             </div>
           </div>
           <div className="flex-1 space-y-3 overflow-y-auto p-4 text-sm">
+            {busy || runLogLines.length ? (
+              <div className="sticky top-0 z-10 rounded-lg border border-emerald-200 bg-emerald-50/95 px-3 py-2 shadow-sm backdrop-blur">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="font-semibold text-emerald-950">{busy ? "Agent arbeitet" : "Letzter Agent-Lauf"}</div>
+                  {busy ? <div className="h-2 w-2 animate-pulse rounded-full bg-emerald-600" /> : null}
+                </div>
+                <div className="mt-1 space-y-1 text-xs text-emerald-900">
+                  {(busy ? statusLines : runLogLines.slice(-6)).map((line, index) => (
+                    <div key={`${line}-${index}`} className="flex gap-2">
+                      <span className="text-emerald-600">{index + 1}.</span>
+                      <span>{line}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             {contextOpen ? (
               <div className="rounded-lg border border-line bg-panel p-3">
                 <div className="mb-2 flex items-center justify-between gap-3">
@@ -152,16 +172,6 @@ export function AgentChatWidget() {
                 <div className="whitespace-pre-wrap">{renderMessage(message.content)}</div>
               </div>
             ))}
-            {busy ? (
-              <div className="mr-8 rounded-lg border border-line bg-panel px-3 py-2 text-muted">
-                <div className="font-semibold text-text">Agent arbeitet</div>
-                <div className="mt-1 space-y-1">
-                  {(statusLines.length ? statusLines : ["Denke nach..."]).map((line, index) => (
-                    <div key={`${line}-${index}`} className="text-xs">· {line}</div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
             <div ref={endRef} />
           </div>
           <form className="flex gap-2 border-t border-line p-3" onSubmit={submit}>
