@@ -144,7 +144,20 @@ model Property {
   brokerRequests        BrokerRequest[]
   brokerValuations      BrokerValuation[]
   templates             ContractTemplate[]
+  todos                 PropertyTodo[]
   portalInstance        PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
+}
+
+model PropertyTodo {
+  id          String    @id @default(cuid())
+  propertyId  String
+  title       String
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  property    Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId, completedAt])
 }
 
 model Unit {

@@ -14,6 +14,7 @@ import { MailTemplateManager } from "@/components/MailTemplateManager";
 import { OwnerProfileForm } from "@/components/OwnerProfileForm";
 import { PortalInstanceManager } from "@/components/PortalInstanceManager";
 import { TelegramBotSettings } from "@/components/TelegramBotSettings";
+import { TenantMailBroadcast } from "@/components/TenantMailBroadcast";
 import { requireUser } from "@/lib/auth";
 import { env } from "@/lib/env";
 import { DEFAULT_AGENT_SYSTEM_PROMPT, ensureAgentConfig } from "@/lib/agent";
@@ -27,7 +28,7 @@ export default async function SettingsPage() {
   const user = await requireUser([Role.ADMIN]);
   await ensureMailTemplates(user.portalInstanceId);
   const agentTools = agentToolCatalogForUi(user.role);
-  const [rawCategories, ownerProfile, apiTokens, mailTemplates, telegramConfig, aiConfig, agentConfig] = await Promise.all([
+  const [rawCategories, ownerProfile, apiTokens, mailTemplates, tenantMailRecipients, telegramConfig, aiConfig, agentConfig] = await Promise.all([
     prisma.documentCategory.findMany({
       where: { OR: [{ portalInstanceId: user.portalInstanceId }, { portalInstanceId: null }] },
       orderBy: [{ group: "asc" }, { name: "asc" }]
@@ -42,6 +43,11 @@ export default async function SettingsPage() {
       where: { portalInstanceId: user.portalInstanceId ?? null },
       orderBy: [{ name: "asc" }],
       select: { id: true, key: true, name: true, description: true, trigger: true, subject: true, text: true, placeholders: true, active: true }
+    }),
+    prisma.user.findMany({
+      where: { role: Role.TENANT, active: true, ...portalWhereForSettings(user.portalInstanceId) },
+      include: { tenantProfile: { include: { unit: { include: { property: true } } } } },
+      orderBy: [{ name: "asc" }, { email: "asc" }]
     }),
     prisma.telegramBotConfig.findFirst({
       where: { portalInstanceId: user.portalInstanceId ?? null },
@@ -116,6 +122,23 @@ export default async function SettingsPage() {
               smtpPort={env.smtpPort}
               smtpFrom={env.smtpFrom}
               defaultTo={ownerProfile.contactEmail || ownerProfile.email}
+            />
+          </SettingsFold>
+          <SettingsFold title="Mail-Rundschreiben" description="Vorlage auswaehlen und an selektierte oder alle Mieter senden.">
+            <TenantMailBroadcast
+              recipients={tenantMailRecipients.map((recipient) => ({
+                id: recipient.id,
+                name: recipient.name || [recipient.tenantProfile?.firstName, recipient.tenantProfile?.lastName].filter(Boolean).join(" ") || recipient.email,
+                email: recipient.email,
+                unitLabel: recipient.tenantProfile?.unit ? `${recipient.tenantProfile.unit.property.name} / ${recipient.tenantProfile.unit.unitNumber}` : "Keine Einheit"
+              }))}
+              templates={mailTemplates.map((template) => ({
+                id: template.id,
+                name: template.name,
+                subject: template.subject,
+                text: template.text,
+                placeholders: template.placeholders
+              }))}
             />
           </SettingsFold>
           <SettingsFold title="KI-Anbieter" description="Provider, API-Key, Embeddings und Transkription.">
@@ -219,4 +242,8 @@ function dedupeCategories<T extends { id: string; group: string; name: string; p
     }
   }
   return Array.from(byLabel.values()).sort((a, b) => `${a.group} ${a.name}`.localeCompare(`${b.group} ${b.name}`, "de"));
+}
+
+function portalWhereForSettings(portalInstanceId: string | null) {
+  return portalInstanceId ? { portalInstanceId } : {};
 }

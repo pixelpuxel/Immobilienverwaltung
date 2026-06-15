@@ -6,6 +6,7 @@ import { DocumentThumbnail } from "@/components/DocumentThumbnail";
 import { EditableField } from "@/components/EditableField";
 import { PropertyImageGallery } from "@/components/PropertyImageGallery";
 import { PropertyImageUpload } from "@/components/PropertyImageUpload";
+import { PropertyTodoList } from "@/components/PropertyTodoList";
 import { TenancyCalendar } from "@/components/TenancyCalendar";
 import { UploadForm } from "@/components/UploadForm";
 import { requireUser } from "@/lib/auth";
@@ -25,7 +26,8 @@ export default async function PropertyDetailPage({ params }: { params: { id: str
         units: { orderBy: { unitNumber: "asc" }, include: { tenants: true, contracts: true, documents: { include: { category: true } } } },
         documents: { orderBy: { createdAt: "desc" }, include: { category: true, unit: true } },
         brokerRequests: { include: { user: true } },
-        brokerValuations: { include: { user: true }, orderBy: { updatedAt: "desc" } }
+        brokerValuations: { include: { user: true }, orderBy: { updatedAt: "desc" } },
+        todos: { orderBy: [{ completedAt: "asc" }, { createdAt: "desc" }], select: { id: true, title: true, completedAt: true, createdAt: true } }
       }
     }),
     prisma.documentCategory.findFirst({ where: { name: "Energieausweis" } })
@@ -60,6 +62,7 @@ export default async function PropertyDetailPage({ params }: { params: { id: str
   const energyDocuments = property.documents.filter((document) => document.category?.name === "Energieausweis");
   const propertyImages = visibleDocuments.filter((document) => document.isPropertyImage && document.mimeType.startsWith("image/"));
   const visibleRegularDocuments = visibleDocuments.filter((document) => !document.isPropertyImage);
+  const documentsByCategory = groupDocumentsByCategory(visibleRegularDocuments);
   const displayAddress = formatPropertyAddress(property);
 
   return (
@@ -196,25 +199,45 @@ export default async function PropertyDetailPage({ params }: { params: { id: str
 
           <section className="rounded-lg border border-line">
             <div className="border-b border-line p-4 font-bold">Dokumente</div>
-            {visibleRegularDocuments.length ? visibleRegularDocuments.map((document) => (
-              <div key={document.id} className="grid gap-3 border-b border-line p-4 text-sm sm:grid-cols-[120px_minmax(0,1fr)_120px_140px]">
-                <DocumentThumbnail id={document.id} title={document.title} mimeType={document.mimeType} hasFile={Boolean(document.storagePath)} compact />
-                <div>
-                  <div className="font-semibold">{document.title}</div>
-                  <div className="text-muted">{document.category ? `${document.category.group} / ${document.category.name}` : "ohne Kategorie"}</div>
+            {documentsByCategory.length ? documentsByCategory.map((group, index) => (
+              <details className="border-b border-line last:border-b-0" key={group.label} open={index === 0}>
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 bg-panel px-4 py-3 [&::-webkit-details-marker]:hidden">
+                  <span className="font-bold">{group.label}</span>
+                  <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-muted">{group.documents.length} Dokumente</span>
+                </summary>
+                <div className="border-t border-line">
+                  {group.documents.map((document) => (
+                    <div key={document.id} className="grid gap-3 border-b border-line p-4 text-sm last:border-b-0 sm:grid-cols-[120px_minmax(0,1fr)_120px_140px]">
+                      <DocumentThumbnail id={document.id} title={document.title} mimeType={document.mimeType} hasFile={Boolean(document.storagePath)} compact />
+                      <div>
+                        <div className="font-semibold">{document.title}</div>
+                        <div className="text-muted">{document.unit ? `Einheit ${document.unit.unitNumber}` : "Objektdokument"}</div>
+                      </div>
+                      <div>{document.status}</div>
+                      {document.storagePath ? (
+                        <a className="button block text-center" href={`/api/documents/${document.id}/download`}>Download</a>
+                      ) : (
+                        <span className="rounded-md border border-line bg-panel px-3 py-2 text-center text-muted">Keine Datei</span>
+                      )}
+                    </div>
+                  ))}
                 </div>
-                <div>{document.status}</div>
-                {document.storagePath ? (
-                  <a className="button block text-center" href={`/api/documents/${document.id}/download`}>Download</a>
-                ) : (
-                  <span className="rounded-md border border-line bg-panel px-3 py-2 text-center text-muted">Keine Datei</span>
-                )}
-              </div>
+              </details>
             )) : <div className="p-4 text-sm text-muted">Keine freigegebenen Dokumente vorhanden.</div>}
           </section>
         </div>
 
         <aside className="grid content-start gap-4">
+          {canEdit ? (
+            <PropertyTodoList
+              initialTodos={property.todos.map((todo) => ({
+                id: todo.id,
+                title: todo.title,
+                completedAt: todo.completedAt?.toISOString() || null
+              }))}
+              propertyId={property.id}
+            />
+          ) : null}
           {canEdit ? (
             <section className="rounded-lg border border-line bg-panel p-4">
               <h2 className="text-lg font-bold">Maklerzugriffe</h2>
@@ -299,4 +322,15 @@ function calculatedWarmRent(unit: { rentAmount: unknown; garageRent: unknown; se
 function currentTenant(tenants: Array<{ firstName: string; lastName: string; isCurrent: boolean }>) {
   const current = tenants.filter((item) => item.isCurrent);
   return current.length ? current.map((tenant) => `${tenant.firstName} ${tenant.lastName}`.trim()).join(", ") : "-";
+}
+
+function groupDocumentsByCategory<T extends { category: { group: string; name: string } | null }>(documents: T[]) {
+  const groups = new Map<string, T[]>();
+  for (const document of documents) {
+    const label = document.category ? `${document.category.group} / ${document.category.name}` : "Ohne Kategorie";
+    groups.set(label, [...(groups.get(label) || []), document]);
+  }
+  return Array.from(groups.entries())
+    .map(([label, groupDocuments]) => ({ label, documents: groupDocuments }))
+    .sort((a, b) => a.label.localeCompare(b.label, "de"));
 }

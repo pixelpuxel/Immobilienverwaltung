@@ -31,6 +31,7 @@ export function UserAccessEditor({
 }) {
   const router = useRouter();
   const [message, setMessage] = useState("");
+  const [moveOutValue, setMoveOutValue] = useState(moveOutDate || "");
 
   if (role === "ADMIN") {
     return <div className="text-sm text-muted">Vollzugriff</div>;
@@ -87,7 +88,10 @@ export function UserAccessEditor({
           </label>
           <label className="grid gap-1 text-xs font-semibold text-muted">
             Auszug
-            <input className="text-sm" name="moveOutDate" type="date" defaultValue={moveOutDate || ""} />
+            <span className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+              <input className="text-sm" name="moveOutDate" type="date" value={moveOutValue} onChange={(event) => setMoveOutValue(event.currentTarget.value)} />
+              <button className="button-secondary px-3 py-2 text-sm" onClick={() => setMoveOutValue("")} type="button">Datum loeschen</button>
+            </span>
           </label>
           <label className="flex items-center gap-2 text-xs font-semibold text-muted">
             <input name="isCurrent" type="checkbox" defaultChecked={isCurrent ?? true} />

@@ -7,6 +7,7 @@ import { DeleteUserButton } from "@/components/DeleteUserButton";
 import { DocumentThumbnail } from "@/components/DocumentThumbnail";
 import { JsonForm } from "@/components/JsonForm";
 import { TenantCreateForm } from "@/components/TenantCreateForm";
+import { ToggleDetails } from "@/components/ToggleDetails";
 import { UserAccessEditor } from "@/components/UserAccessEditor";
 import { UserEditForm } from "@/components/UserEditForm";
 import { WohnungsgeberButton } from "@/components/WohnungsgeberButton";
@@ -146,10 +147,14 @@ export default async function UsersPage() {
                   <div className="border-t border-line">
                     {group.current.map(renderUserCard)}
                     {group.past.length ? (
-                      <details className="border-t border-line bg-white">
-                        <summary className="cursor-pointer list-none px-4 py-3 text-sm font-bold text-muted [&::-webkit-details-marker]:hidden">Vergangene Mieter aufklappen</summary>
+                      <ToggleDetails
+                        className="border-t border-line bg-white"
+                        closeLabel="Vergangene Mieter zuklappen"
+                        openLabel="Vergangene Mieter aufklappen"
+                        summaryClassName="cursor-pointer list-none px-4 py-3 text-sm font-bold text-muted [&::-webkit-details-marker]:hidden"
+                      >
                         <div className="border-t border-line">{group.past.map(renderUserCard)}</div>
-                      </details>
+                      </ToggleDetails>
                     ) : null}
                   </div>
                 </details>
