@@ -48,6 +48,8 @@ export async function loadAgentState(conversationId: string): Promise<AgentConve
 }
 
 export async function saveAgentState(conversationId: string, state: AgentConversationStateValue) {
+  const plan = jsonOrUndefined(state.plan);
+  const lastEntityRefs = jsonOrUndefined(state.lastEntityRefs);
   return prisma.agentConversationState.upsert({
     where: { conversationId },
     create: {
@@ -57,8 +59,8 @@ export async function saveAgentState(conversationId: string, state: AgentConvers
       facts: state.facts || {},
       pendingQuestion: state.pendingQuestion || null,
       pendingTool: state.pendingTool || null,
-      plan: state.plan === undefined ? undefined : state.plan,
-      lastEntityRefs: state.lastEntityRefs === undefined ? undefined : state.lastEntityRefs
+      plan,
+      lastEntityRefs
     },
     update: {
       goal: state.goal || null,
@@ -66,8 +68,8 @@ export async function saveAgentState(conversationId: string, state: AgentConvers
       facts: state.facts || {},
       pendingQuestion: state.pendingQuestion || null,
       pendingTool: state.pendingTool || null,
-      plan: state.plan === undefined ? undefined : state.plan,
-      lastEntityRefs: state.lastEntityRefs === undefined ? undefined : state.lastEntityRefs
+      plan,
+      lastEntityRefs
     }
   }).catch(() => null);
 }
@@ -226,4 +228,8 @@ function looksLikePersonName(text: string) {
 
 function normalize(value: string) {
   return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/ß/g, "ss");
+}
+
+function jsonOrUndefined(value: unknown) {
+  return value === null || value === undefined ? undefined : value as never;
 }
