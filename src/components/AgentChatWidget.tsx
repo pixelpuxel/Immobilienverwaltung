@@ -21,6 +21,9 @@ export function AgentChatWidget() {
   const [statusLines, setStatusLines] = useState<string[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [contextOpen, setContextOpen] = useState(false);
+  const [debugContext, setDebugContext] = useState<unknown>(null);
+  const [debugLoading, setDebugLoading] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -93,8 +96,25 @@ export function AgentChatWidget() {
     const conversationId = window.localStorage.getItem("portal_agent_conversation_id");
     await fetch(conversationId ? `/api/agent/chat?conversationId=${encodeURIComponent(conversationId)}` : "/api/agent/chat", { method: "DELETE" }).catch(() => undefined);
     window.localStorage.removeItem("portal_agent_conversation_id");
+    setDebugContext(null);
+    setContextOpen(false);
     setStatusLines([]);
     setMessages([{ role: "assistant", content: "Der Agent-Kontext wurde zurueckgesetzt. Wir starten frisch." }]);
+  }
+
+  async function loadContext() {
+    const conversationId = window.localStorage.getItem("portal_agent_conversation_id");
+    const url = conversationId ? `/api/agent/chat?conversationId=${encodeURIComponent(conversationId)}&includeDebug=1` : "/api/agent/chat?includeDebug=1";
+    setContextOpen(true);
+    setDebugLoading(true);
+    try {
+      const body = await fetch(url).then((response) => response.ok ? response.json() : Promise.reject());
+      setDebugContext({ conversationId: body.conversationId, state: body.state, runLogs: body.runLogs });
+    } catch {
+      setDebugContext({ error: "Kontext konnte nicht geladen werden." });
+    } finally {
+      setDebugLoading(false);
+    }
   }
 
   return (
@@ -107,11 +127,26 @@ export function AgentChatWidget() {
               <div className="text-xs text-muted">Web und Telegram teilen denselben Kontext.</div>
             </div>
             <div className="flex items-center gap-2">
+              <button className="button-secondary px-3 py-1 text-sm" disabled={busy && !messages.length} onClick={loadContext} title="Gespeicherten Agent-Kontext und Debug-Log anzeigen" type="button">Kontext</button>
               <button className="button-secondary px-3 py-1 text-sm" disabled={busy} onClick={resetContext} title="Agent-Kontext und sichtbaren Verlauf zuruecksetzen" type="button">Reset</button>
               <button className="button-secondary px-3 py-1 text-sm" onClick={() => { window.localStorage.setItem("portal_agent_widget_open", "false"); setOpen(false); }} type="button">Schliessen</button>
             </div>
           </div>
           <div className="flex-1 space-y-3 overflow-y-auto p-4 text-sm">
+            {contextOpen ? (
+              <div className="rounded-lg border border-line bg-panel p-3">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="font-bold">Gespeicherter Kontext</div>
+                    <div className="text-xs text-muted">Conversation-State und letzte Agent-Runs aus dem Backend.</div>
+                  </div>
+                  <button className="button-secondary px-2 py-1 text-xs" type="button" onClick={() => setContextOpen(false)}>Ausblenden</button>
+                </div>
+                <pre className="max-h-56 overflow-auto whitespace-pre-wrap rounded border border-line bg-white p-2 text-[11px] leading-relaxed">
+                  {debugLoading ? "Lade Kontext..." : JSON.stringify(debugContext, null, 2)}
+                </pre>
+              </div>
+            ) : null}
             {messages.map((message, index) => (
               <div key={`${message.role}-${index}`} className={`rounded-lg px-3 py-2 ${message.role === "user" ? "ml-8 bg-accent text-white" : "mr-8 bg-panel"}`}>
                 <div className="whitespace-pre-wrap">{renderMessage(message.content)}</div>

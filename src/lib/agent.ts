@@ -13,6 +13,16 @@ import {
 import { type ScopedUser } from "./portal-instance";
 import { prisma } from "./prisma";
 import { decryptSecret } from "./secrets";
+import { createAgentRunLog, updateAgentRunLog } from "./agent-debug";
+import {
+  isAffirmation,
+  loadAgentState,
+  saveAgentState,
+  stateForPrompt,
+  updateStateFromToolResults,
+  updateStateFromUserMessage,
+  type AgentConversationStateValue
+} from "./agent-state";
 
 export const DEFAULT_AGENT_SYSTEM_PROMPT = "Du bist ein Agent für ein Immobilienportal. Du hast die API-Dokumentation und die fachlichen Regeln als Kontext. Analysiere Nutzeranfragen: Bei fachlichen Aktionen wähle den passenden API-Endpunkt und führe ihn aus. Bei allgemeinen Fragen zum System beantworte sie basierend auf dem System-Prompt. Merke dir den Kontext, wie aktuelle Objekte, und greife auf gespeicherte Zusammenfassungen zurück, um sinnvoll zu reagieren.";
 
@@ -87,6 +97,15 @@ export async function processAgentMessage(input: AgentMessageInput, options: Pro
 
   const conversation = await getOrCreateConversation(input);
   await prisma.agentMessage.create({ data: { conversationId: conversation.id, role: "user", content: input.message } });
+  const runLog = await createAgentRunLog({
+    conversationId: conversation.id,
+    portalInstanceId: input.user.portalInstanceId,
+    userId: input.user.id,
+    channel: input.channel || "web",
+    userInput: input.message
+  });
+  let state = updateStateFromUserMessage(await loadAgentState(conversation.id), input.message);
+  await saveAgentState(conversation.id, state);
 
   const [historyRows, memory] = await Promise.all([
     prisma.agentMessage.findMany({ where: { conversationId: conversation.id }, orderBy: { createdAt: "asc" }, take: 40 }),
@@ -104,8 +123,14 @@ export async function processAgentMessage(input: AgentMessageInput, options: Pro
     userMessage: input.message,
     history,
     memory,
+    state,
+    conversationId: conversation.id,
+    runLogId: runLog?.id || null,
     onEvent: options.onEvent
   });
+  state = agentResult.state || state;
+  await saveAgentState(conversation.id, state);
+  await updateAgentRunLog(runLog?.id, { finalAnswer: agentResult.answer });
 
   const assistantMessage = await prisma.agentMessage.create({ data: { conversationId: conversation.id, role: "assistant", content: agentResult.answer } });
   await prisma.agentConversation.update({ where: { id: conversation.id }, data: { updatedAt: new Date() } });
@@ -127,11 +152,15 @@ async function runAgentLoop(input: {
   userMessage: string;
   history: ProviderMessage[];
   memory: string[];
+  state: AgentConversationStateValue;
+  conversationId: string;
+  runLogId?: string | null;
   onEvent?: (event: AgentStreamEvent) => void;
 }) {
   const allToolCalls: AgentToolCall[] = [];
   const allToolResults: AgentToolResult[] = [];
   const maxToolRounds = 5;
+  let state = input.state;
 
   for (let round = 0; round < maxToolRounds; round++) {
     const decision = await planNextAgentStep({
@@ -140,18 +169,27 @@ async function runAgentLoop(input: {
       userMessage: input.userMessage,
       history: input.history,
       memory: input.memory,
+      state,
       previousToolCalls: allToolCalls,
-      previousToolResults: allToolResults
+      previousToolResults: allToolResults,
+      runLogId: input.runLogId
+    });
+    await updateAgentRunLog(input.runLogId, {
+      modelResponses: [{ phase: "decision", round, decision }],
+      toolCalls: allToolCalls
     });
 
     if (decision.type === "clarification") {
+      state.status = "waiting_for_user";
+      state.pendingQuestion = decision.message;
+      await saveAgentState(input.conversationId, state);
       input.onEvent?.({ type: "clarification", message: decision.message });
-      return collectAgentOutput(decision.message, allToolResults);
+      return { ...collectAgentOutput(decision.message, allToolResults), state };
     }
 
     if (decision.type === "final_answer") {
       if (!allToolResults.length && !canAnswerWithoutTools(input.userMessage)) {
-        const fallback = fallbackDecision(input.userMessage, allToolResults);
+        const fallback = fallbackDecision(input.userMessage, allToolResults, state);
         if (fallback.type === "tool_calls" && fallback.toolCalls.length) {
           if (fallback.statusMessage) input.onEvent?.({ type: "status", message: fallback.statusMessage });
           const validated = validateAgentToolCalls(fallback.toolCalls);
@@ -164,6 +202,9 @@ async function runAgentLoop(input: {
           );
           allToolCalls.push(...fallback.toolCalls);
           allToolResults.push(...results);
+          state = updateStateFromToolResults(state, results);
+          await saveAgentState(input.conversationId, state);
+          await updateAgentRunLog(input.runLogId, { toolCalls: allToolCalls, toolResults: publicToolResults(allToolResults) });
           continue;
         }
       }
@@ -173,11 +214,13 @@ async function runAgentLoop(input: {
         userMessage: input.userMessage,
         history: input.history,
         memory: input.memory,
+        state,
         toolCalls: allToolCalls,
         toolResults: allToolResults,
-        forcedAnswer: decision.answer
+        forcedAnswer: decision.answer,
+        runLogId: input.runLogId
       });
-      return collectAgentOutput(final, allToolResults);
+      return { ...collectAgentOutput(final, allToolResults), state };
     }
 
     if (!decision.toolCalls.length) {
@@ -187,10 +230,12 @@ async function runAgentLoop(input: {
         userMessage: input.userMessage,
         history: input.history,
         memory: input.memory,
+        state,
         toolCalls: allToolCalls,
-        toolResults: allToolResults
+        toolResults: allToolResults,
+        runLogId: input.runLogId
       });
-      return collectAgentOutput(final, allToolResults);
+      return { ...collectAgentOutput(final, allToolResults), state };
     }
 
     if (decision.statusMessage) input.onEvent?.({ type: "status", message: decision.statusMessage });
@@ -204,12 +249,18 @@ async function runAgentLoop(input: {
     );
     allToolCalls.push(...decision.toolCalls);
     allToolResults.push(...results);
+    state = updateStateFromToolResults(state, results);
+    await saveAgentState(input.conversationId, state);
+    await updateAgentRunLog(input.runLogId, { toolCalls: allToolCalls, toolResults: publicToolResults(allToolResults) });
     for (const artifact of results.flatMap((result) => result.artifacts || [])) {
       input.onEvent?.({ type: "artifact", artifact });
     }
     if (results.some((result) => result.needsClarification)) {
       const answer = results.filter((result) => result.needsClarification).map((result) => result.summary).join("\n\n");
-      return collectAgentOutput(answer, allToolResults);
+      state.status = "waiting_for_user";
+      state.pendingQuestion = answer;
+      await saveAgentState(input.conversationId, state);
+      return { ...collectAgentOutput(answer, allToolResults), state };
     }
   }
 
@@ -219,10 +270,12 @@ async function runAgentLoop(input: {
     userMessage: input.userMessage,
     history: input.history,
     memory: input.memory,
+    state,
     toolCalls: allToolCalls,
-    toolResults: allToolResults
+    toolResults: allToolResults,
+    runLogId: input.runLogId
   });
-  return collectAgentOutput(answer, allToolResults);
+  return { ...collectAgentOutput(answer, allToolResults), state };
 }
 
 async function getOrCreateConversation(input: AgentMessageInput) {
@@ -253,8 +306,10 @@ async function planNextAgentStep(input: {
   userMessage: string;
   history: ProviderMessage[];
   memory: string[];
+  state: AgentConversationStateValue;
   previousToolCalls: AgentToolCall[];
   previousToolResults: AgentToolResult[];
+  runLogId?: string | null;
 }): Promise<AgentDecision> {
   const system = [
     input.config.systemPrompt,
@@ -262,6 +317,10 @@ async function planNextAgentStep(input: {
     "Du bist der interne Agent eines Immobilienportals. Deine Aufgabe ist, die naechsten Schritte zu planen.",
     "Du kennst ausschliesslich die bereitgestellten Tools. Du darfst keine Daten, IDs, Links oder Aktionen erfinden.",
     "Gib ausschliesslich valides JSON zurueck.",
+    "Du fuehrst mehrstufige Aufgaben konsequent fort, bis ein echtes Ergebnis vorliegt oder eine fachlich notwendige Rueckfrage offen ist.",
+    "Bereits bekannte Fakten aus dem Conversation-State sind verbindlich weiterzuverwenden.",
+    "Beispiele Antworten wie Ja, Genau, Korrekt, Mach das oder Weiter beziehen sich auf die offene Frage bzw. den laufenden Prozess.",
+    "Frage eine Information nicht erneut ab, wenn sie im State, in der Historie, im Memory oder ueber Tools ermittelbar ist.",
     "",
     "Antwortformat:",
     '{"type":"tool_calls","statusMessage":"...","toolCalls":[{"tool":"search_tenants","args":{"query":"Mueller"}}]}',
@@ -272,6 +331,8 @@ async function planNextAgentStep(input: {
     "- Wenn Daten fehlen, nutze Suchtools.",
     "- Wenn mehrere Treffer moeglich sind, frage nach statt zu raten.",
     "- Schreibende Aktionen wie create_contract nur bei eindeutigem Mieter/Einheit/Vorlage oder wenn das Tool selbst eindeutig aufloesen kann.",
+    "- Bei Ziel create_contract: suche erst Mieter, Immobilie/Einheit und Vorlage; nutze vorhandene IDs aus dem State; erstelle danach den Vertrag.",
+    "- Wenn der Nutzer nur bestaetigt, fuehre den naechsten sinnvollen Schritt des gespeicherten Ziels aus.",
     "- Wenn bereits genug echte Tool-Ergebnisse vorliegen, formuliere final_answer.",
     "- Erfinde keine APIs, URLs, IDs oder Ergebnisse.",
     "",
@@ -281,18 +342,24 @@ async function planNextAgentStep(input: {
 
   const context = [
     `Nutzeranfrage: ${input.userMessage}`,
+    `Ist Beispiel-Bestaetigung: ${isAffirmation(input.userMessage) ? "ja" : "nein"}`,
+    `Persistenter Conversation-State:\n${JSON.stringify(stateForPrompt(input.state), null, 2)}`,
     input.memory.length ? `Memory:\n${input.memory.join("\n---\n")}` : "Memory: keiner",
+    input.history.length ? `Chat-Historie:\n${JSON.stringify(input.history.slice(-16), null, 2)}` : "Chat-Historie: keine",
     input.previousToolCalls.length ? `Bisherige Tool Calls:\n${JSON.stringify(input.previousToolCalls, null, 2)}` : "Bisherige Tool Calls: keine",
     input.previousToolResults.length ? `Bisherige Tool Ergebnisse:\n${JSON.stringify(publicToolResults(input.previousToolResults), null, 2)}` : "Bisherige Tool Ergebnisse: keine"
   ].join("\n\n");
 
+  await updateAgentRunLog(input.runLogId, { systemPrompt: system, modelContext: { phase: "planning", context } });
   const raw = await callAgentProvider(input.config, input.user, system, input.history, context, { json: true }).catch((error) => {
     console.error("Agent planning provider failed", error);
+    void updateAgentRunLog(input.runLogId, { error: error instanceof Error ? error.message : "Agent planning provider failed" });
     return "";
   });
+  await updateAgentRunLog(input.runLogId, { modelResponses: [{ phase: "planning", raw }] });
   const parsed = parseJsonDecision(raw);
   if (parsed) return parsed;
-  return fallbackDecision(input.userMessage, input.previousToolResults);
+  return fallbackDecision(input.userMessage, input.previousToolResults, input.state);
 }
 
 async function finalAnswer(input: {
@@ -301,11 +368,12 @@ async function finalAnswer(input: {
   userMessage: string;
   history: ProviderMessage[];
   memory: string[];
+  state: AgentConversationStateValue;
   toolCalls: AgentToolCall[];
   toolResults: AgentToolResult[];
   forcedAnswer?: string;
+  runLogId?: string | null;
 }) {
-  if (input.toolResults.length) return fallbackAnswer(input.userMessage, input.toolResults);
   if (input.forcedAnswer && !input.toolResults.length) return input.forcedAnswer;
   const system = [
     input.config.systemPrompt,
@@ -321,15 +389,19 @@ async function finalAnswer(input: {
   ].join("\n");
   const prompt = [
     `Nutzeranfrage: ${input.userMessage}`,
+    `Persistenter Conversation-State:\n${JSON.stringify(stateForPrompt(input.state), null, 2)}`,
     input.memory.length ? `Memory:\n${input.memory.join("\n---\n")}` : "Memory: keiner",
     input.toolCalls.length ? `Tool Calls:\n${JSON.stringify(input.toolCalls, null, 2)}` : "Tool Calls: keine",
     input.toolResults.length ? `Tool Ergebnisse:\n${JSON.stringify(publicToolResults(input.toolResults), null, 2)}` : "Tool Ergebnisse: keine",
     input.forcedAnswer ? `Vorlaeufige Antwort des Planers:\n${input.forcedAnswer}` : ""
   ].filter(Boolean).join("\n\n");
+  await updateAgentRunLog(input.runLogId, { modelContext: { phase: "final", context: prompt } });
   const answer = await callAgentProvider(input.config, input.user, system, input.history, prompt).catch((error) => {
     console.error("Agent final provider failed", error);
+    void updateAgentRunLog(input.runLogId, { error: error instanceof Error ? error.message : "Agent final provider failed" });
     return "";
   });
+  await updateAgentRunLog(input.runLogId, { modelResponses: [{ phase: "final", raw: answer }] });
   return answer || fallbackAnswer(input.userMessage, input.toolResults);
 }
 
@@ -402,14 +474,47 @@ function parseJsonDecision(raw: string): AgentDecision | null {
 }
 
 export function fallbackDecisionForTest(message: string, previousResults: AgentToolResult[] = []): AgentDecision {
-  return fallbackDecision(message, previousResults);
+  return fallbackDecision(message, previousResults, { status: "idle", facts: {} });
 }
 
-function fallbackDecision(message: string, previousResults: AgentToolResult[]): AgentDecision {
+function fallbackDecision(message: string, previousResults: AgentToolResult[], state: AgentConversationStateValue): AgentDecision {
   if (previousResults.length) return { type: "final_answer", answer: fallbackAnswer(message, previousResults) };
   const normalized = normalize(message);
+  if (isAffirmation(message) && state.goal === "create_contract") {
+    return {
+      type: "tool_calls",
+      statusMessage: "Ich setze die Mietvertragserstellung mit den bekannten Daten fort.",
+      toolCalls: [{
+        tool: "create_contract",
+        args: {
+          tenantId: state.facts.tenantId,
+          tenantQuery: state.facts.tenantQuery || state.facts.tenantName,
+          propertyId: state.facts.propertyId,
+          propertyQuery: state.facts.propertyQuery || state.facts.propertyName,
+          unitId: state.facts.unitId,
+          templateId: state.facts.templateId,
+          templateQuery: state.facts.templateName
+        }
+      }]
+    };
+  }
   if (/(mietvertrag|vertrag).*(mach|mache|erstelle|erzeug|generier)|(?:mach|mache|erstelle|erzeug|generier).*(mietvertrag|vertrag)/i.test(normalized)) {
-    return { type: "tool_calls", statusMessage: "Ich suche Mieter, Einheit und Vorlage fuer den Mietvertrag.", toolCalls: [{ tool: "create_contract", args: { tenantQuery: message, propertyQuery: message, templateQuery: message } }] };
+    return {
+      type: "tool_calls",
+      statusMessage: "Ich suche Mieter, Einheit und Vorlage fuer den Mietvertrag.",
+      toolCalls: [{
+        tool: "create_contract",
+        args: {
+          tenantId: state.facts.tenantId,
+          tenantQuery: state.facts.tenantQuery || message,
+          propertyId: state.facts.propertyId,
+          propertyQuery: state.facts.propertyQuery || message,
+          unitId: state.facts.unitId,
+          templateId: state.facts.templateId,
+          templateQuery: state.facts.templateName || message
+        }
+      }]
+    };
   }
   if (/wohn|geber|bestaetigung|bestätigung|melde/i.test(normalized) && /(mach|mache|erstelle|erzeug|generier)/i.test(normalized)) {
     return { type: "tool_calls", statusMessage: "Ich suche den Mieter fuer die Wohnungsgeberbestaetigung.", toolCalls: [{ tool: "create_landlord_confirmation", args: { tenantQuery: message } }] };

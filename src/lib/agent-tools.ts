@@ -599,8 +599,20 @@ async function resolveTenant(user: ScopedUser, tenantId?: string, tenantQuery?: 
     return tenant ? { ok: true, tenant } : { ok: false, result: failed("create_contract", "Mieter-ID nicht gefunden oder nicht freigegeben.") };
   }
   const candidates = await searchTenantRows(user, tenantQuery || "", propertyQuery, false);
-  if (!candidates.length) return { ok: false, result: failed("create_contract", "Kein passender Mieter gefunden. Bitte Mieter genauer benennen oder zuerst anlegen.") };
-  const scored = candidates.map((tenant) => ({ tenant, score: scoreText(`${tenantQuery || ""} ${propertyQuery || ""}`, [tenantName(tenant), tenant.email, tenant.unit?.property.name, tenant.unit?.property.address, tenant.unit?.unitNumber]) })).sort((a, b) => b.score - a.score);
+  const propertyCandidates = !candidates.length && propertyQuery
+    ? await searchTenantRows(user, "", propertyQuery, true)
+    : [];
+  const effectiveCandidates = candidates.length ? candidates : propertyCandidates;
+  if (!effectiveCandidates.length) {
+    return {
+      ok: false,
+      result: {
+        ...failed("create_contract", "Kein passender Mieter gefunden. Ich konnte auch keinen aktuellen Mieter zur genannten Immobilie eindeutig ermitteln. Bitte Mieter genauer benennen oder zuerst anlegen."),
+        needsClarification: true
+      }
+    };
+  }
+  const scored = effectiveCandidates.map((tenant) => ({ tenant, score: scoreText(`${tenantQuery || ""} ${propertyQuery || ""}`, [tenantName(tenant), tenant.email, tenant.unit?.property.name, tenant.unit?.property.address, tenant.unit?.unitNumber]) })).sort((a, b) => b.score - a.score);
   if (scored.length > 1 && scored[0].score <= scored[1].score) {
     return {
       ok: false,

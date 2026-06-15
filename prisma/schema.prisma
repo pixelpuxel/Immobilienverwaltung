@@ -407,8 +407,25 @@ model AgentConversation {
   updatedAt       DateTime        @updatedAt
   portalInstance  PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
   messages        AgentMessage[]
+  state           AgentConversationState?
+  runLogs         AgentRunLog[]
 
   @@index([portalInstanceId, channel, externalKey])
+}
+
+model AgentConversationState {
+  id              String          @id @default(cuid())
+  conversationId  String          @unique
+  goal            String?
+  status          String          @default("idle")
+  facts           Json?
+  pendingQuestion String?         @db.Text
+  pendingTool     String?
+  plan            Json?
+  lastEntityRefs  Json?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  conversation    AgentConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 }
 
 model AgentMessage {
@@ -418,6 +435,28 @@ model AgentMessage {
   content         String          @db.Text
   createdAt       DateTime        @default(now())
   conversation    AgentConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+}
+
+model AgentRunLog {
+  id               String          @id @default(cuid())
+  conversationId   String
+  portalInstanceId String?
+  userId           String?
+  channel          String          @default("web")
+  userInput        String          @db.Text
+  systemPrompt     String?         @db.Text
+  modelContext     Json?
+  modelResponses   Json?
+  toolCalls        Json?
+  toolResults      Json?
+  finalAnswer      String?         @db.Text
+  error            String?         @db.Text
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  conversation     AgentConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@index([portalInstanceId, createdAt])
 }
 
 model AuditLog {
