@@ -180,6 +180,40 @@ async function runAgentLoop(input: {
     });
 
     if (decision.type === "clarification") {
+      if (allToolResults.length) {
+        const final = await finalAnswer({
+          config: input.config,
+          user: input.user,
+          userMessage: input.userMessage,
+          history: input.history,
+          memory: input.memory,
+          state,
+          toolCalls: allToolCalls,
+          toolResults: allToolResults,
+          runLogId: input.runLogId
+        });
+        return { ...collectAgentOutput(final, allToolResults), state };
+      }
+      const fallback = fallbackDecision(input.userMessage, allToolResults, state);
+      if (shouldPreferToolLookup(input.userMessage, decision.message, fallback, state)) {
+        if (fallback.type === "tool_calls" && fallback.statusMessage) input.onEvent?.({ type: "status", message: fallback.statusMessage });
+        if (fallback.type === "tool_calls") {
+          const validated = validateAgentToolCalls(fallback.toolCalls);
+          const results = await executeValidatedToolCalls(
+            { user: input.user, channel: input.channel },
+            validated,
+            (event) => input.onEvent?.(event.type === "tool_start"
+              ? { type: "tool_start", tool: event.tool, message: event.message || `Ich fuehre ${event.tool} aus.` }
+              : { type: "tool_result", tool: event.tool, summary: event.summary || "Erledigt." })
+          );
+          allToolCalls.push(...fallback.toolCalls);
+          allToolResults.push(...results);
+          state = updateStateFromToolResults(state, results);
+          await saveAgentState(input.conversationId, state);
+          await updateAgentRunLog(input.runLogId, { toolCalls: allToolCalls, toolResults: publicToolResults(allToolResults) });
+          continue;
+        }
+      }
       state.status = "waiting_for_user";
       state.pendingQuestion = decision.message;
       await saveAgentState(input.conversationId, state);
@@ -480,6 +514,41 @@ export function fallbackDecisionForTest(message: string, previousResults: AgentT
 function fallbackDecision(message: string, previousResults: AgentToolResult[], state: AgentConversationStateValue): AgentDecision {
   if (previousResults.length) return { type: "final_answer", answer: fallbackAnswer(message, previousResults) };
   const normalized = normalize(message);
+  const propertyQuery = state.facts.propertyQuery || state.facts.propertyName;
+  const tenantQuery = state.facts.tenantQuery || state.facts.tenantName || extractLikelyTenantName(message);
+  const asksTenantDate = /(ab wann|seit wann|einzug|eingezogen|mietbeginn|wohnt.*seit|seit.*wohnt)/i.test(normalized);
+  const asksTenantForKnownProperty = /(wer.*mieter|mieter.*wer|wer.*wohnt|bewohner|welche.*mieter)/i.test(normalized) && Boolean(state.facts.propertyId || propertyQuery);
+
+  if (isAffirmation(message) && state.pendingQuestion && /(mieterdaten|mieter|ab wann|seit wann|einzug|eingezogen|mietbeginn|wohnt)/i.test(normalize(state.pendingQuestion))) {
+    if (state.facts.tenantId) {
+      return { type: "tool_calls", statusMessage: "Ich lade die gespeicherten Mieterdaten.", toolCalls: [{ tool: "get_tenant", args: { id: state.facts.tenantId } }] };
+    }
+    return {
+      type: "tool_calls",
+      statusMessage: "Ich suche die passenden Mieterdaten.",
+      toolCalls: [{ tool: "search_tenants", args: { query: tenantQuery || "", propertyQuery, currentOnly: false } }]
+    };
+  }
+
+  if (asksTenantDate) {
+    if (state.facts.tenantId) {
+      return { type: "tool_calls", statusMessage: "Ich lade die Mieterdaten mit Einzugsdatum.", toolCalls: [{ tool: "get_tenant", args: { id: state.facts.tenantId } }] };
+    }
+    return {
+      type: "tool_calls",
+      statusMessage: "Ich suche die Mieterdaten mit Einzugsdatum.",
+      toolCalls: [{ tool: "search_tenants", args: { query: tenantQuery || message, propertyQuery, currentOnly: false } }]
+    };
+  }
+
+  if (asksTenantForKnownProperty) {
+    return {
+      type: "tool_calls",
+      statusMessage: "Ich lade die aktuellen Mieter dieser Immobilie.",
+      toolCalls: [{ tool: "search_tenants", args: { query: "", propertyQuery, currentOnly: true } }]
+    };
+  }
+
   if (isAffirmation(message) && state.goal === "create_contract") {
     return {
       type: "tool_calls",
@@ -531,6 +600,18 @@ function fallbackDecision(message: string, previousResults: AgentToolResult[], s
   return { type: "tool_calls", statusMessage: "Ich suche im Portal.", toolCalls: [{ tool: "global_search", args: { query: message } }] };
 }
 
+function shouldPreferToolLookup(message: string, clarification: string, fallback: AgentDecision, state: AgentConversationStateValue) {
+  if (fallback.type !== "tool_calls" || !fallback.toolCalls.length) return false;
+  const firstTool = fallback.toolCalls[0]?.tool;
+  const normalizedMessage = normalize(message);
+  const normalizedClarification = normalize(clarification);
+  const contextLookupTools = new Set(["get_tenant", "search_tenants", "get_property", "search_properties", "search_units"]);
+  if (!contextLookupTools.has(firstTool)) return false;
+  if (isAffirmation(message) && state.pendingQuestion) return true;
+  if (/(ab wann|seit wann|einzug|eingezogen|mietbeginn|wohnt.*seit|seit.*wohnt|wer.*mieter|mieter.*wer|wer.*wohnt|bewohner)/i.test(normalizedMessage)) return true;
+  return /(moechten sie|möchten sie|soll ich|benoetige weitere informationen|benötige weitere informationen).*(mieterdaten|mieter|immobilie|einheit)/i.test(normalizedClarification);
+}
+
 function canAnswerWithoutTools(message: string) {
   return /^(hilfe|help|was kannst du|wer bist du|erklaer|erklär|wie funktioniert)/i.test(message.trim());
 }
@@ -560,6 +641,11 @@ function fallbackAnswer(message: string, tools: AgentToolResult[]) {
     return "Ich kann Immobilien, Einheiten, Dokumente, Mieter und Verträge durchsuchen, Vertragsgenerierung anstoßen, Portal-Kontext merken und Fragen zur Bedienung beantworten. Für Aktionen nutze ich die vorhandenen Portal-Tools mit Rechteprüfung.";
   }
   return "Ich kann dazu im Portal suchen oder eine konkrete Aktion ausführen. Formuliere zum Beispiel: `Suche Grundbuch Musterstraße`, `Wer wohnt aktuell in meinen Objekten?` oder `Erstelle Mietvertrag für Müller in der Mainzer Straße`.";
+}
+
+function extractLikelyTenantName(message: string) {
+  const match = message.match(/\b(?:frau|herr|mieter(?:in)?)\s+([A-ZÄÖÜ][a-zäöüß-]+(?:\s+[A-ZÄÖÜ][a-zäöüß-]+)?)\b/);
+  return match?.[1]?.trim() || "";
 }
 
 async function indexAgentMemory(user: ScopedUser, conversationId: string, text: string, messageId: string) {

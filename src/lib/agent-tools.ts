@@ -215,9 +215,9 @@ export const agentToolRegistry = {
         name: "search_tenants",
         ok: true,
         summary: tenants.length
-          ? ["Mieter:", ...tenants.slice(0, 20).map((t) => `- ${tenantName(t)}${t.isCurrent ? " (laufend)" : ""}: ${t.unit ? `${t.unit.property.name} / ${t.unit.unitNumber}` : "keine Einheit"} · /users?tenantId=${t.id}`)].join("\n")
+          ? ["Mieter:", ...tenants.slice(0, 20).map((t) => `- ${tenantName(t)}${t.isCurrent ? " (laufend)" : ""}: ${t.unit ? `${t.unit.property.name} / ${t.unit.unitNumber}` : "keine Einheit"}${tenantDates(t) ? ` · ${tenantDates(t)}` : ""} · /users?tenantId=${t.id}`)].join("\n")
           : "Keine Mieter gefunden.",
-        data: tenants.slice(0, 20).map((t) => ({ id: t.id, name: tenantName(t), unitId: t.unitId, propertyName: t.unit?.property.name, href: `/users?tenantId=${t.id}` })),
+        data: tenants.slice(0, 20).map((t) => ({ id: t.id, name: tenantName(t), unitId: t.unitId, propertyName: t.unit?.property.name, moveInDate: t.moveInDate, leaseStartDate: t.leaseStartDate, moveOutDate: t.moveOutDate, isCurrent: t.isCurrent, href: `/users?tenantId=${t.id}` })),
         artifacts: tenants.slice(0, 10).map((t) => ({ type: "link", label: tenantName(t), url: `/users?tenantId=${t.id}` }))
       };
     }
@@ -235,7 +235,7 @@ export const agentToolRegistry = {
       return {
         name: "get_tenant",
         ok: true,
-        summary: [`Mieter: ${tenantName(tenant)}`, tenant.unit ? `${tenant.unit.property.name} / ${tenant.unit.unitNumber}` : "keine Einheit", tenant.isCurrent ? "laufend" : "nicht laufend", `Link: /users?tenantId=${tenant.id}`].join("\n"),
+        summary: [`Mieter: ${tenantName(tenant)}`, tenant.unit ? `${tenant.unit.property.name} / ${tenant.unit.unitNumber}` : "keine Einheit", tenant.isCurrent ? "laufend" : "nicht laufend", tenantDates(tenant), `Link: /users?tenantId=${tenant.id}`].filter(Boolean).join("\n"),
         href: `/users?tenantId=${tenant.id}`,
         data: tenant,
         artifacts: [{ type: "link", label: tenantName(tenant), url: `/users?tenantId=${tenant.id}` }]
@@ -650,6 +650,18 @@ async function resolveTemplate(portalInstanceId: string | null, propertyId: stri
 
 function tenantName(tenant: { firstName: string; lastName: string; email?: string }) {
   return `${tenant.firstName || ""} ${tenant.lastName || ""}`.trim() || tenant.email || "Mieter";
+}
+
+function tenantDates(tenant: { moveInDate?: Date | null; leaseStartDate?: Date | null; moveOutDate?: Date | null }) {
+  return [
+    tenant.moveInDate ? `Einzug: ${formatDate(tenant.moveInDate)}` : null,
+    tenant.leaseStartDate ? `Mietbeginn: ${formatDate(tenant.leaseStartDate)}` : null,
+    tenant.moveOutDate ? `Auszug: ${formatDate(tenant.moveOutDate)}` : null
+  ].filter(Boolean).join(" · ");
+}
+
+function formatDate(value: Date) {
+  return new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" }).format(value);
 }
 
 function scoreText(query: string, values: Array<string | null | undefined>) {
