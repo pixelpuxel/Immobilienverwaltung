@@ -78,6 +78,29 @@ const landlordConfirmationSchema = z.object({
 });
 
 export const agentToolRegistry = {
+  agent_capabilities: tool({
+    name: "agent_capabilities",
+    description: "Beschreibt, welche Portalaktionen der Agent mit den verfuegbaren Tools wirklich ausfuehren kann und welche Grenzen es gibt.",
+    parameters: "{ topic?: string }",
+    schema: z.object({ topic: z.string().trim().max(200).optional().default("") }),
+    kind: "read",
+    getStatusMessage: () => "Ich pruefe die verfuegbaren Agent-Funktionen.",
+    run: async (ctx, args) => {
+      const capabilities = capabilityList(ctx.user.role, args.topic);
+      return {
+        name: "agent_capabilities",
+        ok: true,
+        summary: [
+          "Das kann ich mit den aktuell freigeschalteten Portal-Tools:",
+          ...capabilities.available.map((item) => `- ${item}`),
+          "",
+          "Grenzen:",
+          ...capabilities.limits.map((item) => `- ${item}`)
+        ].join("\n"),
+        data: capabilities
+      };
+    }
+  }),
   global_search: tool({
     name: "global_search",
     description: "Portalweite Suche ueber Immobilien, Einheiten, Dokumente, Mieter, Benutzer und Vertraege.",
@@ -148,18 +171,22 @@ export const agentToolRegistry = {
   }),
   search_units: tool({
     name: "search_units",
-    description: "Einheiten/Wohnungen suchen, optional passend zu einer Immobilie.",
-    parameters: "{ query?: string, propertyQuery?: string, propertyId?: string }",
+    description: "Einheiten/Wohnungen suchen, optional passend zu einer Immobilie oder nur Einheiten ohne aktuellen Mieter.",
+    parameters: "{ query?: string, propertyQuery?: string, propertyId?: string, withoutCurrentTenant?: boolean }",
     schema: z.object({
       query: z.string().trim().max(300).optional().default(""),
       propertyQuery: z.string().trim().max(300).optional(),
-      propertyId: z.string().trim().optional()
+      propertyId: z.string().trim().optional(),
+      withoutCurrentTenant: z.boolean().optional().default(false)
     }),
     kind: "read",
-    getStatusMessage: () => "Ich suche passende Einheiten.",
+    getStatusMessage: (args) => args.withoutCurrentTenant ? "Ich suche Einheiten ohne aktuellen Mieter." : "Ich suche passende Einheiten.",
     run: async (ctx, args) => {
       const units = await prisma.unit.findMany({
-        where: unitWhere(ctx.user, args.query, args.propertyId, args.propertyQuery),
+        where: {
+          ...unitWhere(ctx.user, args.query, args.propertyId, args.propertyQuery),
+          ...(args.withoutCurrentTenant ? { tenants: { none: { isCurrent: true } } } : {})
+        },
         include: { property: true, tenants: { where: { isCurrent: true } } },
         orderBy: { updatedAt: "desc" },
         take: 30
@@ -168,8 +195,8 @@ export const agentToolRegistry = {
         name: "search_units",
         ok: true,
         summary: units.length
-          ? ["Einheiten:", ...units.map((u) => `- ${u.property.name} / ${u.unitNumber}: ${u.status || "kein Status"}${u.tenants.length ? ` · aktuell: ${u.tenants.map(tenantName).join(", ")}` : ""} · /properties/${u.propertyId}`)].join("\n")
-          : "Keine Einheiten gefunden.",
+          ? [args.withoutCurrentTenant ? "Einheiten ohne aktuellen Mieter:" : "Einheiten:", ...units.map((u) => `- ${u.property.name} / ${u.unitNumber}: ${u.status || "kein Status"}${u.tenants.length ? ` · aktuell: ${u.tenants.map(tenantName).join(", ")}` : " · kein aktueller Mieter"} · /properties/${u.propertyId}`)].join("\n")
+          : args.withoutCurrentTenant ? "Keine Einheiten ohne aktuellen Mieter gefunden." : "Keine Einheiten gefunden.",
         data: units.map((u) => ({ id: u.id, unitNumber: u.unitNumber, propertyId: u.propertyId, propertyName: u.property.name, href: `/properties/${u.propertyId}` })),
         artifacts: units.slice(0, 10).map((u) => ({ type: "link", label: `${u.property.name} / ${u.unitNumber}`, url: `/properties/${u.propertyId}` }))
       };
@@ -434,6 +461,33 @@ function tool(definition: AgentToolDefinition) {
 
 function failed(name: string, summary: string): AgentToolResult {
   return { name, ok: false, summary };
+}
+
+function capabilityList(role: Role, topic = "") {
+  const ownerOnly = role === Role.ADMIN ? [
+    "Mietvertraege fuer vorhandene Mieter erzeugen, inklusive DOCX/PDF und Download-Link.",
+    "Wohnungsgeberbestaetigungen fuer vorhandene Mieter erzeugen.",
+    "Vertragsvorlagen suchen und passende Vorlagen fuer Objekte erkennen.",
+    "Mieter, Einheiten und Immobilien im Eigentuemerkontext suchen und verlinken."
+  ] : [
+    "Schreibende Aktionen wie Vertrags- oder Formularerzeugung sind nur mit Eigentuemer-/Adminrechten moeglich."
+  ];
+  const available = [
+    "Portalweit suchen: Immobilien, Einheiten, Dokumente, Mieter, Benutzer und Vertraege.",
+    "Immobilien suchen, auflisten und Details direkt verlinken.",
+    "Einheiten suchen, inklusive Einheiten ohne aktuellen Mieter.",
+    "Aktuelle oder ehemalige Mieter suchen und Mietdaten wie Einzug, Mietbeginn und Auszug anzeigen.",
+    "Dokumente suchen, Vorschau- und Download-Links liefern, soweit Rechte vorhanden sind.",
+    "Vertraege und erzeugte Dokumente verlinken; in Telegram erzeugte PDFs als Datei senden.",
+    ...ownerOnly
+  ];
+  const limits = [
+    "Ich darf nur Aktionen ausfuehren, fuer die ein Tool existiert und fuer die der angemeldete Benutzer Rechte hat.",
+    "Ich kann keine beliebigen Datenbankabfragen, keine externen URLs und keine Dateisystempfade ausfuehren.",
+    "Wenn mehrere Treffer moeglich sind, muss ich nachfragen statt zu raten.",
+    "Wenn ein Portalbereich noch kein Tool hat, kann ich ihn erklaeren oder danach suchen, aber nicht sicher veraendern."
+  ];
+  return { topic, role, available, limits };
 }
 
 function summarizeResult(value: string) {

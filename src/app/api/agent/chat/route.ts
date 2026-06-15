@@ -20,7 +20,18 @@ export async function POST(request: NextRequest) {
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
+        const steps: string[] = [];
         const send = (event: AgentStreamEvent) => {
+          const step = event.type === "status" || event.type === "tool_start"
+            ? event.message
+            : event.type === "tool_result"
+              ? event.summary
+              : event.type === "clarification"
+                ? "Rueckfrage erforderlich."
+                : event.type === "error"
+                  ? event.message
+                  : "";
+          if (step) steps.push(step);
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
         };
         try {
@@ -30,7 +41,7 @@ export async function POST(request: NextRequest) {
             conversationId: parsed.data.conversationId,
             channel: "web"
           }, { onEvent: send });
-          send({ type: "final", answer: result.answer, conversationId: result.conversationId, artifacts: result.artifacts });
+          send({ type: "final", answer: result.answer, conversationId: result.conversationId, artifacts: result.artifacts, steps });
           controller.close();
         } catch (error) {
           send({ type: "error", message: error instanceof Error ? error.message : "Agent-Anfrage fehlgeschlagen." });

@@ -256,12 +256,29 @@ async function handleVoiceSearch(config: TelegramConfig, token: string, chatId: 
 }
 
 async function agentTelegramReply(token: string, user: NonNullable<Awaited<ReturnType<typeof botUser>>>, text: string, chatId: string, threadId: string | null) {
+  const steps: string[] = [];
   const result = await processAgentMessage({
     user,
     message: text,
     channel: "telegram",
     externalKey: `${chatId}:${threadId || ""}`
+  }, {
+    onEvent: (event) => {
+      const step = event.type === "status" || event.type === "tool_start"
+        ? event.message
+        : event.type === "tool_result"
+          ? event.summary
+          : event.type === "clarification"
+            ? "Rueckfrage erforderlich."
+            : event.type === "error"
+              ? event.message
+              : "";
+      if (step) steps.push(step);
+    }
   });
+  if (steps.length) {
+    await sendTelegramMessage(token, chatId, ["Agent-Lauf:", ...steps.slice(0, 12).map((step, index) => `${index + 1}. ${step}`)].join("\n"), threadId);
+  }
   await sendTelegramMessage(token, chatId, result.answer, threadId);
   for (const attachment of result.attachments || []) {
     try {

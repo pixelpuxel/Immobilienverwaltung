@@ -40,7 +40,7 @@ export type AgentStreamEvent =
   | { type: "tool_result"; tool: string; summary: string }
   | { type: "clarification"; message: string }
   | { type: "artifact"; artifact: AgentArtifact }
-  | { type: "final"; answer: string; conversationId?: string | null; artifacts?: AgentArtifact[] }
+  | { type: "final"; answer: string; conversationId?: string | null; artifacts?: AgentArtifact[]; steps?: string[] }
   | { type: "error"; message: string };
 
 type ProcessOptions = {
@@ -130,15 +130,16 @@ export async function processAgentMessage(input: AgentMessageInput, options: Pro
   });
   state = agentResult.state || state;
   await saveAgentState(conversation.id, state);
-  await updateAgentRunLog(runLog?.id, { finalAnswer: agentResult.answer });
+  const answer = normalizeAgentLinks(agentResult.answer);
+  await updateAgentRunLog(runLog?.id, { finalAnswer: answer });
 
-  const assistantMessage = await prisma.agentMessage.create({ data: { conversationId: conversation.id, role: "assistant", content: agentResult.answer } });
+  const assistantMessage = await prisma.agentMessage.create({ data: { conversationId: conversation.id, role: "assistant", content: answer } });
   await prisma.agentConversation.update({ where: { id: conversation.id }, data: { updatedAt: new Date() } });
-  await indexAgentMemory(input.user, conversation.id, `${input.message}\n${agentResult.answer}`, assistantMessage.id).catch((error) => console.error("Agent memory index failed", error));
+  await indexAgentMemory(input.user, conversation.id, `${input.message}\n${answer}`, assistantMessage.id).catch((error) => console.error("Agent memory index failed", error));
 
   return {
     conversationId: conversation.id,
-    answer: agentResult.answer,
+    answer,
     tools: agentResult.tools,
     artifacts: agentResult.artifacts,
     attachments: agentResult.attachments
@@ -362,6 +363,8 @@ async function planNextAgentStep(input: {
     '{"type":"final_answer","answer":"..."}',
     "",
     "Regeln:",
+    "- Pruefe zuerst, ob die Nutzeranfrage mit den vorhandenen Tools beantwortbar ist. Wenn ja, plane Tool Calls. Wenn nein, sage klar, welches Tool fehlt.",
+    "- Bei Fragen nach deinen Faehigkeiten, Grenzen oder moeglichen Aktionen nutze agent_capabilities.",
     "- Wenn Daten fehlen, nutze Suchtools.",
     "- Wenn mehrere Treffer moeglich sind, frage nach statt zu raten.",
     "- Schreibende Aktionen wie create_contract nur bei eindeutigem Mieter/Einheit/Vorlage oder wenn das Tool selbst eindeutig aufloesen kann.",
@@ -588,6 +591,16 @@ function fallbackDecision(message: string, previousResults: AgentToolResult[], s
   if (/wohn|geber|bestaetigung|bestätigung|melde/i.test(normalized) && /(mach|mache|erstelle|erzeug|generier)/i.test(normalized)) {
     return { type: "tool_calls", statusMessage: "Ich suche den Mieter fuer die Wohnungsgeberbestaetigung.", toolCalls: [{ tool: "create_landlord_confirmation", args: { tenantQuery: message } }] };
   }
+  if (/(was kannst du|was.*moeglich|was.*möglich|funktionen|faehigkeiten|fähigkeiten|tools|hilfe|help)/i.test(normalized)) {
+    return { type: "tool_calls", statusMessage: "Ich pruefe meine verfuegbaren Portal-Tools.", toolCalls: [{ tool: "agent_capabilities", args: { topic: message } }] };
+  }
+  if (/(ohne|keinen|keine|leer|frei|unvermietet).*(mieter|bewohner)|(?:mieter|bewohner).*(ohne|keinen|keine)|frei.*(einheit|wohnung|immobilie|objekt)/i.test(normalized)) {
+    return {
+      type: "tool_calls",
+      statusMessage: "Ich suche Einheiten ohne aktuellen Mieter.",
+      toolCalls: [{ tool: "search_units", args: { query: "", withoutCurrentTenant: true } }]
+    };
+  }
   if (/(wohnt|bewohner|aktuell|mieter)/i.test(normalized)) {
     return { type: "tool_calls", statusMessage: "Ich suche aktuelle Mieter.", toolCalls: [{ tool: "search_tenants", args: { query: "", currentOnly: /aktuell|wohnt/i.test(normalized) } }] };
   }
@@ -613,7 +626,7 @@ function shouldPreferToolLookup(message: string, clarification: string, fallback
 }
 
 function canAnswerWithoutTools(message: string) {
-  return /^(hilfe|help|was kannst du|wer bist du|erklaer|erklär|wie funktioniert)/i.test(message.trim());
+  return /^(wer bist du|erklaer|erklär|wie funktioniert)/i.test(message.trim());
 }
 
 function collectAgentOutput(answer: string, tools: AgentToolResult[]) {
@@ -646,6 +659,13 @@ function fallbackAnswer(message: string, tools: AgentToolResult[]) {
 function extractLikelyTenantName(message: string) {
   const match = message.match(/\b(?:frau|herr|mieter(?:in)?)\s+([A-ZÄÖÜ][a-zäöüß-]+(?:\s+[A-ZÄÖÜ][a-zäöüß-]+)?)\b/);
   return match?.[1]?.trim() || "";
+}
+
+function normalizeAgentLinks(answer: string) {
+  return answer
+    .replace(/https?:\/\/portal\.local(?=\/)/gi, "")
+    .replace(/https?:\/\/localhost(?::\d+)?(?=\/)/gi, "")
+    .replace(/https?:\/\/local(?=\/)/gi, "");
 }
 
 async function indexAgentMemory(user: ScopedUser, conversationId: string, text: string, messageId: string) {

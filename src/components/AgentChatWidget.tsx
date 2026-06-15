@@ -15,6 +15,7 @@ type StreamEvent = {
   summary?: string;
   answer?: string;
   conversationId?: string | null;
+  steps?: string[];
 };
 
 export function AgentChatWidget() {
@@ -86,8 +87,9 @@ export function AgentChatWidget() {
         } else if (event.type === "final") {
           addStatus("Antwort erstellt.");
           if (event.conversationId) window.localStorage.setItem("portal_agent_conversation_id", event.conversationId);
+          const steps = event.steps?.length ? event.steps : ["Antwort erstellt."];
           setMessages((current) => [
-            ...current.map((message) => message.role === "status" && message.open ? { ...message, content: "Agent-Lauf", open: false } : message),
+            ...ensureStatusMessage(current, steps).map((message) => message.role === "status" && message.open ? { ...message, content: "Agent-Lauf", open: false } : message),
             { role: "assistant", content: event.answer || "Keine Antwort erhalten." }
           ]);
         } else if (event.type === "error") {
@@ -120,6 +122,11 @@ export function AgentChatWidget() {
       next[realIndex] = { ...status, lines: [...(status.lines || []), message].slice(-30) };
       return next;
     });
+  }
+
+  function ensureStatusMessage(current: ChatMessage[], lines: string[]) {
+    if (current.some((message) => message.role === "status" && message.open)) return current;
+    return [...current, { role: "status" as const, content: "Agent-Lauf", lines, open: false }];
   }
 
   async function resetContext() {
