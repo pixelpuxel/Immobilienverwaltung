@@ -1,0 +1,111 @@
+{
+  "version": 1,
+  "updatedAt": "2026-06-16T08:10:00.000Z",
+  "purpose": "Regressionstest-Katalog fuer den Portal-Agenten mit anonymisierten Beispieldaten. Nach Agent-Fixes oder neuen Agent-Funktionen diese Faelle erneut ausfuehren und die Ergebnisse protokollieren.",
+  "cases": [
+    {
+      "id": "agent-documents-example-property",
+      "area": "Dokumente",
+      "prompt": "Welche Dokumente gibt es fuer den Beispielweg?",
+      "expected": "Der Agent erkennt den Beispielweg als Musterimmobilie, sucht gezielt Dokumente dieser Immobilie und liefert eine Liste mit direkten Links.",
+      "status": "open",
+      "lastRun": null
+    },
+    {
+      "id": "agent-properties-list",
+      "area": "Immobilien",
+      "prompt": "Welche Immobilien gibt es?",
+      "expected": "Der Agent listet die sichtbaren Immobilien der aktuellen Portalinstanz mit verstaendlichen Namen und anklickbaren Links.",
+      "status": "open",
+      "lastRun": null
+    },
+    {
+      "id": "agent-current-tenants-property",
+      "area": "Mieter",
+      "prompt": "Welche Mieter sind gerade im Beispielweg?",
+      "expected": "Der Agent erkennt die Immobilie und listet aktuelle oder wahrscheinlich aktuelle Mieter mit Einzugsdatum und Link.",
+      "status": "open",
+      "lastRun": null
+    },
+    {
+      "id": "agent-rented-properties",
+      "area": "Immobilien",
+      "prompt": "Welche sind gerade vermietet?",
+      "expected": "Der Agent interpretiert die Frage als Immobilien nach Vermietungsstatus und listet vermietete bzw. teilvermietete Objekte.",
+      "status": "open",
+      "lastRun": null
+    },
+    {
+      "id": "agent-capabilities",
+      "area": "Hilfe",
+      "prompt": "Was kannst du?",
+      "expected": "Der Agent erklaert seine verfuegbaren Portal-Tools und nennt passende Beispielanfragen.",
+      "status": "open",
+      "lastRun": null
+    },
+    {
+      "id": "agent-global-search-land-register",
+      "area": "Suche",
+      "prompt": "Suche Grundbuch Musterstraße",
+      "expected": "Der Agent nutzt die portalweite Suche oder Dokumentensuche und liefert passende Grundbuch-Dokumente mit Vorschau- oder Download-Link.",
+      "status": "open",
+      "lastRun": null
+    },
+    {
+      "id": "agent-units-without-current-tenant",
+      "area": "Einheiten",
+      "prompt": "Welche Einheiten haben keinen aktuellen Mieter?",
+      "expected": "Der Agent nutzt die Einheitensuche und listet Einheiten ohne laufenden Mieter, ohne nur eine allgemeine Volltextsuche zu machen.",
+      "status": "open",
+      "lastRun": null
+    },
+    {
+      "id": "agent-tenant-date-example-property",
+      "area": "Mieter",
+      "prompt": "Seit wann wohnt der aktuelle Mieter im Beispielweg?",
+      "expected": "Der Agent erkennt die Immobilie, sucht den aktuellen oder wahrscheinlich aktuellen Mieter und nennt Einzug oder Mietbeginn mit verstaendlichem Profil-Link.",
+      "status": "open",
+      "lastRun": null
+    },
+    {
+      "id": "agent-document-download-link",
+      "area": "Dokumente",
+      "prompt": "Gib mir einen Download-Link fuer einen Grundbuchauszug der Musterstraße",
+      "expected": "Der Agent findet ein konkretes Dokument oder fragt bei mehreren Treffern nach; er gibt keinen internen Dateipfad aus.",
+      "status": "open",
+      "lastRun": null
+    },
+    {
+      "id": "agent-contract-templates",
+      "area": "Vertraege",
+      "prompt": "Welche Mietvertragsvorlagen gibt es?",
+      "expected": "Der Agent listet Vertragsvorlagen mit Zuordnung zu Immobilie oder Allgemein.",
+      "status": "open",
+      "lastRun": null
+    },
+    {
+      "id": "agent-existing-contracts-example-property",
+      "area": "Vertraege",
+      "prompt": "Welche Mietvertraege gibt es fuer den Beispielweg?",
+      "expected": "Der Agent findet vorhandene Mietvertraege oder Dokumente zur Musterimmobilie und liefert direkte Links.",
+      "status": "open",
+      "lastRun": null
+    },
+    {
+      "id": "agent-landlord-confirmation-dry-run",
+      "area": "Formulare",
+      "prompt": "Kannst du eine Wohnungsgeberbestaetigung fuer die aktuelle Mieterin der Kulturstraße vorbereiten?",
+      "expected": "Der Agent sucht zuerst Immobilie und aktuellen Mieter. Wenn die Erzeugung nicht eindeutig oder nicht bestaetigt ist, fragt er gezielt nach statt falsche Daten zu erzeugen.",
+      "status": "open",
+      "lastRun": null
+    },
+    {
+      "id": "agent-update-tenant-status",
+      "area": "Mieter",
+      "prompt": "Setze Petra Beispiel auf nicht mehr laufend",
+      "expected": "Der Agent nutzt das Mietstatus-Tool und erzeugt keine Wohnungsgeberbestaetigung oder andere Nebenaktion.",
+      "status": "open",
+      "lastRun": null
+    }
+  ]
+}

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { auditLog } from "./audit";
 import { bestContractAttachment, contractPublicLinks } from "./contract-downloads";
 import { generateContract, selectContractTemplate } from "./contracts";
+import { env } from "./env";
 import { canAccessDocument } from "./permissions";
 import { portalWhere, type ScopedUser } from "./portal-instance";
 import { prisma } from "./prisma";
@@ -58,6 +59,10 @@ export type AgentToolDefinition = {
 
 const querySchema = z.object({ query: z.string().trim().min(1).max(300) });
 const optionalQuerySchema = z.object({ query: z.string().trim().max(300).optional().default("") });
+const documentSearchSchema = z.object({
+  query: z.string().trim().max(300).optional().default(""),
+  propertyQuery: z.string().trim().max(300).optional().default("")
+});
 const idSchema = z.object({ id: z.string().trim().min(1) });
 
 const createContractSchema = z.object({
@@ -158,13 +163,13 @@ export const agentToolRegistry = {
         name: "search_properties",
         ok: true,
         summary: properties.length
-          ? ["Immobilien:", ...properties.map((p) => `- ${p.name}: ${p.address || "keine Adresse"} (${p.units.length} Einheiten, ${p.documents.length} Dokumente) · /properties/${p.id}`)].join("\n")
+          ? ["Immobilien:", ...properties.map((p) => `- ${p.name}\n  ${p.address || "keine Adresse"} · ${p.units.length} Einheiten · ${p.documents.length} Dokumente\n  ${publicPortalUrl(`/properties/${p.id}`)}`)].join("\n")
           : "Keine Immobilien gefunden.",
-        data: properties.map((p) => ({ id: p.id, name: p.name, address: p.address, rentalStatus: p.rentalStatus, href: `/properties/${p.id}` })),
+        data: properties.map((p) => ({ id: p.id, name: p.name, address: p.address, rentalStatus: p.rentalStatus, href: publicPortalUrl(`/properties/${p.id}`) })),
         artifacts: properties.slice(0, 10).map((p) => {
           const image = p.documents.find((document) => document.isPrimaryImage && document.isPropertyImage && document.mimeType.startsWith("image/"))
             || p.documents.find((document) => document.isPropertyImage && document.mimeType.startsWith("image/"));
-          return { type: "link" as const, label: p.name, url: `/properties/${p.id}`, thumbnailUrl: image ? `/api/documents/${image.id}/thumbnail` : undefined };
+          return { type: "link" as const, label: p.name, url: publicPortalUrl(`/properties/${p.id}`), thumbnailUrl: image ? publicPortalUrl(`/api/documents/${image.id}/thumbnail`) : undefined };
         })
       };
     }
@@ -278,10 +283,10 @@ export const agentToolRegistry = {
         name: "search_tenants",
         ok: true,
         summary: tenants.length
-          ? [fallbackHint || "Mieter:", ...tenants.slice(0, 20).map((t) => `- ${tenantName(t)}${t.isCurrent ? " (laufend)" : ""}: ${t.unit ? `${t.unit.property.name} / ${t.unit.unitNumber}` : "keine Einheit"}${tenantDates(t) ? ` · ${tenantDates(t)}` : ""} · /users?tenantId=${t.id}`)].join("\n")
+          ? formatTenantList(tenants, fallbackHint || "Mieter")
           : "Keine Mieter gefunden.",
-        data: tenants.slice(0, 20).map((t) => ({ id: t.id, name: tenantName(t), unitId: t.unitId, propertyName: t.unit?.property.name, moveInDate: t.moveInDate, leaseStartDate: t.leaseStartDate, moveOutDate: t.moveOutDate, isCurrent: t.isCurrent, href: `/users?tenantId=${t.id}` })),
-        artifacts: tenants.slice(0, 10).map((t) => ({ type: "link", label: tenantName(t), url: `/users?tenantId=${t.id}` }))
+        data: tenants.slice(0, 20).map((t) => ({ id: t.id, name: tenantName(t), unitId: t.unitId, propertyName: t.unit?.property.name, moveInDate: t.moveInDate, leaseStartDate: t.leaseStartDate, moveOutDate: t.moveOutDate, isCurrent: t.isCurrent, href: publicPortalUrl(`/users?tenantId=${t.id}`) })),
+        artifacts: tenants.slice(0, 10).map((t) => ({ type: "link", label: tenantName(t), url: publicPortalUrl(`/users?tenantId=${t.id}`) }))
       };
     }
   }),
@@ -298,10 +303,10 @@ export const agentToolRegistry = {
       return {
         name: "get_tenant",
         ok: true,
-        summary: [`Mieter: ${tenantName(tenant)}`, tenant.unit ? `${tenant.unit.property.name} / ${tenant.unit.unitNumber}` : "keine Einheit", tenant.isCurrent ? "laufend" : "nicht laufend", tenantDates(tenant), `Link: /users?tenantId=${tenant.id}`].filter(Boolean).join("\n"),
-        href: `/users?tenantId=${tenant.id}`,
+        summary: [`Mieter: ${tenantName(tenant)}`, tenant.unit ? `${tenant.unit.property.name} / ${tenant.unit.unitNumber}` : "keine Einheit", tenant.isCurrent ? "laufend" : "nicht laufend", tenantDates(tenant), `Oeffnen: ${publicPortalUrl(`/users?tenantId=${tenant.id}`)}`].filter(Boolean).join("\n"),
+        href: publicPortalUrl(`/users?tenantId=${tenant.id}`),
         data: tenant,
-        artifacts: [{ type: "link", label: tenantName(tenant), url: `/users?tenantId=${tenant.id}` }]
+        artifacts: [{ type: "link", label: tenantName(tenant), url: publicPortalUrl(`/users?tenantId=${tenant.id}`) }]
       };
     }
   }),
@@ -348,19 +353,25 @@ export const agentToolRegistry = {
   }),
   search_documents: tool({
     name: "search_documents",
-    description: "Dokumente suchen.",
-    parameters: "{ query: string }",
-    schema: querySchema,
+    description: "Dokumente suchen, optional auf eine Immobilie eingeschraenkt.",
+    parameters: "{ query?: string, propertyQuery?: string }",
+    schema: documentSearchSchema,
     kind: "read",
-    getStatusMessage: (args) => `Ich suche Dokumente zu "${args.query}".`,
+    getStatusMessage: (args) => args.propertyQuery
+      ? `Ich suche Dokumente zur Immobilie "${args.propertyQuery}".`
+      : `Ich suche Dokumente zu "${args.query}".`,
     run: async (ctx, args) => {
-      const results = (await globalSearch(ctx.user, args.query)).filter((item) => item.type === "Dokument");
+      const propertyQuery = args.propertyQuery || extractLikelyPropertyQuery(args.query || "");
+      const cleanedQuery = cleanDocumentQuery(args.query || "", propertyQuery);
+      const directResults = cleanedQuery ? (await globalSearch(ctx.user, cleanedQuery)).filter((item) => item.type === "Dokument") : [];
+      const propertyResults = propertyQuery ? await searchDocumentsByProperty(ctx.user, propertyQuery, cleanedQuery) : [];
+      const results = dedupeDocumentResults([...propertyResults, ...directResults]);
       return {
         name: "search_documents",
         ok: true,
-        summary: results.length ? ["Dokumente:", ...results.slice(0, 12).map((item) => `- ${item.title}${item.description ? ` (${item.description})` : ""}\n  ${item.href}`)].join("\n") : "Keine Dokumente gefunden.",
+        summary: results.length ? formatDocumentList(results) : "Keine Dokumente gefunden.",
         data: results.slice(0, 20),
-        artifacts: results.slice(0, 10).map((item) => ({ type: "link", label: item.title, url: item.href }))
+        artifacts: results.slice(0, 10).map((item) => ({ type: "link", label: item.title, url: publicPortalUrl(item.href) }))
       };
     }
   }),
@@ -378,10 +389,10 @@ export const agentToolRegistry = {
       return {
         name: "get_document",
         ok: true,
-        summary: [`Dokument: ${document.title}`, document.summary, document.category ? `${document.category.group} / ${document.category.name}` : null, `Vorschau: /api/documents/${document.id}/preview`].filter(Boolean).join("\n"),
-        href: `/api/documents/${document.id}/preview`,
+        summary: [`Dokument: ${document.title}`, document.summary, document.category ? `${document.category.group} / ${document.category.name}` : null, `Vorschau: ${publicPortalUrl(`/api/documents/${document.id}/preview`)}`].filter(Boolean).join("\n"),
+        href: publicPortalUrl(`/api/documents/${document.id}/preview`),
         data: document,
-        artifacts: [{ type: "document", label: document.title, url: `/api/documents/${document.id}/preview` }]
+        artifacts: [{ type: "document", label: document.title, url: publicPortalUrl(`/api/documents/${document.id}/preview`) }]
       };
     }
   }),
@@ -857,6 +868,113 @@ function tenantName(tenant: { firstName: string; lastName: string; email?: strin
   return `${tenant.firstName || ""} ${tenant.lastName || ""}`.trim() || tenant.email || "Mieter";
 }
 
+function formatTenantList(tenants: Awaited<ReturnType<typeof searchTenantRows>>, title: string) {
+  const visible = tenants.slice(0, 10);
+  const rows = visible.flatMap((tenant, index) => {
+    const unit = tenant.unit ? `${tenant.unit.property.name} / ${tenant.unit.unitNumber}` : "keine Einheit";
+    const status = tenant.isCurrent
+      ? "laufend"
+      : tenant.moveOutDate
+        ? "nicht laufend"
+        : "ohne Auszugsdatum, nicht als laufend markiert";
+    return [
+      `${index + 1}. ${tenantName(tenant)} (${status})`,
+      `   Einheit: ${unit}`,
+      tenantDates(tenant) ? `   Daten: ${tenantDates(tenant)}` : null,
+      `   Oeffnen: ${publicPortalUrl(`/users?tenantId=${tenant.id}`)}`
+    ].filter(Boolean) as string[];
+  });
+  const suffix = tenants.length > visible.length
+    ? [`... ${tenants.length - visible.length} weitere Treffer ausgeblendet. Bitte die Anfrage eingrenzen, wenn du eine kuerzere Liste willst.`]
+    : [];
+  return [title.endsWith(":") ? title : `${title}:`, ...rows, ...suffix].join("\n");
+}
+
+function formatDocumentList(results: Array<{ title: string; description?: string; href: string; badge?: string }>) {
+  const visible = results.slice(0, 12);
+  const rows = visible.flatMap((item, index) => [
+    `${index + 1}. ${item.title}`,
+    item.description ? `   Kontext: ${compactText(item.description)}` : null,
+    item.badge ? `   Schlagwort/Status: ${item.badge}` : null,
+    `   Vorschau: ${publicPortalUrl(item.href)}`
+  ].filter(Boolean) as string[]);
+  const suffix = results.length > visible.length
+    ? [`... ${results.length - visible.length} weitere Dokumente ausgeblendet. Bitte nach Kategorie, Jahr oder Begriff eingrenzen.`]
+    : [];
+  return ["Dokumente:", ...rows, ...suffix].join("\n");
+}
+
+async function searchDocumentsByProperty(user: ScopedUser, propertyQuery: string, documentQuery = "") {
+  const properties = await prisma.property.findMany({
+    where: propertyAccessWhere(user),
+    include: { documents: { include: { category: true, property: true, unit: { include: { property: true } } } } },
+    orderBy: { updatedAt: "desc" },
+    take: 250
+  });
+  const matchedProperties = properties
+    .map((property) => ({
+      property,
+      score: scoreText(propertyQuery, [property.name, property.address, property.street, property.city])
+    }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5)
+    .map((item) => item.property);
+  const documents = matchedProperties.flatMap((property) => property.documents);
+  const filtered = documentQuery
+    ? documents
+      .map((document) => ({
+        document,
+        score: scoreText(documentQuery, [
+          document.title,
+          document.filename,
+          document.summary,
+          document.category?.name,
+          document.category?.group,
+          ...(document.tags || [])
+        ])
+      }))
+      .filter((item) => item.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .map((item) => item.document)
+    : documents;
+  return filtered.slice(0, 50).map((document) => ({
+    type: "Dokument" as const,
+    title: document.title,
+    description: [
+      document.summary,
+      document.category ? `${document.category.group} / ${document.category.name}` : null,
+      document.unit ? `${document.unit.property.name} / ${document.unit.unitNumber}` : document.property?.name
+    ].filter(Boolean).join(" · "),
+    href: document.storagePath ? `/api/documents/${document.id}/preview` : `/documents?documentId=${document.id}`,
+    badge: document.tags.slice(0, 3).join(", ") || document.status
+  }));
+}
+
+function dedupeDocumentResults<T extends { href: string }>(results: T[]) {
+  const byHref = new Map<string, T>();
+  for (const result of results) {
+    if (!byHref.has(result.href)) byHref.set(result.href, result);
+  }
+  return Array.from(byHref.values());
+}
+
+function cleanDocumentQuery(query: string, propertyQuery: string) {
+  let cleaned = query;
+  if (propertyQuery) cleaned = cleaned.replace(propertyQuery, " ");
+  return normalize(cleaned)
+    .replace(/\b(welche|alle|gib|zeige|liste|auflisten|gibt|es|fuer|fur|zur|zu|der|die|das|den|dokumente|dokument|unterlagen|dateien|datei)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function compactText(value: string) {
+  return value
+    .replace(/\s*-\s*/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function tenantDates(tenant: { moveInDate?: Date | null; leaseStartDate?: Date | null; moveOutDate?: Date | null }) {
   return [
     tenant.moveInDate ? `Einzug: ${formatDate(tenant.moveInDate)}` : null,
@@ -970,4 +1088,9 @@ function toolExamples(toolName: string) {
     send_telegram_document: ["Sende das erzeugte PDF in Telegram"]
   };
   return examples[toolName] || [];
+}
+
+function publicPortalUrl(pathname: string) {
+  if (/^https?:\/\//i.test(pathname)) return pathname;
+  return `${env.appUrl.replace(/\/$/, "")}${pathname.startsWith("/") ? pathname : `/${pathname}`}`;
 }

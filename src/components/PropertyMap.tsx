@@ -224,7 +224,7 @@ export function PropertyMap({ properties }: { properties: MapProperty[] }) {
 }
 
 function centerOf(properties: MapProperty[]) {
-  if (!properties.length) return { latitude: 47.66, longitude: 9.17 };
+  if (!properties.length) return { latitude: 50.0, longitude: 8.0 };
   return {
     latitude: properties.reduce((sum, property) => sum + property.latitude, 0) / properties.length,
     longitude: properties.reduce((sum, property) => sum + property.longitude, 0) / properties.length

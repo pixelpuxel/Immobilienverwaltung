@@ -199,18 +199,18 @@ async function main() {
     }
   });
 
-  const tirolergasse = await prisma.property.findFirst({
+  const sampleProperty = await prisma.property.findFirst({
     where: { address: { contains: "Musterstraße 12" } }
   });
-  const tirolergasseUnit = tirolergasse
+  const sampleUnit = sampleProperty
     ? await prisma.unit.findFirst({
-        where: { propertyId: tirolergasse.id, unitNumber: { contains: "1. OG" } }
+        where: { propertyId: sampleProperty.id, unitNumber: { contains: "1. OG" } }
       })
     : null;
 
-  if (tirolergasse && tirolergasseUnit) {
+  if (sampleProperty && sampleUnit) {
     await prisma.unit.update({
-      where: { id: tirolergasseUnit.id },
+      where: { id: sampleUnit.id },
       data: {
         livingArea: 18.4,
         rentAmount: 434,
@@ -221,7 +221,7 @@ async function main() {
       }
     });
 
-    const jonasUser = await prisma.user.upsert({
+    const sampleTenantUser = await prisma.user.upsert({
       where: { email: "max.mustermann@example.com" },
       update: {
         name: "Max Mustermann",
@@ -237,10 +237,10 @@ async function main() {
       }
     });
 
-    const jonasProfile = await prisma.tenantProfile.upsert({
-      where: { userId: jonasUser.id },
+    const sampleTenantProfile = await prisma.tenantProfile.upsert({
+      where: { userId: sampleTenantUser.id },
       update: {
-        unitId: tirolergasseUnit.id,
+        unitId: sampleUnit.id,
         firstName: "Max",
         lastName: "Mustermann",
         birthdate: null,
@@ -286,8 +286,8 @@ async function main() {
         ].join("\n")
       },
       create: {
-        userId: jonasUser.id,
-        unitId: tirolergasseUnit.id,
+        userId: sampleTenantUser.id,
+        unitId: sampleUnit.id,
         firstName: "Max",
         lastName: "Mustermann",
         birthdate: null,
@@ -335,20 +335,20 @@ async function main() {
     });
 
     await prisma.tenantProfile.updateMany({
-      where: { unitId: tirolergasseUnit.id, id: { not: jonasProfile.id } },
+      where: { unitId: sampleUnit.id, id: { not: sampleTenantProfile.id } },
       data: { isCurrent: false, moveOutDate: new Date("2025-09-30T00:00:00.000Z") }
     });
 
-    const template = await ensureMusterstraßeTemplate();
+    const template = await ensureSampleContractTemplate();
     const existingContract = await prisma.leaseContract.findFirst({
-      where: { tenantProfileId: jonasProfile.id, templateId: template.id }
+      where: { tenantProfileId: sampleTenantProfile.id, templateId: template.id }
     });
-    const generated = generateSeedContractFromTemplate(template.storagePath, jonasProfile, tirolergasseUnit, tirolergasse);
+    const generated = generateSeedContractFromTemplate(template.storagePath, sampleTenantProfile, sampleUnit, sampleProperty);
     if (!existingContract) {
       await prisma.leaseContract.create({
         data: {
-          tenantProfileId: jonasProfile.id,
-          unitId: tirolergasseUnit.id,
+          tenantProfileId: sampleTenantProfile.id,
+          unitId: sampleUnit.id,
           templateId: template.id,
           docxPath: generated.docxPath,
           pdfPath: generated.pdfPath
@@ -358,7 +358,7 @@ async function main() {
       await prisma.leaseContract.update({
         where: { id: existingContract.id },
         data: {
-          unitId: tirolergasseUnit.id,
+          unitId: sampleUnit.id,
           docxPath: generated.docxPath,
           pdfPath: generated.pdfPath
         }
@@ -373,12 +373,12 @@ async function main() {
   await prisma.auditLog.updateMany({ where: { portalInstanceId: null }, data: { portalInstanceId: defaultPortal.id } });
 }
 
-async function ensureMusterstraßeTemplate() {
+async function ensureSampleContractTemplate() {
   const contractsPath = process.env.CONTRACTS_PATH || "/app/contracts";
   fs.mkdirSync(contractsPath, { recursive: true });
-  const filename = "Mietvertrag_Musterstraße_1OG_Vorlage_mit_Platzhaltern.docx";
+  const filename = "Mietvertrag_Musterstrasse_1OG_Vorlage_mit_Platzhaltern.docx";
   const storagePath = path.join(contractsPath, filename);
-  fs.writeFileSync(storagePath, createMusterstraßeTemplateDocx());
+  fs.writeFileSync(storagePath, createSampleContractTemplateDocx());
   const stat = fs.statSync(storagePath);
   const existing = await prisma.contractTemplate.findFirst({ where: { name: "Mietvertrag Musterstraße WG-Zimmer Vorlage" } });
   if (existing) {
@@ -422,7 +422,7 @@ function generateSeedContractFromTemplate(templatePath, tenant, unit, property) 
   return { docxPath, pdfPath };
 }
 
-function createMusterstraßeTemplateDocx() {
+function createSampleContractTemplateDocx() {
   const zip = new PizZip();
   zip.file("[Content_Types].xml", contentTypesXml());
   zip.folder("_rels").file(".rels", relsXml());

@@ -207,18 +207,21 @@ export default async function PropertyDetailPage({ params }: { params: { id: str
                 </summary>
                 <div className="border-t border-line">
                   {group.documents.map((document) => (
-                    <div key={document.id} className="grid gap-3 border-b border-line p-4 text-sm last:border-b-0 sm:grid-cols-[120px_minmax(0,1fr)_120px_140px]">
+                    <div key={document.id} className="grid gap-3 border-b border-line p-4 text-sm last:border-b-0 sm:grid-cols-[120px_minmax(0,1fr)_120px_160px]">
                       <DocumentThumbnail id={document.id} title={document.title} mimeType={document.mimeType} hasFile={Boolean(document.storagePath)} compact />
                       <div>
                         <div className="font-semibold">{document.title}</div>
                         <div className="text-muted">{document.unit ? `Einheit ${document.unit.unitNumber}` : "Objektdokument"}</div>
                       </div>
                       <div>{document.status}</div>
-                      {document.storagePath ? (
-                        <a className="button block text-center" href={`/api/documents/${document.id}/download`}>Download</a>
-                      ) : (
-                        <span className="rounded-md border border-line bg-panel px-3 py-2 text-center text-muted">Keine Datei</span>
-                      )}
+                      <div className="grid gap-2">
+                        <Link className="button-secondary block text-center" href={`/documents?documentId=${document.id}`}>In Dokumente bearbeiten</Link>
+                        {document.storagePath ? (
+                          <a className="button block text-center" href={`/api/documents/${document.id}/download`}>Download</a>
+                        ) : (
+                          <span className="rounded-md border border-line bg-panel px-3 py-2 text-center text-muted">Keine Datei</span>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>

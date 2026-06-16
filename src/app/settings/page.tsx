@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { AccountSettingsForm } from "@/components/AccountSettingsForm";
 import { AiProviderSettings } from "@/components/AiProviderSettings";
 import { AgentSettings } from "@/components/AgentSettings";
+import { AgentRegressionTests } from "@/components/AgentRegressionTests";
 import { AgentToolOverview } from "@/components/AgentToolOverview";
 import { AppShell } from "@/components/AppShell";
 import { ApiTokenManager } from "@/components/ApiTokenManager";
@@ -18,6 +19,7 @@ import { TenantMailBroadcast } from "@/components/TenantMailBroadcast";
 import { requireUser } from "@/lib/auth";
 import { env } from "@/lib/env";
 import { DEFAULT_AGENT_SYSTEM_PROMPT, ensureAgentConfig } from "@/lib/agent";
+import { readAgentRegressionTests } from "@/lib/agent-regression-tests";
 import { agentToolCatalogForUi } from "@/lib/agent-tools";
 import { ensureMailTemplates, mailTemplatePreviewContext, renderMailTemplate } from "@/lib/mail-templates";
 import { prisma } from "@/lib/prisma";
@@ -28,7 +30,7 @@ export default async function SettingsPage() {
   const user = await requireUser([Role.ADMIN]);
   await ensureMailTemplates(user.portalInstanceId);
   const agentTools = agentToolCatalogForUi(user.role);
-  const [rawCategories, ownerProfile, apiTokens, mailTemplates, tenantMailRecipients, telegramConfig, aiConfig, agentConfig] = await Promise.all([
+  const [rawCategories, ownerProfile, apiTokens, mailTemplates, tenantMailRecipients, telegramConfig, aiConfig, agentConfig, agentRegressionTests] = await Promise.all([
     prisma.documentCategory.findMany({
       where: { OR: [{ portalInstanceId: user.portalInstanceId }, { portalInstanceId: null }] },
       orderBy: [{ group: "asc" }, { name: "asc" }]
@@ -71,7 +73,8 @@ export default async function SettingsPage() {
       where: { portalInstanceId: user.portalInstanceId ?? null },
       select: { provider: true, embeddingModel: true, transcriptionModel: true, apiKeyEncrypted: true }
     }),
-    ensureAgentConfig(user.portalInstanceId ?? null)
+    ensureAgentConfig(user.portalInstanceId ?? null),
+    readAgentRegressionTests()
   ]);
   const categories = dedupeCategories(rawCategories, user.portalInstanceId);
   return (
@@ -159,6 +162,9 @@ export default async function SettingsPage() {
           </SettingsFold>
           <SettingsFold title="Agent-Tools" description="Fähigkeiten, Grenzen und Beispielanfragen des Agenten." open>
             <AgentToolOverview tools={agentTools} />
+          </SettingsFold>
+          <SettingsFold title="Agent-Debugging und Testabfragen" description="Regressionstests, fehlgeschlagene Agent-Anfragen und Bewertungen pflegen.">
+            <AgentRegressionTests initialData={agentRegressionTests} />
           </SettingsFold>
           <SettingsFold title="Telegram-Bot" description="Bot, Chat, Thread und Verbindung übernehmen.">
             <TelegramBotSettings initialConfig={telegramConfig ? {

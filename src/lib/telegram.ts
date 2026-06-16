@@ -12,6 +12,7 @@ import { readPrivateFile } from "./files";
 import { globalSearch } from "./search";
 import { decryptSecret } from "./secrets";
 import { prisma } from "./prisma";
+import { env } from "./env";
 
 type TelegramMessage = {
   message_id: number;
@@ -361,7 +362,14 @@ async function propertiesReply(portalInstanceId: string | null) {
     include: { units: { select: { id: true } } }
   });
   if (!properties.length) return "Keine Immobilien gefunden.";
-  return ["Immobilien:", ...properties.map((property) => `- ${property.name} (${property.units.length} Einheiten)\n  ${property.address}`)].join("\n");
+  return [
+    "Immobilien:",
+    ...properties.map((property) => [
+      `- ${property.name}`,
+      `  ${property.address || "Keine Adresse hinterlegt"} · ${property.units.length} Einheiten`,
+      `  ${absolutePortalUrl(`/properties/${property.id}`)}`
+    ].join("\n"))
+  ].join("\n");
 }
 
 async function tenantsReply(portalInstanceId: string | null, query: string) {
@@ -971,6 +979,10 @@ function normalize(value: unknown) {
 
 function formatDate(value: Date) {
   return new Intl.DateTimeFormat("de-DE", { dateStyle: "short" }).format(value);
+}
+
+function absolutePortalUrl(pathname: string) {
+  return `${env.appUrl.replace(/\/$/, "")}${pathname.startsWith("/") ? pathname : `/${pathname}`}`;
 }
 
 function mergeResults<T extends { type: string; href: string; title: string }>(items: T[]) {

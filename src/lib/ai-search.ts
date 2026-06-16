@@ -10,6 +10,7 @@ import { decryptSecret, encryptSecret } from "./secrets";
 const COLLECTION = "immobilienportal_documents";
 const AGENT_MEMORY_COLLECTION = "immobilienportal_agent_memory";
 const VECTOR_SIZE = 1536;
+const QDRANT_TIMEOUT_MS = 3500;
 
 export type AiProviderName = "openai" | "gemini";
 
@@ -163,7 +164,7 @@ export async function createEmbedding(portalInstanceId: string | null, text: str
 }
 
 export async function ensureVectorCollection(collection = COLLECTION) {
-  const exists = await fetch(`${env.qdrantUrl}/collections/${collection}`).then((response) => response.ok).catch(() => false);
+  const exists = await fetchWithTimeout(`${env.qdrantUrl}/collections/${collection}`, undefined, QDRANT_TIMEOUT_MS).then((response) => response.ok).catch(() => false);
   if (exists) return;
   await qdrant("PUT", `/collections/${collection}`, {
     vectors: { size: VECTOR_SIZE, distance: "Cosine" }
@@ -257,14 +258,24 @@ async function ensureCollection() {
 }
 
 async function qdrant<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const response = await fetch(`${env.qdrantUrl}${path}`, {
+  const response = await fetchWithTimeout(`${env.qdrantUrl}${path}`, {
     method,
     headers: body ? { "Content-Type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined
-  });
+  }, QDRANT_TIMEOUT_MS);
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.status?.error || data.message || "Qdrant Anfrage fehlgeschlagen.");
   return data as T;
+}
+
+async function fetchWithTimeout(input: string, init?: RequestInit, timeoutMs = 10_000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function pointId(id: string) {

@@ -14,6 +14,7 @@ import { type ScopedUser } from "./portal-instance";
 import { prisma } from "./prisma";
 import { decryptSecret } from "./secrets";
 import { createAgentRunLog, updateAgentRunLog } from "./agent-debug";
+import { recordAgentNoResultCase } from "./agent-regression-tests";
 import {
   isAffirmation,
   loadAgentState,
@@ -131,6 +132,13 @@ export async function processAgentMessage(input: AgentMessageInput, options: Pro
   state = agentResult.state || state;
   await saveAgentState(conversation.id, state);
   const answer = normalizeAgentLinks(agentResult.answer);
+  if (isProblematicAgentAnswer(answer)) {
+    await recordAgentNoResultCase({
+      prompt: input.message,
+      answer,
+      channel: input.channel || "web"
+    }).catch((error) => console.error("Agent regression no-result capture failed", error));
+  }
   await updateAgentRunLog(runLog?.id, { finalAnswer: answer });
 
   const assistantMessage = await prisma.agentMessage.create({ data: { conversationId: conversation.id, role: "assistant", content: answer } });
@@ -517,6 +525,17 @@ function parseJsonDecision(raw: string): AgentDecision | null {
   }
 }
 
+function isProblematicAgentAnswer(answer: string) {
+  const normalized = normalize(answer);
+  return [
+    /keine\s+(treffer|immobilien|mieter|dokumente)\s+(fuer|fur|gefunden)|keine\s+treffer/,
+    /nicht\s+(gefunden|eindeutig|moeglich|moglich|erzeugt|erstellt|gesendet)/,
+    /konnte\s+(nicht|keinen|keine)/,
+    /fehlgeschlagen|fehler|ungueltig|ungultig/,
+    /bitte\s+.*(genauer|erneut|zuerst|anlegen|pruefen|prufen)/
+  ].some((pattern) => pattern.test(normalized));
+}
+
 export function fallbackDecisionForTest(message: string, previousResults: AgentToolResult[] = []): AgentDecision {
   return fallbackDecision(message, previousResults, { status: "idle", facts: {} });
 }
@@ -627,6 +646,13 @@ function fallbackDecision(message: string, previousResults: AgentToolResult[], s
   }
   if (/(was kannst du|was.*moeglich|was.*möglich|funktionen|faehigkeiten|fähigkeiten|tools|hilfe|help)/i.test(normalized)) {
     return { type: "tool_calls", statusMessage: "Ich pruefe meine verfuegbaren Portal-Tools.", toolCalls: [{ tool: "agent_capabilities", args: { topic: message } }] };
+  }
+  if (/(dokumente|dokument|unterlagen|dateien|datei|grundbuch|energieausweis|mietvertrag|nebenkosten|abrechnung|vertrag)/i.test(normalized)) {
+    return {
+      type: "tool_calls",
+      statusMessage: "Ich suche passende Dokumente.",
+      toolCalls: [{ tool: "search_documents", args: { query: message, propertyQuery: propertyQuery || "" } }]
+    };
   }
   if (/(ohne|keinen|keine|leer|frei|unvermietet).*(mieter|bewohner)|(?:mieter|bewohner).*(ohne|keinen|keine)|frei.*(einheit|wohnung|immobilie|objekt)/i.test(normalized)) {
     return {

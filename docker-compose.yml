@@ -78,6 +78,10 @@ services:
     image: qdrant/qdrant:v1.12.5
     container_name: immobilienportal_qdrant
     restart: unless-stopped
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
     volumes:
       - qdrant_data:/qdrant/storage
 
