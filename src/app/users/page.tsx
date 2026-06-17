@@ -1,4 +1,5 @@
 import { Role } from "@prisma/client";
+import Link from "next/link";
 import type { ReactNode } from "react";
 import { AppShell } from "@/components/AppShell";
 import { BrokerInviteForm } from "@/components/BrokerInviteForm";
@@ -6,7 +7,9 @@ import { DeleteDocumentButton } from "@/components/DeleteDocumentButton";
 import { DeleteUserButton } from "@/components/DeleteUserButton";
 import { DocumentThumbnail } from "@/components/DocumentThumbnail";
 import { JsonForm } from "@/components/JsonForm";
+import { ScrollToQueryTarget } from "@/components/ScrollToQueryTarget";
 import { TenantCreateForm } from "@/components/TenantCreateForm";
+import { TenantDepositEditor } from "@/components/TenantDepositEditor";
 import { ToggleDetails } from "@/components/ToggleDetails";
 import { UserAccessEditor } from "@/components/UserAccessEditor";
 import { UserEditForm } from "@/components/UserEditForm";
@@ -14,17 +17,18 @@ import { WohnungsgeberButton } from "@/components/WohnungsgeberButton";
 import { requireUser } from "@/lib/auth";
 import { portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
+import { asMoneyNumber, calculateColdRent, calculateWarmRent, money } from "@/lib/rent";
 
 export const dynamic = "force-dynamic";
 
 export default async function UsersPage() {
   const user = await requireUser([Role.ADMIN]);
-  const [users, properties, units, wohnungsgeberDocuments] = await Promise.all([
+  const [users, properties, units, wohnungsgeberDocuments, contractDocuments] = await Promise.all([
     prisma.user.findMany({
       where: portalWhere(user),
       include: {
         brokerLinks: { where: { status: "active" }, include: { property: true }, orderBy: { createdAt: "desc" } },
-        tenantProfile: { include: { unit: { include: { property: true } } } }
+        tenantProfile: { include: { contracts: { orderBy: { createdAt: "desc" }, take: 1 }, unit: { include: { property: true } } } }
       },
       orderBy: { createdAt: "desc" }
     }),
@@ -33,6 +37,11 @@ export default async function UsersPage() {
     prisma.document.findMany({
       where: { ...portalWhere(user), category: { name: "Wohnungsgeberbestätigung" } },
       include: { permissions: true, category: true },
+      orderBy: { createdAt: "desc" }
+    }),
+    prisma.document.findMany({
+      where: { ...portalWhere(user), scope: "CONTRACT" },
+      include: { permissions: true, category: true, unit: { include: { property: true } } },
       orderBy: { createdAt: "desc" }
     })
   ]);
@@ -62,6 +71,7 @@ export default async function UsersPage() {
   const renderUserCard = (item: (typeof users)[number]) => (
     <div id={`user-${item.id}`} key={item.id} className="scroll-mt-24 grid gap-4 border-b border-line p-4 text-sm last:border-b-0 lg:grid-cols-[minmax(0,1fr)_minmax(260px,360px)]">
       <div>
+        {item.tenantProfile ? <span id={`tenant-${item.tenantProfile.id}`} className="block scroll-mt-24" /> : null}
         <strong>{item.name || item.email}</strong>
         <div className="mt-2 flex flex-wrap gap-2 text-xs">
           {item.username ? <span className="rounded-full bg-accent/10 px-2 py-1 font-semibold text-accent">@{item.username}</span> : null}
@@ -82,6 +92,20 @@ export default async function UsersPage() {
                 : "Keine Einheit zugeordnet"
               : "Eigentümer mit Vollzugriff"}
         </div>
+        {item.role === Role.TENANT && item.tenantProfile ? (
+          <>
+            <TenantRentSummary item={item} contract={findTenantContract(item)} generatedContractId={item.tenantProfile.contracts[0]?.id || ""} />
+            <TenantDepositEditor tenant={{
+              id: item.tenantProfile.id,
+              deposit: item.tenantProfile.deposit?.toString() || "",
+              depositPaidAmount: item.tenantProfile.depositPaidAmount?.toString() || "",
+              depositPaidAt: toDateInput(item.tenantProfile.depositPaidAt),
+              depositReturnedAmount: item.tenantProfile.depositReturnedAmount?.toString() || "",
+              depositReturnedAt: toDateInput(item.tenantProfile.depositReturnedAt),
+              depositStatus: item.tenantProfile.depositStatus || "OPEN"
+            }} />
+          </>
+        ) : null}
         {item.role !== Role.ADMIN ? <div className="mt-3"><DeleteUserButton userId={item.id} /></div> : null}
         <UserEditForm
           currentUserId={user.id}
@@ -113,6 +137,16 @@ export default async function UsersPage() {
         />
         {item.role === Role.TENANT && item.tenantProfile ? (
           <div className="mt-4 grid gap-3 rounded-md bg-panel p-3">
+            <div className="grid gap-2">
+              <Link className="button-secondary text-center text-sm" href={`/documents?tenantId=${item.tenantProfile.id}&unitId=${item.tenantProfile.unitId || ""}`}>Dokumente dieses Mieters</Link>
+              {findTenantContract(item) ? (
+                <Link className="button text-center text-sm" href={`/documents?documentId=${findTenantContract(item)?.id}&tenantId=${item.tenantProfile.id}`}>Aktuellen Mietvertrag öffnen</Link>
+              ) : item.tenantProfile.contracts[0] ? (
+                <a className="button text-center text-sm" href={`/api/contracts/${item.tenantProfile.contracts[0].id}/preview`}>Generierten Mietvertrag öffnen</a>
+              ) : (
+                <div className="rounded-md bg-white p-2 text-xs text-muted">Kein Mietvertrag fuer dieses Mietverhältnis verfügbar.</div>
+              )}
+            </div>
             <div className="text-xs font-semibold text-muted">Wohnungsgeberbestaetigung</div>
             {wohnungsgeberDocuments.filter((document) => document.permissions.some((permission) => permission.userId === item.id)).map((document) => (
               <div className="grid gap-2" key={document.id}>
@@ -129,8 +163,15 @@ export default async function UsersPage() {
       </div>
     </div>
   );
+  function findTenantContract(item: (typeof users)[number]) {
+    if (!item.tenantProfile) return null;
+    return contractDocuments.find((document) => document.permissions.some((permission) => permission.userId === item.id))
+      || (item.tenantProfile.isCurrent ? contractDocuments.find((document) => document.unitId && document.unitId === item.tenantProfile?.unitId) : null)
+      || null;
+  }
   return (
     <AppShell role={user.role} userId={user.id} email={user.email} canSwitchView={user.role === Role.ADMIN || Boolean(user.impersonatedByAdminId)}>
+      <ScrollToQueryTarget />
       <h1 className="text-3xl font-bold">Benutzerverwaltung</h1>
       <div className="mt-6 grid items-start gap-6 lg:grid-cols-[1fr_420px]">
         <div className="grid gap-4 self-start">
@@ -189,6 +230,59 @@ function formatDate(value?: Date | null) {
 
 function compareTenantMoveInDesc(a: { tenantProfile?: { moveInDate: Date | null } | null }, b: { tenantProfile?: { moveInDate: Date | null } | null }) {
   return Number(b.tenantProfile?.moveInDate || 0) - Number(a.tenantProfile?.moveInDate || 0);
+}
+
+function TenantRentSummary({
+  item,
+  contract,
+  generatedContractId
+}: {
+  item: {
+    tenantProfile: {
+      rentAmount: unknown;
+      garageRent: unknown;
+      serviceCharges: unknown;
+      deposit: unknown;
+      depositPaidAmount?: unknown;
+      depositReturnedAmount?: unknown;
+      depositStatus?: string | null;
+      unit: {
+        rentAmount: unknown;
+        garageRent: unknown;
+        serviceCharges: unknown;
+      } | null;
+    } | null;
+  };
+  contract: { id: string; title: string } | null;
+  generatedContractId?: string;
+}) {
+  const tenant = item.tenantProfile;
+  if (!tenant) return null;
+  const rentSource = {
+    rentAmount: tenant.rentAmount ?? tenant.unit?.rentAmount,
+    garageRent: tenant.garageRent ?? tenant.unit?.garageRent,
+    serviceCharges: tenant.serviceCharges ?? tenant.unit?.serviceCharges
+  };
+  const deposit = asMoneyNumber(tenant.deposit);
+  const depositPaid = asMoneyNumber(tenant.depositPaidAmount);
+  const depositReturned = asMoneyNumber(tenant.depositReturnedAmount);
+  const depositOpen = Math.max(0, deposit - depositReturned);
+  return (
+    <div className="mt-4 grid gap-2 rounded-md bg-panel p-3">
+      <div className="text-xs font-bold uppercase text-muted">Aktuelle Mietkonditionen</div>
+      <div className="grid grid-cols-3 gap-2 text-xs">
+        <div className="rounded bg-white p-2"><div className="text-muted">Kalt</div><strong>{money(calculateColdRent(rentSource))}</strong></div>
+        <div className="rounded bg-white p-2"><div className="text-muted">NK</div><strong>{money(asMoneyNumber(rentSource.serviceCharges))}</strong></div>
+        <div className="rounded bg-white p-2"><div className="text-muted">Warm</div><strong>{money(calculateWarmRent(rentSource))}</strong></div>
+      </div>
+      <div className="rounded bg-white p-2 text-xs">
+        <div className="font-semibold">Kaution</div>
+        <div className="text-muted">Soll {money(deposit)} · gezahlt {money(depositPaid)} · zurückgezahlt {money(depositReturned)} · offen {money(depositOpen)}</div>
+        <div className="mt-1 text-muted">Status: {tenant.depositStatus || "OPEN"}</div>
+      </div>
+      {contract ? <Link className="text-xs font-semibold text-accent hover:underline" href={`/documents?documentId=${contract.id}`}>Mietvertrag: {contract.title}</Link> : generatedContractId ? <a className="text-xs font-semibold text-accent hover:underline" href={`/api/contracts/${generatedContractId}/preview`}>Generierter Mietvertrag</a> : <div className="text-xs text-muted">Kein Mietvertrag hinterlegt.</div>}
+    </div>
+  );
 }
 
 function UserRoleGroup({ title, count, children, open = false }: { title: string; count: number; children: ReactNode; open?: boolean }) {

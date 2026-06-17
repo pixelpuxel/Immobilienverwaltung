@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { LogoutButton } from "./LogoutButton";
+import { MenuSearch } from "./MenuSearch";
 import { ViewSwitcher } from "./ViewSwitcher";
 
 export function MobileNav({
@@ -40,6 +41,7 @@ export function MobileNav({
       </div>
       {open ? (
         <nav id="mobile-navigation" className="grid gap-1 border-t border-line bg-panel p-3">
+          <MenuSearch onSearch={() => setOpen(false)} />
           {links.map(([label, href]) => (
             <Link
               key={href}

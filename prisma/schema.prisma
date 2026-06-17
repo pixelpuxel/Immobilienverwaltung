@@ -152,12 +152,14 @@ model PropertyTodo {
   id          String    @id @default(cuid())
   propertyId  String
   title       String
+  dueDate     DateTime?
   completedAt DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   property    Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
   @@index([propertyId, completedAt])
+  @@index([dueDate])
 }
 
 model Unit {
@@ -308,6 +310,11 @@ model TenantProfile {
   garageRent            Decimal?  @db.Decimal(12, 2)
   serviceCharges        Decimal?  @db.Decimal(12, 2)
   deposit               Decimal?  @db.Decimal(12, 2)
+  depositPaidAmount     Decimal?  @db.Decimal(12, 2)
+  depositPaidAt         DateTime?
+  depositReturnedAmount Decimal?  @db.Decimal(12, 2)
+  depositReturnedAt     DateTime?
+  depositStatus         String    @default("OPEN")
   occupantCount         Int?
   bankAccount           String?
   rentDueDay            Int?

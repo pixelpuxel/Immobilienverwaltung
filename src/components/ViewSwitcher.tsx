@@ -17,18 +17,21 @@ type SwitchUser = {
 
 export function ViewSwitcher({ currentUserId, compact = false }: { currentUserId: string; compact?: boolean }) {
   const [users, setUsers] = useState<SwitchUser[]>([]);
-  const [selectedUserId, setSelectedUserId] = useState(currentUserId);
+  const [adminId, setAdminId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const currentUser = users.find((user) => user.id === currentUserId);
   const groupedUsers = groupUsers(users);
+  const isImpersonating = Boolean(adminId && currentUserId !== adminId);
 
   useEffect(() => {
     let cancelled = false;
-    setSelectedUserId(currentUserId);
     fetch("/api/auth/switch-view", { cache: "no-store" })
       .then((response) => response.ok ? response.json() : { users: [] })
       .then((body) => {
-        if (!cancelled) setUsers(body.users || []);
+        if (!cancelled) {
+          setUsers(body.users || []);
+          setAdminId(body.adminId || null);
+        }
       })
       .catch(() => {
         if (!cancelled) setUsers([]);
@@ -47,58 +50,49 @@ export function ViewSwitcher({ currentUserId, compact = false }: { currentUserId
       body: JSON.stringify({ userId })
     });
     setBusy(false);
-    if (response.ok) {
-      window.location.href = "/dashboard";
-    }
-  }
-
-  const select = (
-    <select
-      aria-label="Benutzeransicht auswaehlen"
-      className={compact ? "h-10 w-full min-w-0 max-w-[190px] rounded-md bg-white px-2 text-xs" : "min-w-0 text-xs"}
-      value={selectedUserId}
-      disabled={busy || users.length === 0}
-      onChange={(event) => {
-        const userId = event.target.value;
-        setSelectedUserId(userId);
-        switchUser(userId);
-      }}
-    >
-      {groupedUsers.map((group) => (
-        <optgroup key={group.label} label={group.label}>
-          {group.users.map((user) => (
-            <option key={user.id} value={user.id}>
-              {viewOptionLabel(user)}
-            </option>
-          ))}
-        </optgroup>
-      ))}
-    </select>
-  );
-
-  if (compact) {
-    return (
-      <div className="flex min-w-0 items-center gap-2">
-        <div className="sr-only">Benutzeransicht</div>
-        {currentUser ? <RoleBadge role={currentUser.role} compact /> : null}
-        {select}
-      </div>
-    );
+    if (response.ok) window.location.href = "/dashboard";
   }
 
   return (
-    <div className="grid gap-2 rounded-md border border-line bg-white p-2">
-      <div className="flex items-center gap-2">
-        {currentUser ? <RoleBadge role={currentUser.role} /> : null}
-        {currentUser ? (
-          <div className="min-w-0">
-            <div className="text-xs font-semibold text-muted">Benutzeransicht</div>
-            <div className="mt-0.5 truncate text-sm font-semibold">{viewTitle(currentUser)}</div>
-          </div>
-        ) : null}
-      </div>
-      {select}
-      {busy ? <div className="px-1 text-xs text-muted">Wechsle Ansicht...</div> : null}
+    <div className={compact ? "relative min-w-0" : "grid gap-2 rounded-md border border-line bg-white p-2"}>
+      {isImpersonating && adminId ? (
+        <button className="mb-2 w-full rounded-md bg-amber-100 px-3 py-2 text-xs font-bold text-amber-900" disabled={busy} type="button" onClick={() => switchUser(adminId)}>
+          Zurück zur Admin-Ansicht
+        </button>
+      ) : null}
+      <details className="relative">
+        <summary className={`flex cursor-pointer list-none items-center gap-2 rounded-md border border-line bg-white px-2 py-2 [&::-webkit-details-marker]:hidden ${compact ? "max-w-[210px]" : ""}`}>
+          {currentUser ? <RoleBadge role={currentUser.role} compact={compact} /> : null}
+          <span className="min-w-0">
+            <span className="block truncate text-xs font-semibold text-muted">Benutzeransicht</span>
+            <span className="block truncate text-sm font-bold">{currentUser ? viewTitle(currentUser) : "Lade ..."}</span>
+          </span>
+        </summary>
+        <div className={`${compact ? "absolute right-0 z-50 mt-2 max-h-[70vh] w-[min(22rem,90vw)] overflow-auto" : "mt-2"} rounded-md border border-line bg-white p-2 shadow-xl`}>
+          {groupedUsers.map((group) => (
+            <div className="border-b border-line py-2 last:border-b-0" key={group.label}>
+              <div className="px-2 text-xs font-bold uppercase text-muted">{group.label}</div>
+              <div className="mt-1 grid gap-1">
+                {group.users.map((user) => (
+                  <div className="grid gap-2 rounded-md bg-panel p-2 text-sm" key={user.id}>
+                    <div className="flex items-start gap-2">
+                      <RoleBadge role={user.role} compact />
+                      <div className="min-w-0">
+                        <div className="font-bold">{viewTitle(user)}</div>
+                        <div className="truncate text-xs text-muted">{user.context || user.username || user.email}</div>
+                      </div>
+                    </div>
+                    <button className="button-secondary px-3 py-2 text-xs" disabled={busy || user.id === currentUserId} onClick={() => switchUser(user.id)} type="button">
+                      {user.id === currentUserId ? "Aktuelle Ansicht" : "In diese Ansicht wechseln"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+          {busy ? <div className="px-2 py-1 text-xs text-muted">Wechsle Ansicht...</div> : null}
+        </div>
+      </details>
     </div>
   );
 }
@@ -107,16 +101,6 @@ function viewTitle(user: SwitchUser) {
   const label = roleLabel(user.role);
   const name = user.name || user.username || user.email;
   return isSameLabel(name, label) ? label : name;
-}
-
-function viewOptionLabel(user: SwitchUser) {
-  const label = `${roleConfig[user.role].icon} ${roleLabel(user.role)}`;
-  const title = viewTitle(user);
-  const plainLabel = roleLabel(user.role);
-  const identity = user.username ? `@${user.username}` : user.email;
-  const titleWithIdentity = isSameLabel(title, plainLabel) ? `${label} (${identity})` : `${label}: ${title}`;
-  const currentMarker = user.role === "TENANT" && user.isCurrent ? "laufend · " : "";
-  return user.context ? `${currentMarker}${titleWithIdentity} (${user.context})` : `${currentMarker}${titleWithIdentity}`;
 }
 
 function groupUsers(users: SwitchUser[]) {
@@ -140,11 +124,7 @@ function isSameLabel(left: string, right: string) {
 function RoleBadge({ role, compact = false }: { role: RoleName; compact?: boolean }) {
   const config = roleConfig[role];
   return (
-    <span
-      aria-hidden="true"
-      className={`${compact ? "h-7 w-7 text-[11px]" : "h-9 w-9 text-sm"} grid shrink-0 place-items-center rounded-md bg-gradient-to-br ${config.tone} font-black text-white shadow-sm`}
-      title={config.label}
-    >
+    <span className={`${compact ? "h-7 w-7 text-[11px]" : "h-9 w-9 text-sm"} grid shrink-0 place-items-center rounded-md bg-gradient-to-br ${config.tone} font-black text-white shadow-sm`} title={config.label}>
       {config.icon}
     </span>
   );

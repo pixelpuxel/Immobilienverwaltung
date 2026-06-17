@@ -27,7 +27,7 @@ export default async function PropertyDetailPage({ params }: { params: { id: str
         documents: { orderBy: { createdAt: "desc" }, include: { category: true, unit: true } },
         brokerRequests: { include: { user: true } },
         brokerValuations: { include: { user: true }, orderBy: { updatedAt: "desc" } },
-        todos: { orderBy: [{ completedAt: "asc" }, { createdAt: "desc" }], select: { id: true, title: true, completedAt: true, createdAt: true } }
+        todos: { orderBy: [{ completedAt: "asc" }, { createdAt: "desc" }], select: { id: true, title: true, dueDate: true, completedAt: true, createdAt: true } }
       }
     }),
     prisma.documentCategory.findFirst({ where: { name: "Energieausweis" } })
@@ -175,7 +175,7 @@ export default async function PropertyDetailPage({ params }: { params: { id: str
           <section className="rounded-lg border border-line">
             <div className="border-b border-line p-4 font-bold">Einheiten</div>
             {property.units.length ? property.units.map((unit) => (
-              <div key={unit.id} className="grid gap-3 border-b border-line p-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
+              <div id={`unit-${unit.id}`} key={unit.id} className="scroll-mt-24 grid gap-3 border-b border-line p-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
                 <EditableField canEdit={canEdit} endpoint={`/api/units/${unit.id}`} field="unitNumber" label="Einheit" value={unit.unitNumber} />
                 <EditableField canEdit={canEdit} endpoint={`/api/units/${unit.id}`} field="floor" label="Etage" value={unit.floor || ""} />
                 <EditableField canEdit={canEdit} endpoint={`/api/units/${unit.id}`} field="rooms" label="Zimmer" type="number" value={unit.rooms?.toString() || ""} />
@@ -183,7 +183,11 @@ export default async function PropertyDetailPage({ params }: { params: { id: str
                 <EditableField canEdit={canEdit} endpoint={`/api/units/${unit.id}`} field="rentAmount" label="Kaltmiete" type="number" suffix=" EUR" value={unit.rentAmount?.toString() || ""} />
                 <EditableField canEdit={canEdit} endpoint={`/api/units/${unit.id}`} field="garageRent" label="Tiefgarage" type="select" suffix=" EUR" value={unit.garageRent?.toString() || ""} options={["0", "50", "75", "80", "90", "100", "120", "150"]} />
                 <EditableField canEdit={canEdit} endpoint={`/api/units/${unit.id}`} field="serviceCharges" label="Nebenkosten" type="number" suffix=" EUR" value={unit.serviceCharges?.toString() || ""} />
-                <EditableField canEdit={canEdit} endpoint={`/api/units/${unit.id}`} field="warmRent" label="Warmmiete" type="number" suffix=" EUR" value={unit.warmRent?.toString() || calculatedWarmRent(unit)} displayValue={formatCurrency(Number(unit.rentAmount || 0) + Number(unit.garageRent || 0) + Number(unit.serviceCharges || 0))} />
+                <div className="rounded-md bg-panel p-3">
+                  <div className="text-xs font-semibold uppercase text-muted">Warmmiete</div>
+                  <div className="mt-1 font-semibold">{formatCurrency(Number(unit.rentAmount || 0) + Number(unit.garageRent || 0) + Number(unit.serviceCharges || 0))}</div>
+                  <div className="mt-1 text-xs text-muted">Automatisch aus Kaltmiete, Tiefgarage und Nebenkosten berechnet.</div>
+                </div>
                 <EditableField canEdit={canEdit} endpoint={`/api/units/${unit.id}`} field="status" label="Status" type="select" options={["vermietet", "frei", "reserviert"]} value={unit.status || ""} />
                 <EditableField canEdit={canEdit} endpoint={`/api/units/${unit.id}`} field="isSharedHousing" label="WG / mehrere laufende Mietverträge" type="checkbox" value={unit.isSharedHousing ? "true" : "false"} />
                 <div className="rounded-md bg-panel p-3">
@@ -236,6 +240,7 @@ export default async function PropertyDetailPage({ params }: { params: { id: str
               initialTodos={property.todos.map((todo) => ({
                 id: todo.id,
                 title: todo.title,
+                dueDate: todo.dueDate?.toISOString() || null,
                 completedAt: todo.completedAt?.toISOString() || null
               }))}
               propertyId={property.id}
@@ -317,14 +322,17 @@ function average(values: number[]) {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
-function calculatedWarmRent(unit: { rentAmount: unknown; garageRent: unknown; serviceCharges: unknown }) {
-  const total = Number(unit.rentAmount || 0) + Number(unit.garageRent || 0) + Number(unit.serviceCharges || 0);
-  return total ? String(total) : "";
-}
-
-function currentTenant(tenants: Array<{ firstName: string; lastName: string; isCurrent: boolean }>) {
+function currentTenant(tenants: Array<{ id: string; firstName: string; lastName: string; isCurrent: boolean }>) {
   const current = tenants.filter((item) => item.isCurrent);
-  return current.length ? current.map((tenant) => `${tenant.firstName} ${tenant.lastName}`.trim()).join(", ") : "-";
+  return current.length ? (
+    <div className="grid gap-1">
+      {current.map((tenant) => (
+        <Link className="font-semibold text-accent hover:underline" href={`/users?tenantId=${tenant.id}`} key={tenant.id}>
+          {`${tenant.firstName} ${tenant.lastName}`.trim()}
+        </Link>
+      ))}
+    </div>
+  ) : "-";
 }
 
 function groupDocumentsByCategory<T extends { category: { group: string; name: string } | null }>(documents: T[]) {

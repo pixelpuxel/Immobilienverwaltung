@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Role } from "@prisma/client";
 import { AgentChatWidget } from "./AgentChatWidget";
 import { LogoutButton } from "./LogoutButton";
+import { MenuSearch } from "./MenuSearch";
 import { MobileNav } from "./MobileNav";
 import { ViewSwitcher } from "./ViewSwitcher";
 import { roleLabel } from "@/lib/display";
@@ -12,6 +13,8 @@ const adminLinks = [
   ["Immobilien", "/properties"],
   ["Karte", "/map"],
   ["Mieteinnahmen", "/rent-income"],
+  ["Aktuelle Mieterliste", "/current-tenants"],
+  ["Offene To-dos", "/todos"],
   ["Dokumente", "/documents"],
   ["Benutzer", "/users"],
   ["Vertraege", "/contracts"],
@@ -63,6 +66,7 @@ export function AppShell({
           ))}
         </nav>
         <div className="absolute bottom-6 left-5 right-5 grid gap-3">
+          <MenuSearch />
           <LogoutButton />
         </div>
       </aside>

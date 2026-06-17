@@ -9,7 +9,7 @@ import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
-export default async function DocumentsPage({ searchParams }: { searchParams?: { propertyId?: string; unitId?: string; category?: string; documentId?: string } }) {
+export default async function DocumentsPage({ searchParams }: { searchParams?: { propertyId?: string; unitId?: string; category?: string; documentId?: string; tenantId?: string } }) {
   const user = await requireUser();
   const [properties, units, rawCategories] = await Promise.all([
     prisma.property.findMany({ where: portalWhere(user), orderBy: { name: "asc" } }),
@@ -30,7 +30,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams?: {
     : "";
   const propertyIds = user.role === Role.BROKER ? await brokerPropertyIds(user.id) : [];
   const unitId = user.role === Role.TENANT ? await tenantUnitId(user.id) : null;
-  const documentWhere: Prisma.DocumentWhereInput = user.role === Role.ADMIN
+  const baseDocumentWhere: Prisma.DocumentWhereInput = user.role === Role.ADMIN
     ? portalWhere(user)
     : user.role === Role.BROKER
       ? { propertyId: { in: propertyIds }, ...portalWhere(user), category: { visibleToBroker: true }, permissions: { some: { userId: user.id, canView: true } } }
@@ -41,6 +41,25 @@ export default async function DocumentsPage({ searchParams }: { searchParams?: {
             { unitId, category: { visibleToTenant: true }, scope: { in: [DocumentScope.UNIT, DocumentScope.CONTRACT] } }
           ]
         };
+  const tenantFilter = searchParams?.tenantId ? await prisma.tenantProfile.findFirst({
+    where: { id: searchParams.tenantId, user: portalWhere(user) },
+    select: { userId: true, unitId: true }
+  }) : null;
+  const documentWhere: Prisma.DocumentWhereInput = searchParams?.tenantId && !tenantFilter
+    ? { id: "__missing_tenant__" }
+    : tenantFilter
+    ? {
+        AND: [
+          baseDocumentWhere,
+          {
+            OR: [
+              { permissions: { some: { userId: tenantFilter.userId, canView: true } } },
+              { unitId: tenantFilter.unitId || "" }
+            ]
+          }
+        ]
+      }
+    : baseDocumentWhere;
   const scopedProperties = user.role === Role.BROKER
     ? properties.filter((property) => propertyIds.includes(property.id))
     : properties;

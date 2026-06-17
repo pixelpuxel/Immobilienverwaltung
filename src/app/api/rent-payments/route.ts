@@ -18,7 +18,8 @@ const schema = z.object({
   paidColdRent: money,
   paidServiceCharges: money,
   paidTotalRent: money,
-  status: z.enum(["OPEN", "PAID", "PARTIAL"])
+  status: z.enum(["OPEN", "PAID", "PARTIAL"]),
+  paidAt: z.string().optional().nullable()
 });
 
 export async function POST(request: NextRequest) {
@@ -35,6 +36,7 @@ export async function POST(request: NextRequest) {
   const ratio = body.data.expectedTotalRent > 0 ? paidTotalRent / body.data.expectedTotalRent : 0;
   const paidColdRent = body.data.status === "PAID" ? body.data.expectedColdRent : body.data.paidColdRent ?? Math.round(body.data.expectedColdRent * ratio * 100) / 100;
   const paidServiceCharges = body.data.status === "PAID" ? body.data.expectedServiceCharges : body.data.paidServiceCharges ?? Math.round(body.data.expectedServiceCharges * ratio * 100) / 100;
+  const paidAt = body.data.status === "OPEN" ? null : body.data.paidAt ? new Date(body.data.paidAt) : new Date();
 
   const payment = await prisma.rentPayment.upsert({
     where: { unitId_year_month: { unitId: body.data.unitId, year: body.data.year, month: body.data.month } },
@@ -47,7 +49,7 @@ export async function POST(request: NextRequest) {
       paidServiceCharges,
       paidTotalRent,
       status: body.data.status,
-      paidAt: body.data.status === "OPEN" ? null : new Date()
+      paidAt
     },
     create: {
       unitId: body.data.unitId,
@@ -61,7 +63,7 @@ export async function POST(request: NextRequest) {
       paidServiceCharges,
       paidTotalRent,
       status: body.data.status,
-      paidAt: body.data.status === "OPEN" ? null : new Date()
+      paidAt
     }
   });
   return NextResponse.json(payment);

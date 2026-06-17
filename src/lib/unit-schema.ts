@@ -14,7 +14,6 @@ export const unitSchema = z.object({
   rentAmount: optionalNumber,
   garageRent: optionalNumber,
   serviceCharges: optionalNumber,
-  warmRent: optionalNumber,
   status: z.string().optional(),
   isSharedHousing: z.preprocess((value) => value === true || value === "true" || value === "on", z.boolean()).optional()
 });

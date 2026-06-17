@@ -45,7 +45,7 @@ export async function globalSearch(user: ScopedUser, query: string) {
       type: "Einheit",
       title: `${unit.property.name} / ${unit.unitNumber}`,
       description: [unit.floor, unit.status, unit.livingArea ? `${unit.livingArea} qm` : null].filter(Boolean).join(" · "),
-      href: `/properties/${unit.propertyId}`,
+      href: `/properties/${unit.propertyId}#unit-${unit.id}`,
       badge: unit.status || "Einheit"
     })),
     ...documents.map<SearchResult>((document) => ({
@@ -67,7 +67,7 @@ export async function globalSearch(user: ScopedUser, query: string) {
         tenant.isCurrent ? "laufend" : "beendet",
         tenant.moveInDate ? `Einzug ${formatDate(tenant.moveInDate)}` : null
       ].filter(Boolean).join(" · "),
-      href: user.role === Role.ADMIN ? `/users?tenantId=${tenant.id}` : tenant.unitId ? `/properties/${tenant.unit?.propertyId}?unitId=${tenant.unitId}` : "/tenant",
+      href: user.role === Role.ADMIN ? `/users?tenantId=${tenant.id}` : tenant.unitId ? `/properties/${tenant.unit?.propertyId}#unit-${tenant.unitId}` : "/tenant",
       badge: tenant.email
     })),
     ...users.map<SearchResult>((item) => ({

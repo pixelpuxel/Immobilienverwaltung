@@ -7,7 +7,8 @@ import { portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 
 const createSchema = z.object({
-  title: z.string().trim().min(1).max(500)
+  title: z.string().trim().min(1).max(500),
+  dueDate: z.preprocess((value) => value === "" || value === null || value === undefined ? null : value, z.coerce.date().nullable().optional())
 });
 
 const updateSchema = z.object({
@@ -28,8 +29,8 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   const body = createSchema.safeParse(await request.json());
   if (!body.success) return NextResponse.json({ error: "Bitte Aufgabe eintragen.", issues: body.error.issues }, { status: 400 });
   const todo = await prisma.propertyTodo.create({
-    data: { propertyId: property.id, title: body.data.title },
-    select: { id: true, title: true, completedAt: true, createdAt: true }
+    data: { propertyId: property.id, title: body.data.title, dueDate: body.data.dueDate || null },
+    select: { id: true, title: true, dueDate: true, completedAt: true, createdAt: true }
   });
   await auditLog({
     userId: user.id,
@@ -56,7 +57,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   const todo = await prisma.propertyTodo.update({
     where: { id: existing.id },
     data: { completedAt: body.data.completed ? new Date() : null },
-    select: { id: true, title: true, completedAt: true, createdAt: true }
+    select: { id: true, title: true, dueDate: true, completedAt: true, createdAt: true }
   });
   await auditLog({
     userId: user.id,
@@ -92,10 +93,11 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
   return NextResponse.json({ ok: true });
 }
 
-function serialize(todo: { id: string; title: string; completedAt: Date | null; createdAt?: Date }) {
+function serialize(todo: { id: string; title: string; dueDate?: Date | null; completedAt: Date | null; createdAt?: Date }) {
   return {
     id: todo.id,
     title: todo.title,
+    dueDate: todo.dueDate?.toISOString?.() || null,
     completedAt: todo.completedAt?.toISOString() || null,
     createdAt: todo.createdAt?.toISOString?.() || null
   };
