@@ -14,7 +14,7 @@ export default async function DashboardPage() {
   const user = await requireUser();
   const brokerIds = user.role === Role.BROKER ? await brokerPropertyIds(user.id) : null;
   const tenantUnit = user.role === Role.TENANT ? await tenantUnitId(user.id) : null;
-  const [properties, units, documents, contracts, auditLogs, propertyValue, loanValue, income] = user.role === Role.ADMIN
+  const [properties, units, documents, contracts, auditLogs, propertyValue, loanValue, income, openTodos] = user.role === Role.ADMIN
     ? await Promise.all([
         prisma.property.count({ where: portalWhere(user) }),
         prisma.unit.count({ where: { property: portalWhere(user) } }),
@@ -23,7 +23,13 @@ export default async function DashboardPage() {
         prisma.auditLog.findMany({ where: portalWhere(user), orderBy: { createdAt: "desc" }, take: 8, include: { user: true } }),
         totalPropertyValue(undefined, user.portalInstanceId),
         totalLoanValue(undefined, user.portalInstanceId),
-        totalMonthlyIncome(undefined, user.portalInstanceId)
+        totalMonthlyIncome(undefined, user.portalInstanceId),
+        prisma.propertyTodo.findMany({
+          where: { completedAt: null, property: portalWhere(user) },
+          include: { property: { select: { id: true, name: true } } },
+          orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
+          take: 6
+        })
       ])
     : user.role === Role.BROKER
       ? await Promise.all([
@@ -34,7 +40,8 @@ export default async function DashboardPage() {
           [],
           totalPropertyValue(brokerIds || []),
           0,
-          totalMonthlyIncome(brokerIds || [])
+          totalMonthlyIncome(brokerIds || []),
+          []
         ])
       : await Promise.all([
           prisma.property.count({ where: { units: { some: { id: tenantUnit || "" } } } }),
@@ -44,7 +51,8 @@ export default async function DashboardPage() {
           [],
           0,
           0,
-          { cold: 0, warm: 0 }
+          { cold: 0, warm: 0 },
+          []
         ]);
   const owner = user.role === Role.BROKER ? await prisma.user.findFirst({ where: { role: Role.ADMIN, active: true, ...portalWhere(user) }, orderBy: { createdAt: "asc" } }) : null;
   const ownerMail = owner?.contactEmail || owner?.email || "admin@example.com";
@@ -80,6 +88,30 @@ export default async function DashboardPage() {
         {user.role !== Role.TENANT ? <Link href={`${propertyBaseHref}?auswertung=warmmiete`}><StatCard label="Warmmiete" value={money(income.warm)} detail={`${money(income.warm * 12)} / Jahr inkl. Nebenkosten`} icon="WM" tone="emerald" /></Link> : null}
       </div>
       {user.role === Role.ADMIN ? (
+        <>
+        <section className="mt-8 overflow-hidden rounded-lg border border-line bg-white shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-panel p-4">
+            <div>
+              <h2 className="text-xl font-bold">Offene To-dos</h2>
+              <p className="mt-1 text-sm text-muted">Unerledigte Aufgaben, die gerade Aufmerksamkeit brauchen.</p>
+            </div>
+            <Link className="button button-secondary px-3 py-2 text-sm" href="/todos">Alle To-dos</Link>
+          </div>
+          <div className="divide-y divide-line">
+            {openTodos.map((todo) => (
+              <Link className="grid gap-2 p-4 text-sm hover:bg-panel md:grid-cols-[minmax(0,1fr)_180px]" href={`/properties/${todo.propertyId}#todo-${todo.id}`} key={todo.id}>
+                <div>
+                  <div className="font-semibold text-accent">{todo.title}</div>
+                  <div className="mt-1 text-muted">{todo.property.name}</div>
+                </div>
+                <div className="text-muted md:text-right">
+                  {todo.dueDate ? `Fällig ${formatDate(todo.dueDate)}` : "Keine Fälligkeit"}
+                </div>
+              </Link>
+            ))}
+            {!openTodos.length ? <div className="p-4 text-sm text-muted">Keine offenen To-dos.</div> : null}
+          </div>
+        </section>
         <section className="mt-8 overflow-hidden rounded-lg border border-line bg-white shadow-sm">
           <div className="border-b border-line bg-panel p-4">
             <h2 className="text-xl font-bold">Letzte Aktivitäten</h2>
@@ -111,6 +143,7 @@ export default async function DashboardPage() {
             {!auditLogs.length ? <div className="p-4 text-sm text-muted">Noch keine Aktivitäten.</div> : null}
           </div>
         </section>
+        </>
       ) : user.role === Role.BROKER ? (
         <section className="mt-8 rounded-lg border border-line p-5">
           <h2 className="text-xl font-bold">Kontakt zum Eigentümer</h2>
@@ -165,6 +198,10 @@ async function totalMonthlyIncome(propertyIds?: string[], portalInstanceId?: str
 
 function money(value: number) {
   return new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(value);
+}
+
+function formatDate(value: Date) {
+  return new Intl.DateTimeFormat("de-DE").format(value);
 }
 
 function percent(numerator: number, denominator: number) {

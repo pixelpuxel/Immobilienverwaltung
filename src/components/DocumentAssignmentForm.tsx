@@ -25,12 +25,14 @@ export function DocumentAssignmentForm({
 }) {
   const router = useRouter();
   const [message, setMessage] = useState("");
+  const [selectedPropertyId, setSelectedPropertyId] = useState(propertyId);
+  const [selectedUnitId, setSelectedUnitId] = useState(unitId);
+  const filteredUnits = selectedPropertyId ? units.filter((unit) => unit.propertyId === selectedPropertyId) : units;
 
   async function save(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage("");
     const form = new FormData(event.currentTarget);
-    const selectedUnitId = String(form.get("unitId") || "");
     const selectedUnit = units.find((unit) => unit.id === selectedUnitId);
     const payload = {
       propertyId: selectedUnit?.propertyId || String(form.get("propertyId") || "") || null,
@@ -59,16 +61,19 @@ export function DocumentAssignmentForm({
         <div className="grid gap-2 md:grid-cols-3">
           <label className="grid gap-1 text-xs font-semibold text-muted">
             Immobilie
-            <select className="text-sm" name="propertyId" defaultValue={propertyId}>
+            <select className="text-sm" name="propertyId" value={selectedPropertyId} onChange={(event) => {
+              setSelectedPropertyId(event.currentTarget.value);
+              setSelectedUnitId("");
+            }}>
               <option value="">Keine</option>
               {properties.map((property) => <option key={property.id} value={property.id}>{property.label}</option>)}
             </select>
           </label>
           <label className="grid gap-1 text-xs font-semibold text-muted">
             Einheit
-            <select className="text-sm" name="unitId" defaultValue={unitId}>
+            <select className="text-sm" name="unitId" value={selectedUnitId} onChange={(event) => setSelectedUnitId(event.currentTarget.value)}>
               <option value="">Keine</option>
-              {units.map((unit) => <option key={unit.id} value={unit.id}>{unit.label}</option>)}
+              {filteredUnits.map((unit) => <option key={unit.id} value={unit.id}>{unit.label}</option>)}
             </select>
           </label>
           <label className="grid gap-1 text-xs font-semibold text-muted">

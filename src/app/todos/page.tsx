@@ -1,6 +1,7 @@
 import { Role } from "@prisma/client";
 import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
+import { GlobalTodoCreateForm } from "@/components/GlobalTodoCreateForm";
 import { requireUser } from "@/lib/auth";
 import { portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
@@ -25,7 +26,13 @@ export default async function TodosPage({ searchParams }: { searchParams?: { sho
     where: { property: portalWhere(user), completedAt: null },
     _count: { _all: true }
   });
+  const properties = await prisma.property.findMany({
+    where: portalWhere(user),
+    orderBy: { name: "asc" },
+    select: { id: true, name: true, address: true }
+  });
   const openCountByProperty = new Map(openCounts.map((item) => [item.propertyId, item._count._all]));
+  const baseQuery = showDone ? "show=done&" : "";
 
   return (
     <AppShell role={user.role} userId={user.id} email={user.email} canSwitchView={user.role === Role.ADMIN || Boolean(user.impersonatedByAdminId)}>
@@ -35,11 +42,14 @@ export default async function TodosPage({ searchParams }: { searchParams?: { sho
           <p className="mt-2 text-muted">Zentrale Aufgabenliste ueber alle Immobilien hinweg.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link className="button-secondary" href="/todos?sort=due">Nach Fälligkeit</Link>
-          <Link className="button-secondary" href="/todos?sort=property">Nach Immobilie</Link>
-          <Link className="button-secondary" href="/todos?sort=created">Nach Erstellung</Link>
-          <Link className="button-secondary" href={showDone ? "/todos" : "/todos?show=done"}>{showDone ? "Offene anzeigen" : "Erledigte anzeigen"}</Link>
+          <Link className={sortLinkClass(sort === "due")} href={`/todos?${baseQuery}sort=due`}>Fälligkeit</Link>
+          <Link className={sortLinkClass(sort === "property")} href={`/todos?${baseQuery}sort=property`}>Immobilie</Link>
+          <Link className={sortLinkClass(sort === "created")} href={`/todos?${baseQuery}sort=created`}>Erstellung</Link>
+          <Link className="button button-secondary px-3 py-2 text-sm" href={showDone ? "/todos" : `/todos?show=done&sort=${sort}`}>{showDone ? "Offene anzeigen" : "Erledigte anzeigen"}</Link>
         </div>
+      </div>
+      <div className="mt-6">
+        <GlobalTodoCreateForm properties={properties} />
       </div>
       <div className="mt-6 overflow-hidden rounded-lg border border-line bg-white">
         {todos.length ? todos.map((todo) => (
@@ -67,4 +77,10 @@ export default async function TodosPage({ searchParams }: { searchParams?: { sho
 
 function formatDate(value: Date) {
   return new Intl.DateTimeFormat("de-DE").format(value);
+}
+
+function sortLinkClass(active: boolean) {
+  return active
+    ? "button px-3 py-2 text-sm"
+    : "button button-secondary px-3 py-2 text-sm";
 }

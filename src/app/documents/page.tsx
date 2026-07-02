@@ -1,7 +1,8 @@
 import { DocumentScope, Prisma, Role } from "@prisma/client";
 import { AppShell } from "@/components/AppShell";
+import { DocumentExportManager } from "@/components/DocumentExportManager";
+import { DocumentUploadPanel } from "@/components/DocumentUploadPanel";
 import { LazyDocumentGroup } from "@/components/LazyDocumentGroup";
-import { UploadForm } from "@/components/UploadForm";
 import { requireUser } from "@/lib/auth";
 import { brokerPropertyIds, tenantUnitId } from "@/lib/permissions";
 import { portalWhere } from "@/lib/portal-instance";
@@ -11,13 +12,20 @@ export const dynamic = "force-dynamic";
 
 export default async function DocumentsPage({ searchParams }: { searchParams?: { propertyId?: string; unitId?: string; category?: string; documentId?: string; tenantId?: string } }) {
   const user = await requireUser();
-  const [properties, units, rawCategories] = await Promise.all([
+  const [properties, units, rawCategories, documentExports] = await Promise.all([
     prisma.property.findMany({ where: portalWhere(user), orderBy: { name: "asc" } }),
     prisma.unit.findMany({ where: { property: portalWhere(user) }, include: { property: true }, orderBy: [{ property: { name: "asc" } }, { unitNumber: "asc" }] }),
     prisma.documentCategory.findMany({
       where: { OR: [{ portalInstanceId: user.portalInstanceId }, { portalInstanceId: null }] },
       orderBy: [{ group: "asc" }, { name: "asc" }]
-    })
+    }),
+    user.role === Role.ADMIN
+      ? prisma.documentExport.findMany({
+          where: { portalInstanceId: user.portalInstanceId },
+          include: { items: { include: { document: { select: { id: true, title: true, filename: true } } } } },
+          orderBy: { createdAt: "desc" }
+        })
+      : Promise.resolve([])
   ]);
   const categories = dedupeCategories(rawCategories, user.portalInstanceId);
   const propertyOptions = properties.map((property) => ({ id: property.id, label: property.name }));
@@ -126,13 +134,23 @@ export default async function DocumentsPage({ searchParams }: { searchParams?: {
           {groupedDocuments.length ? null : <div className="rounded-lg border border-dashed border-line bg-white p-6 text-sm text-muted">Noch keine Dokumente vorhanden.</div>}
         </div>
         {user.role === Role.ADMIN ? (
-          <UploadForm endpoint="/api/documents">
-            <label>Titel<input name="title" /></label>
-            <label>Immobilie<select name="propertyId" defaultValue={defaultPropertyId}><option value="">Keine</option>{properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
-            <label>Einheit<select name="unitId" defaultValue={defaultUnitId}><option value="">Keine</option>{units.map((u) => <option key={u.id} value={u.id}>{u.property.name} / {u.unitNumber}</option>)}</select></label>
-            <label>Kategorie<select name="categoryId" defaultValue={defaultCategoryId}><option value="">Keine</option>{categoryOptions.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</select></label>
-            <label>Status<select name="status"><option value="AVAILABLE">vorhanden</option><option value="REQUESTED">angefragt</option><option value="SHARED">freigegeben</option><option value="MISSING">fehlt</option><option value="NOT_RELEVANT">nicht relevant</option></select></label>
-          </UploadForm>
+          <div className="grid content-start gap-5">
+            <DocumentExportManager initialExports={documentExports.map((item) => ({
+              id: item.id,
+              name: item.name,
+              description: item.description,
+              downloadedAt: item.downloadedAt?.toISOString() || null,
+              items: item.items.map((exportItem) => exportItem.document)
+            }))} />
+            <DocumentUploadPanel
+              categories={categoryOptions}
+              defaultCategoryId={defaultCategoryId}
+              defaultPropertyId={defaultPropertyId}
+              defaultUnitId={defaultUnitId}
+              properties={propertyOptions}
+              units={unitOptions}
+            />
+          </div>
         ) : null}
       </div>
     </AppShell>

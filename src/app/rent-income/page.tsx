@@ -81,9 +81,9 @@ export default async function RentIncomePage({ searchParams }: { searchParams?: 
           <h1 className="text-3xl font-bold">Mieteinnahmen</h1>
           <p className="mt-2 text-muted">Soll/Ist-Abgleich fuer laufend vermietete Einheiten.</p>
         </div>
-        <div className="flex gap-2">
-          <Link className="button-secondary" href={`/rent-income?year=${previous.year}&month=${previous.month}`}>Voriger Monat</Link>
-          <Link className="button-secondary" href={`/rent-income?year=${next.year}&month=${next.month}`}>Naechster Monat</Link>
+        <div className="flex flex-wrap gap-2">
+          <Link className="button button-secondary px-3 py-2 text-sm" href={`/rent-income?year=${previous.year}&month=${previous.month}`}>Voriger Monat</Link>
+          <Link className="button button-secondary px-3 py-2 text-sm" href={`/rent-income?year=${next.year}&month=${next.month}`}>Naechster Monat</Link>
         </div>
       </div>
       <div className="mt-6 rounded-lg border border-line bg-[linear-gradient(135deg,#f7fcf8,#eef4ff)] p-5">

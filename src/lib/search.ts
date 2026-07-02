@@ -9,6 +9,7 @@ export type SearchResult = {
   description: string;
   href: string;
   badge?: string;
+  documentId?: string;
 };
 
 export async function globalSearch(user: ScopedUser, query: string) {
@@ -57,7 +58,8 @@ export async function globalSearch(user: ScopedUser, query: string) {
         document.unit ? `${document.unit.property.name} / ${document.unit.unitNumber}` : document.property?.name
       ].filter(Boolean).join(" · "),
       href: document.storagePath ? `/api/documents/${document.id}/preview` : `/documents?documentId=${document.id}`,
-      badge: document.tags.slice(0, 3).join(", ") || document.status
+      badge: document.tags.slice(0, 3).join(", ") || document.status,
+      documentId: document.id
     })),
     ...tenants.map<SearchResult>((tenant) => ({
       type: "Mieter",

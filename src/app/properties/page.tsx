@@ -258,9 +258,17 @@ function SortableHeader({
   const href = `/properties?auswertung=${type}&sort=${sort}&richtung=${nextDirection}`;
   return (
     <th className={`px-4 py-3 ${align === "right" ? "text-right" : ""}`}>
-      <a className={`inline-flex items-center gap-1 rounded px-1 py-0.5 hover:bg-white hover:text-ink ${align === "right" ? "justify-end" : ""}`} href={href}>
+      <a
+        className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-bold uppercase ${align === "right" ? "justify-end" : ""}`}
+        href={href}
+        style={{
+          background: isActive ? "#17695f" : "#ffffff",
+          borderColor: isActive ? "#17695f" : "#cfd8d2",
+          color: isActive ? "#ffffff" : "#18201b"
+        }}
+      >
         <span>{label}</span>
-        <span aria-hidden="true" className={isActive ? "text-accent" : "text-muted/70"}>{indicator}</span>
+        <span aria-hidden="true">{indicator}</span>
       </a>
     </th>
   );

@@ -8,11 +8,13 @@ export function JsonForm({
   endpoint,
   children,
   submitLabel = "Speichern",
+  busyLabel = "Speichert...",
   transform
 }: {
   endpoint: string;
   children: React.ReactNode;
   submitLabel?: string;
+  busyLabel?: string;
   transform?: (data: Record<string, FormDataEntryValue>) => Record<string, unknown>;
 }) {
   const router = useRouter();
@@ -52,7 +54,7 @@ export function JsonForm({
     <form onSubmit={submit} className="grid gap-3 rounded-lg border border-line bg-panel p-4">
       {message ? <div className="rounded-md border border-line bg-white p-3 text-sm">{message}</div> : null}
       {children}
-      <button type="submit" disabled={busy}>{busy ? "Speichert..." : submitLabel}</button>
+      <button type="submit" disabled={busy}>{busy ? busyLabel : submitLabel}</button>
     </form>
   );
 }

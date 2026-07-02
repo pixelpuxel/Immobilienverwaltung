@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Role } from "@prisma/client";
 import { AppShell } from "@/components/AppShell";
+import { DocumentExportAddButton } from "@/components/DocumentExportManager";
 import { SearchAutocomplete } from "@/components/SearchAutocomplete";
 import { requireUser } from "@/lib/auth";
 import { semanticDocumentSearch } from "@/lib/ai-search";
@@ -58,10 +59,16 @@ export default async function SearchPage({
               </div>
               <div className="divide-y divide-line">
                 {semanticResults.map((result, index) => (
-                  <Link key={`semantic-${result.href}-${index}`} href={result.href} className="block p-4 transition hover:bg-panel">
-                    <div className="font-bold">{highlight(result.title, query)}</div>
-                    <div className="mt-1 text-sm text-muted">{result.description || "Semantischer Treffer im Dokumentindex."}</div>
-                  </Link>
+                  <div key={`semantic-${result.href}-${index}`} className="grid gap-3 p-4 transition hover:bg-panel sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                    <div>
+                      <Link href={result.href} className="font-bold hover:text-accent hover:underline">{highlight(result.title, query)}</Link>
+                      <div className="mt-1 text-sm text-muted">{result.description || "Semantischer Treffer im Dokumentindex."}</div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Link className="button button-secondary px-3 py-2 text-sm" href={result.href}>Öffnen</Link>
+                      {result.documentId ? <DocumentExportAddButton documentId={result.documentId} /> : null}
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
@@ -77,15 +84,19 @@ export default async function SearchPage({
               </div>
               <div className="divide-y divide-line">
                 {items.map((result, index) => (
-                  <Link key={`${result.type}-${result.href}-${result.title}-${index}`} href={result.href} className="block p-4 transition hover:bg-panel">
+                  <div key={`${result.type}-${result.href}-${result.title}-${index}`} className="grid gap-3 p-4 transition hover:bg-panel sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                       <div>
-                        <div className="font-bold">{highlight(result.title, query)}</div>
+                        <Link href={result.href} className="font-bold hover:text-accent hover:underline">{highlight(result.title, query)}</Link>
                         <div className="mt-1 text-sm text-muted">{result.description || "Kein weiterer Kontext hinterlegt."}</div>
                       </div>
                       {result.badge ? <span className="inline-flex w-fit rounded-full bg-white px-3 py-1 text-xs font-semibold text-muted ring-1 ring-line">{result.badge}</span> : null}
                     </div>
-                  </Link>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Link className="button button-secondary px-3 py-2 text-sm" href={result.href}>{result.type === "Dokument" ? "Öffnen" : "Ansehen"}</Link>
+                      {result.type === "Dokument" && result.documentId ? <DocumentExportAddButton documentId={result.documentId} /> : null}
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>

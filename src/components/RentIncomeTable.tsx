@@ -167,10 +167,20 @@ export function RentIncomeTable({ rows, year, month }: { rows: RentRow[]; year: 
 }
 
 function SortHeader({ id, active, onSort, align = "left", children }: { id: SortKey; active: { key: SortKey; direction: "asc" | "desc" }; onSort: (id: SortKey) => void; align?: "left" | "right"; children: ReactNode }) {
-  const suffix = active.key === id ? active.direction === "asc" ? " ↑" : " ↓" : "";
+  const isActive = active.key === id;
+  const suffix = isActive ? active.direction === "asc" ? " ↑" : " ↓" : "";
   return (
     <th className={`p-3 ${align === "right" ? "text-right" : ""}`}>
-      <button className="text-xs font-bold uppercase text-muted hover:text-foreground" type="button" onClick={() => onSort(id)}>
+      <button
+        className={`inline-flex min-h-0 w-auto items-center justify-start rounded-md border px-2 py-1 text-xs font-bold uppercase shadow-none ${align === "right" ? "ml-auto" : ""}`}
+        style={{
+          background: isActive ? "#17695f" : "#ffffff",
+          borderColor: isActive ? "#17695f" : "#cfd8d2",
+          color: isActive ? "#ffffff" : "#18201b"
+        }}
+        type="button"
+        onClick={() => onSort(id)}
+      >
         {children}{suffix}
       </button>
     </th>

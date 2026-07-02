@@ -4,9 +4,11 @@ import { Role } from "@prisma/client";
 import { AppShell } from "@/components/AppShell";
 import { DocumentThumbnail } from "@/components/DocumentThumbnail";
 import { EditableField } from "@/components/EditableField";
+import { JsonForm } from "@/components/JsonForm";
 import { PropertyImageGallery } from "@/components/PropertyImageGallery";
 import { PropertyImageUpload } from "@/components/PropertyImageUpload";
 import { PropertyTodoList } from "@/components/PropertyTodoList";
+import { TenantCreateForm } from "@/components/TenantCreateForm";
 import { TenancyCalendar } from "@/components/TenancyCalendar";
 import { UploadForm } from "@/components/UploadForm";
 import { requireUser } from "@/lib/auth";
@@ -93,23 +95,26 @@ export default async function PropertyDetailPage({ params }: { params: { id: str
 
       <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="grid gap-6">
-          <section id="bilder" className="scroll-mt-6 rounded-lg border border-line p-4 sm:p-5">
-            <div className="grid gap-3 sm:flex sm:items-start sm:justify-between">
+          <details id="bilder" className="scroll-mt-6 overflow-hidden rounded-lg border border-line">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 bg-panel px-4 py-3 [&::-webkit-details-marker]:hidden sm:px-5">
               <div>
                 <h2 className="text-xl font-bold">Bilder</h2>
-                <p className="mt-1 text-sm text-muted">Objektfotos werden als Galerie angezeigt. Das Hauptbild erscheint in den Uebersichten.</p>
+                <p className="mt-1 text-sm text-muted">Objektfotos und Galerie anzeigen</p>
               </div>
-              {canEdit ? <span className="rounded-full bg-panel px-3 py-1 text-xs font-semibold text-muted">{propertyImages.length} Bilder</span> : null}
-            </div>
-            <div className="mt-4">
-              <PropertyImageGallery images={propertyImages.map((image) => ({ id: image.id, title: image.title, summary: image.summary || "", isPrimaryImage: image.isPrimaryImage }))} canEdit={canEdit} />
-            </div>
-            {canEdit ? (
+              <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-muted">{propertyImages.length} Bilder</span>
+            </summary>
+            <div className="border-t border-line p-4 sm:p-5">
+              <p className="text-sm text-muted">Objektfotos werden als Galerie angezeigt. Das Hauptbild erscheint in den Uebersichten.</p>
               <div className="mt-4">
-                <PropertyImageUpload propertyId={property.id} hasPrimaryImage={propertyImages.some((image) => image.isPrimaryImage)} />
+                <PropertyImageGallery images={propertyImages.map((image) => ({ id: image.id, title: image.title, summary: image.summary || "", isPrimaryImage: image.isPrimaryImage }))} canEdit={canEdit} />
               </div>
-            ) : null}
-          </section>
+              {canEdit ? (
+                <div className="mt-4">
+                  <PropertyImageUpload propertyId={property.id} hasPrimaryImage={propertyImages.some((image) => image.isPrimaryImage)} />
+                </div>
+              ) : null}
+            </div>
+          </details>
 
           <section className="rounded-lg border border-line p-4 sm:p-5">
             <h2 className="text-xl font-bold">Objektdaten</h2>
@@ -174,6 +179,26 @@ export default async function PropertyDetailPage({ params }: { params: { id: str
 
           <section className="rounded-lg border border-line">
             <div className="border-b border-line p-4 font-bold">Einheiten</div>
+            {canEdit ? (
+              <details className="border-b border-line bg-panel">
+                <summary className="cursor-pointer list-none px-4 py-3 text-sm font-bold text-accent [&::-webkit-details-marker]:hidden">+ Einheit für diese Immobilie anlegen</summary>
+                <div className="border-t border-line p-4">
+                  <JsonForm endpoint="/api/units" submitLabel="Einheit anlegen">
+                    <input type="hidden" name="propertyId" value={property.id} />
+                    <label>Einheit / Nummer <span className="text-accent">*</span><input name="unitNumber" required placeholder="z. B. Ladengeschäft, EG links, Wohnung 2" /></label>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label>Etage<input name="floor" /></label>
+                      <label>Zimmer<input name="rooms" type="number" step="0.5" /></label>
+                      <label>Wohnflaeche<input name="livingArea" type="number" step="0.01" /></label>
+                      <label>Status<select name="status" defaultValue="frei"><option value="frei">frei</option><option value="vermietet">vermietet</option><option value="reserviert">reserviert</option></select></label>
+                      <label>Kaltmiete<input name="rentAmount" type="number" step="0.01" /></label>
+                      <label>Tiefgarage<input name="garageRent" type="number" step="0.01" /></label>
+                      <label>Nebenkosten<input name="serviceCharges" type="number" step="0.01" /></label>
+                    </div>
+                  </JsonForm>
+                </div>
+              </details>
+            ) : null}
             {property.units.length ? property.units.map((unit) => (
               <div id={`unit-${unit.id}`} key={unit.id} className="scroll-mt-24 grid gap-3 border-b border-line p-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
                 <EditableField canEdit={canEdit} endpoint={`/api/units/${unit.id}`} field="unitNumber" label="Einheit" value={unit.unitNumber} />
@@ -181,7 +206,7 @@ export default async function PropertyDetailPage({ params }: { params: { id: str
                 <EditableField canEdit={canEdit} endpoint={`/api/units/${unit.id}`} field="rooms" label="Zimmer" type="number" value={unit.rooms?.toString() || ""} />
                 <EditableField canEdit={canEdit} endpoint={`/api/units/${unit.id}`} field="livingArea" label="Wohnflaeche" type="number" suffix=" qm" value={unit.livingArea?.toString() || ""} />
                 <EditableField canEdit={canEdit} endpoint={`/api/units/${unit.id}`} field="rentAmount" label="Kaltmiete" type="number" suffix=" EUR" value={unit.rentAmount?.toString() || ""} />
-                <EditableField canEdit={canEdit} endpoint={`/api/units/${unit.id}`} field="garageRent" label="Tiefgarage" type="select" suffix=" EUR" value={unit.garageRent?.toString() || ""} options={["0", "50", "75", "80", "90", "100", "120", "150"]} />
+                <EditableField canEdit={canEdit} endpoint={`/api/units/${unit.id}`} field="garageRent" label="Tiefgarage" type="number" suffix=" EUR" value={unit.garageRent?.toString() || ""} />
                 <EditableField canEdit={canEdit} endpoint={`/api/units/${unit.id}`} field="serviceCharges" label="Nebenkosten" type="number" suffix=" EUR" value={unit.serviceCharges?.toString() || ""} />
                 <div className="rounded-md bg-panel p-3">
                   <div className="text-xs font-semibold uppercase text-muted">Warmmiete</div>
@@ -194,12 +219,30 @@ export default async function PropertyDetailPage({ params }: { params: { id: str
                   <div className="text-xs font-semibold uppercase text-muted">{unit.isSharedHousing ? "Aktuelle Mieter" : "Aktueller Mieter"}</div>
                   <div className="mt-1">{currentTenant(unit.tenants)}</div>
                 </div>
-                {canEdit ? <Link className="button-secondary flex items-center justify-center text-center" href={`/documents?unitId=${unit.id}&category=nebenkosten`}>Nebenkostenabrechnung hochladen</Link> : null}
+                {canEdit ? <Link className="button button-secondary flex min-h-11 items-center justify-center text-center" href={`/documents?unitId=${unit.id}&category=nebenkosten`}>Nebenkostenabrechnung hochladen</Link> : null}
+                {canEdit ? (
+                  <details className="rounded-md border border-line bg-panel sm:col-span-2 lg:col-span-3">
+                    <summary className="cursor-pointer list-none px-3 py-2 font-bold text-accent [&::-webkit-details-marker]:hidden">+ Mieter für diese Einheit anlegen</summary>
+                    <div className="border-t border-line p-3">
+                      <TenantCreateForm
+                        compact
+                        defaultUnitId={unit.id}
+                        units={[{
+                          id: unit.id,
+                          label: `${property.name} / ${unit.unitNumber}`,
+                          rentAmount: unit.rentAmount?.toString() || "",
+                          garageRent: unit.garageRent?.toString() || "",
+                          serviceCharges: unit.serviceCharges?.toString() || ""
+                        }]}
+                      />
+                    </div>
+                  </details>
+                ) : null}
               </div>
             )) : <div className="p-4 text-sm text-muted">Noch keine Einheiten angelegt.</div>}
           </section>
 
-          <TenancyCalendar units={property.units} />
+          <TenancyCalendar propertyId={property.id} propertyName={property.name} units={property.units} />
 
           <section className="rounded-lg border border-line">
             <div className="border-b border-line p-4 font-bold">Dokumente</div>
@@ -219,7 +262,7 @@ export default async function PropertyDetailPage({ params }: { params: { id: str
                       </div>
                       <div>{document.status}</div>
                       <div className="grid gap-2">
-                        <Link className="button-secondary block text-center" href={`/documents?documentId=${document.id}`}>In Dokumente bearbeiten</Link>
+                        <Link className="button button-secondary block text-center" href={`/documents?documentId=${document.id}`}>In Dokumente bearbeiten</Link>
                         {document.storagePath ? (
                           <a className="button block text-center" href={`/api/documents/${document.id}/download`}>Download</a>
                         ) : (
@@ -332,7 +375,7 @@ function currentTenant(tenants: Array<{ id: string; firstName: string; lastName:
         </Link>
       ))}
     </div>
-  ) : "-";
+  ) : <span className="text-muted">Kein laufender Mieter hinterlegt.</span>;
 }
 
 function groupDocumentsByCategory<T extends { category: { group: string; name: string } | null }>(documents: T[]) {

@@ -120,7 +120,8 @@ export async function semanticDocumentSearch(user: ScopedUser, query: string, li
       `Semantischer Treffer ${(item.score * 100).toFixed(0)} %`
     ].filter(Boolean).join(" · "),
     href: `/api/documents/${item.payload?.documentId}/preview`,
-    badge: "semantisch"
+    badge: "semantisch",
+    documentId: String(item.payload?.documentId || "")
   }));
 }
 

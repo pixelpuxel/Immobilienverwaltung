@@ -50,6 +50,7 @@ model PortalInstance {
   users       User[]
   properties  Property[]
   documents   Document[]
+  documentExports DocumentExport[]
   categories  DocumentCategory[]
   templates   ContractTemplate[]
   mailTemplates MailTemplate[]
@@ -84,6 +85,7 @@ model User {
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
   documents    Document[]      @relation("UploadedDocuments")
+  documentExports DocumentExport[]
   permissions  AccessPermission[]
   brokerLinks  BrokerRequest[]
   brokerValuations BrokerValuation[]
@@ -248,7 +250,36 @@ model Document {
   category        DocumentCategory? @relation(fields: [categoryId], references: [id])
   uploadedBy      User            @relation("UploadedDocuments", fields: [uploadedById], references: [id])
   permissions     AccessPermission[]
+  exportItems     DocumentExportItem[]
   portalInstance  PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
+}
+
+model DocumentExport {
+  id               String          @id @default(cuid())
+  portalInstanceId String?
+  name             String
+  description      String?         @db.Text
+  createdById      String
+  downloadedAt     DateTime?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  portalInstance   PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
+  createdBy        User            @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  items            DocumentExportItem[]
+
+  @@index([portalInstanceId, createdAt])
+}
+
+model DocumentExportItem {
+  id          String         @id @default(cuid())
+  exportId    String
+  documentId  String
+  addedAt     DateTime       @default(now())
+  export      DocumentExport @relation(fields: [exportId], references: [id], onDelete: Cascade)
+  document    Document       @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([exportId, documentId])
+  @@index([documentId])
 }
 
 model AccessPermission {

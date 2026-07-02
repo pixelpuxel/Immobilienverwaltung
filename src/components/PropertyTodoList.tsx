@@ -70,10 +70,12 @@ export function PropertyTodoList({ propertyId, initialTodos }: { propertyId: str
     <section className="rounded-lg border border-line bg-panel p-4">
       <h2 className="text-lg font-bold">To-do-Liste</h2>
       <p className="mt-1 text-sm text-muted">Offene Aufgaben zu dieser Immobilie abhaken oder erledigte Punkte nachvollziehen.</p>
-      <form className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_10rem_auto]" onSubmit={createTodo}>
-        <input name="title" placeholder="Neue Aufgabe" />
-        <input aria-label="Fälligkeit" name="dueDate" type="date" />
-        <button className="px-4 py-2 text-sm" type="submit">Hinzufuegen</button>
+      <form className="mt-3 grid gap-2" onSubmit={createTodo}>
+        <textarea className="min-h-28 resize-y" name="title" placeholder="Neue Aufgabe" />
+        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+          <input aria-label="Fälligkeit" name="dueDate" type="date" />
+          <button className="px-4 py-2 text-sm" type="submit">Hinzufuegen</button>
+        </div>
       </form>
       {message ? <div className="mt-3 rounded-md border border-line bg-white p-2 text-sm text-muted">{message}</div> : null}
       <TodoSection items={openTodos} empty="Keine offenen Aufgaben." onToggle={toggleTodo} onDelete={deleteTodo} />

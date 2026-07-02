@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: "Nicht erlaubt." }, { status: 403 });
   const body = schema.safeParse(await request.json());
   if (!body.success) return NextResponse.json({ error: "Ungueltige Daten." }, { status: 400 });
-  return NextResponse.json(await prisma.documentCategory.create({ data: body.data }), { status: 201 });
+  return NextResponse.json(await prisma.documentCategory.create({ data: { ...body.data, portalInstanceId: user.portalInstanceId } }), { status: 201 });
 }
 
 export async function PATCH(request: NextRequest) {

@@ -45,8 +45,8 @@ export function UserAccessEditor({
       ? { propertyIds: form.getAll("propertyIds").map(String) }
       : {
           unitId: String(form.get("unitId") || "") || null,
-          moveInDate: String(form.get("moveInDate") || "") || null,
-          moveOutDate: String(form.get("moveOutDate") || "") || null,
+          moveInDate: normalizeDateValue(String(form.get("moveInDate") || "")) || null,
+          moveOutDate: normalizeDateValue(String(form.get("moveOutDate") || "")) || null,
           isCurrent: form.get("isCurrent") === "on"
         };
 
@@ -84,12 +84,16 @@ export function UserAccessEditor({
           </label>
           <label className="grid gap-1 text-xs font-semibold text-muted">
             Einzug
-            <input className="text-sm" name="moveInDate" type="date" defaultValue={moveInDate || ""} />
+            <input className="text-sm" name="moveInDate" type="date" defaultValue={moveInDate || ""} onBlur={(event) => {
+              event.currentTarget.value = normalizeDateValue(event.currentTarget.value);
+            }} />
           </label>
           <label className="grid gap-1 text-xs font-semibold text-muted">
             Auszug
             <span className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-              <input className="text-sm" name="moveOutDate" type="date" value={moveOutValue} onChange={(event) => setMoveOutValue(event.currentTarget.value)} />
+              <input className="text-sm" name="moveOutDate" type="date" value={moveOutValue} onBlur={(event) => {
+                setMoveOutValue(normalizeDateValue(event.currentTarget.value));
+              }} onChange={(event) => setMoveOutValue(event.currentTarget.value)} />
               <button className="button-secondary px-3 py-2 text-sm" onClick={() => setMoveOutValue("")} type="button">Datum loeschen</button>
             </span>
           </label>
@@ -103,4 +107,27 @@ export function UserAccessEditor({
       <button className="px-3 py-2 text-sm" type="submit">Änderungen übernehmen</button>
     </form>
   );
+}
+
+function normalizeDateValue(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const iso = trimmed.match(/^(\d{1,4})-(\d{1,2})-(\d{1,2})$/);
+  if (iso) {
+    const year = normalizeYear(iso[1]);
+    return `${year}-${iso[2].padStart(2, "0")}-${iso[3].padStart(2, "0")}`;
+  }
+  const german = trimmed.match(/^(\d{1,2})\.(\d{1,2})\.(\d{1,4})$/);
+  if (german) {
+    const year = normalizeYear(german[3]);
+    return `${year}-${german[2].padStart(2, "0")}-${german[1].padStart(2, "0")}`;
+  }
+  return trimmed;
+}
+
+function normalizeYear(value: string) {
+  const year = Number(value);
+  if (!Number.isFinite(year)) return value.padStart(4, "0");
+  if (year >= 100) return String(year).padStart(4, "0");
+  return String(2000 + year).padStart(4, "0");
 }

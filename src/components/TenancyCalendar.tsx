@@ -31,7 +31,7 @@ const colors = [
 
 const monthNames = ["Jan", "Feb", "Maerz", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
 
-export function TenancyCalendar({ units }: { units: CalendarUnit[] }) {
+export function TenancyCalendar({ propertyId, propertyName, units }: { propertyId: string; propertyName: string; units: CalendarUnit[] }) {
   const currentYear = new Date().getFullYear();
   const years = useMemo(() => {
     const available = new Set<number>([currentYear]);
@@ -39,6 +39,7 @@ export function TenancyCalendar({ units }: { units: CalendarUnit[] }) {
     return Array.from(available).sort((a, b) => b - a);
   }, [currentYear, units]);
   const [selectedYear, setSelectedYear] = useState(currentYear);
+  const [printMode, setPrintMode] = useState<"bw" | "color">("bw");
   const currentIndex = years.indexOf(selectedYear);
   const newerYear = currentIndex > 0 ? years[currentIndex - 1] : null;
   const olderYear = currentIndex >= 0 && currentIndex < years.length - 1 ? years[currentIndex + 1] : null;
@@ -49,12 +50,33 @@ export function TenancyCalendar({ units }: { units: CalendarUnit[] }) {
           <h2 className="text-xl font-bold">Mietverlauf</h2>
           <p className="text-sm text-muted">Jahreskalender pro Einheit. Farbige Tage sind belegt, helle Felder sind frei.</p>
         </div>
-        <label className="grid gap-1 text-xs font-semibold text-muted">
-          Jahr
-          <select className="min-w-28 bg-white text-sm" value={selectedYear} onChange={(event) => setSelectedYear(Number(event.target.value))}>
-            {years.map((year) => <option key={year} value={year}>{year}</option>)}
-          </select>
-        </label>
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="grid gap-1 text-xs font-semibold text-muted">
+            Jahr
+            <select className="min-w-28 bg-white text-sm" value={selectedYear} onChange={(event) => setSelectedYear(Number(event.target.value))}>
+              {years.map((year) => <option key={year} value={year}>{year}</option>)}
+            </select>
+          </label>
+          <label className="grid gap-1 text-xs font-semibold text-muted">
+            Druck
+            <select className="min-w-36 bg-white text-sm" value={printMode} onChange={(event) => setPrintMode(event.target.value === "color" ? "color" : "bw")}>
+              <option value="bw">Schwarz/Weiß</option>
+              <option value="color">Farbe</option>
+            </select>
+          </label>
+          <a
+            className="button button-secondary inline-flex min-h-10 items-center gap-2 px-3 py-2 text-sm"
+            href={`/api/properties/${propertyId}/tenancy-calendar?year=${selectedYear}&mode=${printMode}`}
+            title={`Mietverlauf ${propertyName} ${selectedYear} als PDF drucken`}
+          >
+            <svg aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24">
+              <path d="M6 9V2h12v7" />
+              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+              <path d="M6 14h12v8H6z" />
+            </svg>
+            Drucken
+          </a>
+        </div>
       </div>
       <div className="mt-4 grid gap-4">
         {units.map((unit) => {

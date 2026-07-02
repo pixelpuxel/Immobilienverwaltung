@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { DeleteDocumentButton } from "@/components/DeleteDocumentButton";
 import { DocumentAssignmentForm } from "@/components/DocumentAssignmentForm";
+import { DocumentExportAddButton } from "@/components/DocumentExportManager";
 import { DocumentRenameForm } from "@/components/DocumentRenameForm";
 import { DocumentThumbnail } from "@/components/DocumentThumbnail";
 
@@ -320,6 +321,7 @@ function DocumentFolderItem({
                 ) : (
                   <span className="rounded-md border border-line bg-white px-3 py-2 text-sm text-muted">Keine Datei</span>
                 )}
+                {isAdmin ? <DocumentExportAddButton documentId={doc.id} /> : null}
                 {isAdmin ? <DeleteDocumentButton documentId={doc.id} /> : null}
               </div>
             </div>

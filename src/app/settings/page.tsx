@@ -194,7 +194,7 @@ export default async function SettingsPage() {
             <OwnerProfileForm userId={user.id} profile={ownerProfile} />
           </SettingsFold>
           <SettingsFold title="Neue Dokumentenkategorie" description="Weitere Dokumentart für Berechtigungen und Uploads anlegen.">
-            <JsonForm endpoint="/api/document-categories" submitLabel="Kategorie anlegen">
+            <JsonForm endpoint="/api/document-categories" submitLabel="Kategorie anlegen" busyLabel="Kategorie wird angelegt...">
               <label>Gruppe<input name="group" required /></label>
               <label>Name<input name="name" required /></label>
               <label>Beschreibung<textarea name="description" /></label>
