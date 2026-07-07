@@ -46,6 +46,7 @@ export function serializeUnit(unit: Unit) {
 export function serializeDocument(document: Document & {
   property?: { id: string; name: string } | null;
   unit?: { id: string; unitNumber: string; property?: { id: string; name: string } | null } | null;
+  tenantProfile?: { id: string; firstName: string | null; lastName: string | null; email: string | null; userId: string | null } | null;
   category?: DocumentCategory | null;
 }) {
   return {
@@ -62,6 +63,13 @@ export function serializeDocument(document: Document & {
     categoryId: document.categoryId,
     property: document.property,
     unit: document.unit,
+    tenantProfile: document.tenantProfile ? {
+      id: document.tenantProfile.id,
+      firstName: document.tenantProfile.firstName,
+      lastName: document.tenantProfile.lastName,
+      email: document.tenantProfile.email,
+      userId: document.tenantProfile.userId
+    } : null,
     category: document.category ? { id: document.category.id, group: document.category.group, name: document.category.name } : null,
     summary: document.summary,
     tags: document.tags,
