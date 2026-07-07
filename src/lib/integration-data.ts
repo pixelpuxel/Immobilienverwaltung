@@ -19,7 +19,15 @@ export function serializeProperty(property: Property & { units?: Unit[]; documen
     expectedPurchasePrice: property.expectedPurchasePrice?.toString() ?? null,
     outstandingLoan: property.outstandingLoan?.toString() ?? null,
     units: property.units?.map(serializeUnit),
-    documents: property.documents?.map((document) => ({ id: document.id, title: document.title, filename: document.filename }))
+    documents: property.documents?.map((document) => ({
+      id: document.id,
+      title: document.title,
+      filename: document.filename,
+      mimeType: document.mimeType,
+      isPropertyImage: document.isPropertyImage,
+      isPrimaryImage: document.isPrimaryImage,
+      previewUrl: `/api/integrations/v1/documents/${document.id}/preview`
+    }))
   };
 }
 
@@ -57,6 +65,8 @@ export function serializeDocument(document: Document & {
     category: document.category ? { id: document.category.id, group: document.category.group, name: document.category.name } : null,
     summary: document.summary,
     tags: document.tags,
+    isPropertyImage: document.isPropertyImage,
+    isPrimaryImage: document.isPrimaryImage,
     createdAt: document.createdAt,
     updatedAt: document.updatedAt,
     previewUrl: `/api/integrations/v1/documents/${document.id}/preview`,

@@ -4,7 +4,7 @@ import { z } from "zod";
 import { auditLog } from "@/lib/audit";
 import { assertSameOrigin, clientIp, requireApiUser } from "@/lib/auth";
 import { contractPublicLinks } from "@/lib/contract-downloads";
-import { generateContract, selectContractTemplate } from "@/lib/contracts";
+import { ensureContractDocument, generateContract, selectContractTemplate } from "@/lib/contracts";
 import { portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
   const unit = await prisma.unit.findFirst({ where: { id: body.data.unitId, property: portalWhere(user) }, include: { property: true } });
   const tenantProfile = await prisma.tenantProfile.findFirst({ where: { id: body.data.tenantProfileId, user: portalWhere(user) } });
   if (!unit || !tenantProfile) return NextResponse.json({ error: "Auswahl gehoert nicht zu dieser Instanz." }, { status: 403 });
-  const template = await selectContractTemplate({ portalInstanceId: user.portalInstanceId, propertyId: unit.propertyId, unitId: unit.id, templateId: body.data.templateId });
+  const template = await selectContractTemplate({ portalInstanceId: user.portalInstanceId, propertyId: unit.propertyId, templateId: body.data.templateId });
   if (body.data.templateId && !template) return NextResponse.json({ error: "Vorlage gehoert nicht zu dieser Immobilie oder Instanz." }, { status: 403 });
   const generated = await generateContract({ ...body.data, templateId: template?.id || null });
   const contract = await prisma.leaseContract.create({
@@ -45,6 +45,7 @@ export async function POST(request: NextRequest) {
       pdfPath: generated.pdfPath
     }
   });
+  await ensureContractDocument({ contractId: contract.id, actorUserId: user.id });
   await auditLog({ userId: user.id, action: AuditAction.CONTRACT_GENERATED, entity: "LeaseContract", entityId: contract.id, ipAddress: clientIp(request) });
   return NextResponse.json({
     ...contract,

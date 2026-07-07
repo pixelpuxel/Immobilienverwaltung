@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { auditLog } from "@/lib/audit";
 import { clientIp } from "@/lib/auth";
-import { generateContract, selectContractTemplate } from "@/lib/contracts";
+import { ensureContractDocument, generateContract } from "@/lib/contracts";
 import { integrationError, requireAdminIntegration, requireIntegrationUser } from "@/lib/integration-auth";
 import { brokerPropertyIds } from "@/lib/permissions";
 import { portalWhere } from "@/lib/portal-instance";
@@ -61,22 +61,23 @@ export async function POST(request: NextRequest) {
   const tenantProfile = await prisma.tenantProfile.findFirst({
     where: { id: body.data.tenantProfileId, user: portalWhere(user) }
   });
-  const template = unit ? await selectContractTemplate({ portalInstanceId: user.portalInstanceId, propertyId: unit.propertyId, unitId: unit.id, templateId: body.data.templateId }) : null;
+  const template = body.data.templateId ? await prisma.contractTemplate.findFirst({ where: { id: body.data.templateId, ...portalWhere(user) } }) : null;
   if (!unit || !tenantProfile || (body.data.templateId && !template)) {
     return integrationError("FORBIDDEN", "Mieter, Einheit oder Vorlage gehoert nicht zu dieser Instanz.", 403);
   }
 
-  const generated = await generateContract({ ...body.data, templateId: template?.id || null });
+  const generated = await generateContract(body.data);
   const contract = await prisma.leaseContract.create({
     data: {
       tenantProfileId: body.data.tenantProfileId,
       unitId: body.data.unitId,
-      templateId: template?.id || null,
+      templateId: body.data.templateId,
       docxPath: generated.docxPath,
       pdfPath: generated.pdfPath
     },
     include: { tenantProfile: true, unit: { include: { property: { select: { id: true, name: true } } } }, template: { select: { id: true, name: true } } }
   });
+  const document = await ensureContractDocument({ contractId: contract.id, actorUserId: user.id });
   await auditLog({ userId: user.id, action: AuditAction.CONTRACT_GENERATED, entity: "LeaseContract", entityId: contract.id, ipAddress: clientIp(request) });
   return NextResponse.json({
     id: contract.id,
@@ -88,7 +89,8 @@ export async function POST(request: NextRequest) {
     createdAt: contract.createdAt,
     previewUrl: `/api/contracts/${contract.id}/preview`,
     docxDownloadUrl: `/api/contracts/${contract.id}/download?format=docx`,
-    pdfDownloadUrl: `/api/contracts/${contract.id}/download?format=pdf`
+    pdfDownloadUrl: `/api/contracts/${contract.id}/download?format=pdf`,
+    documentId: document.id
   }, { status: 201 });
 }
 

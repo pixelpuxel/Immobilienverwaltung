@@ -66,6 +66,17 @@ export async function POST(request: NextRequest) {
   if (!(await assertPropertyInPortal(propertyId, user)) || !(await assertUnitInPortal(unitId, user))) {
     return NextResponse.json({ error: { code: "FORBIDDEN", message: "Zuordnung gehoert nicht zu dieser Instanz." } }, { status: 403 });
   }
+  const isPropertyImage = String(form.get("isPropertyImage") || "") === "true";
+  const isPrimaryImage = String(form.get("isPrimaryImage") || "") === "true";
+  if (isPropertyImage && (!savedImageMimeType(file).startsWith("image/") || !propertyId)) {
+    return NextResponse.json({ error: { code: "BAD_REQUEST", message: "Immobilienbilder brauchen eine Immobilie und einen Bilddateityp." } }, { status: 400 });
+  }
+  if (isPropertyImage && isPrimaryImage && propertyId) {
+    await prisma.document.updateMany({
+      where: { portalInstanceId: user.portalInstanceId, propertyId, isPropertyImage: true },
+      data: { isPrimaryImage: false }
+    });
+  }
   const saved = await saveUpload(file);
   const tags = String(form.get("tags") || "").split(",").map((tag) => tag.trim()).filter(Boolean);
   const document = await prisma.document.create({
@@ -76,7 +87,7 @@ export async function POST(request: NextRequest) {
       mimeType: saved.mimeType,
       size: saved.size,
       storagePath: saved.storagePath,
-      status: (String(form.get("status") || "AVAILABLE") as DocumentStatus),
+      status: String(form.get("status") || "AVAILABLE") as DocumentStatus,
       scope: tenantProfileId ? DocumentScope.TENANT : (String(form.get("scope") || "PROPERTY") as DocumentScope),
       propertyId,
       unitId,
@@ -84,6 +95,8 @@ export async function POST(request: NextRequest) {
       categoryId: String(form.get("categoryId") || "") || null,
       summary: String(form.get("summary") || "") || null,
       tags,
+      isPropertyImage,
+      isPrimaryImage,
       uploadedById: user.id
     },
     include: integrationDocumentInclude()
@@ -94,4 +107,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(serializeDocument(enriched), { status: 201 });
   }
   return NextResponse.json(serializeDocument(document), { status: 201 });
+}
+
+function savedImageMimeType(file: File) {
+  return file.type || "application/octet-stream";
 }

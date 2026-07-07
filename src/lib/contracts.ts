@@ -2,6 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { DocumentScope, DocumentStatus } from "@prisma/client";
 import Docxtemplater from "docxtemplater";
 import PizZip from "pizzip";
 import { env } from "./env";
@@ -53,14 +54,9 @@ export const contractPlaceholders = [
 export async function generateContract(input: { tenantProfileId: string; unitId: string; templateId?: string | null }) {
   const tenant = await prisma.tenantProfile.findUniqueOrThrow({ where: { id: input.tenantProfileId } });
   const unit = await prisma.unit.findUniqueOrThrow({ where: { id: input.unitId }, include: { property: true } });
-  const explicitTemplate = input.templateId
+  const template = input.templateId
     ? await prisma.contractTemplate.findUnique({ where: { id: input.templateId } })
     : null;
-  const template = explicitTemplate || await selectContractTemplate({
-    portalInstanceId: unit.property.portalInstanceId,
-    propertyId: unit.propertyId,
-    unitId: unit.id
-  });
   const owner = await prisma.user.findFirst({ where: { role: "ADMIN", active: true, portalInstanceId: unit.property.portalInstanceId }, orderBy: { createdAt: "asc" } });
 
   await fs.mkdir(env.contractsPath, { recursive: true });
@@ -98,18 +94,80 @@ export async function generateContract(input: { tenantProfileId: string; unitId:
   return checked;
 }
 
+export async function ensureContractDocument(input: { contractId: string; actorUserId: string }) {
+  const contract = await prisma.leaseContract.findUniqueOrThrow({
+    where: { id: input.contractId },
+    include: {
+      tenantProfile: true,
+      unit: { include: { property: true } },
+      template: true
+    }
+  });
+  const filePath = contract.pdfPath || contract.docxPath;
+  const existing = await prisma.document.findFirst({
+    where: {
+      tenantProfileId: contract.tenantProfileId,
+      OR: [
+        { storagePath: contract.pdfPath || "" },
+        { storagePath: contract.docxPath }
+      ]
+    } as any
+  });
+  if (existing) return existing;
+
+  const category = await prisma.documentCategory.upsert({
+    where: {
+      portalInstanceId_name: {
+        portalInstanceId: contract.unit.property.portalInstanceId || "",
+        name: "Mietverträge"
+      }
+    },
+    update: { group: "Vermietung", visibleToTenant: true, visibleToBroker: true },
+    create: {
+      portalInstanceId: contract.unit.property.portalInstanceId,
+      group: "Vermietung",
+      name: "Mietverträge",
+      visibleToTenant: true,
+      visibleToBroker: true
+    }
+  });
+  const stat = await fs.stat(filePath);
+  const isPdf = filePath.toLowerCase().endsWith(".pdf");
+  const title = `Mietvertrag ${contract.tenantProfile.firstName} ${contract.tenantProfile.lastName}`.trim();
+  return prisma.document.create({
+    data: {
+      portalInstanceId: contract.unit.property.portalInstanceId,
+      title,
+      filename: path.basename(filePath),
+      mimeType: isPdf ? "application/pdf" : "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      size: stat.size,
+      storagePath: filePath,
+      status: DocumentStatus.AVAILABLE,
+      scope: DocumentScope.CONTRACT,
+      propertyId: contract.unit.propertyId,
+      unitId: contract.unitId,
+      tenantProfileId: contract.tenantProfileId,
+      categoryId: category.id,
+      uploadedById: input.actorUserId,
+      summary: `${title} fuer ${contract.unit.property.name} / Einheit ${contract.unit.unitNumber}.`,
+      tags: ["Mietvertrag", "Vertrag", contract.tenantProfile.lastName, contract.unit.property.name].filter(Boolean),
+      documentYear: contract.createdAt.getFullYear()
+    } as any
+  });
+}
+
 export async function contractTemplateCandidates(input: { portalInstanceId: string | null; propertyId: string; unitId?: string | null }) {
   return prisma.contractTemplate.findMany({
     where: {
       portalInstanceId: input.portalInstanceId,
       OR: [
-        ...(input.unitId ? [{ unitId: input.unitId }] : []),
-        { unitId: null, propertyId: input.propertyId },
-        { isGlobalTemplate: true, unitId: null, propertyId: null }
+        { propertyId: input.propertyId },
+        { isGlobalTemplate: true, propertyId: null }
       ]
     },
-    include: { property: { select: { id: true, name: true } }, unit: { select: { id: true, unitNumber: true, property: { select: { id: true, name: true } } } } },
+    include: { property: { select: { id: true, name: true } } },
     orderBy: [
+      { propertyId: "desc" },
       { createdAt: "desc" }
     ]
   });
@@ -122,33 +180,16 @@ export async function selectContractTemplate(input: { portalInstanceId: string |
         id: input.templateId,
         portalInstanceId: input.portalInstanceId,
         OR: [
-          ...(input.unitId ? [{ unitId: input.unitId }] : []),
-          { unitId: null, propertyId: input.propertyId },
-          { isGlobalTemplate: true, unitId: null, propertyId: null },
-          { unitId: null, propertyId: null }
+          { propertyId: input.propertyId },
+          { isGlobalTemplate: true },
+          { propertyId: null }
         ]
       },
-      include: { property: { select: { id: true, name: true } }, unit: { select: { id: true, unitNumber: true, property: { select: { id: true, name: true } } } } }
+      include: { property: { select: { id: true, name: true } } }
     });
-  }
-  if (input.unitId) {
-    const unitDefault = await prisma.unit.findFirst({
-      where: {
-        id: input.unitId,
-        propertyId: input.propertyId,
-        property: { portalInstanceId: input.portalInstanceId }
-      },
-      select: {
-        defaultContractTemplate: {
-          include: { property: { select: { id: true, name: true } }, unit: { select: { id: true, unitNumber: true, property: { select: { id: true, name: true } } } } }
-        }
-      }
-    });
-    if (unitDefault?.defaultContractTemplate) return unitDefault.defaultContractTemplate;
   }
   const candidates = await contractTemplateCandidates(input);
-  return (input.unitId ? candidates.find((template) => template.unitId === input.unitId) : null)
-    || candidates.find((template) => !template.unitId && template.propertyId === input.propertyId)
+  return candidates.find((template) => template.propertyId === input.propertyId)
     || candidates.find((template) => template.isGlobalTemplate)
     || null;
 }
