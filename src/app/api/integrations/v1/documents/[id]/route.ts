@@ -13,6 +13,7 @@ const documentUpdateSchema = z.object({
   scope: z.nativeEnum(DocumentScope).optional(),
   summary: z.string().nullable().optional(),
   tags: z.array(z.string()).optional(),
+  categoryId: z.string().nullable().optional(),
   isPropertyImage: z.boolean().optional(),
   isPrimaryImage: z.boolean().optional()
 });
@@ -59,6 +60,7 @@ function normalizeEmptyStrings(data: z.infer<typeof documentUpdateSchema>) {
   return {
     ...data,
     summary: data.summary === "" ? null : data.summary,
+    categoryId: data.categoryId === "" ? null : data.categoryId,
     tags: data.tags?.map((tag) => tag.trim()).filter(Boolean)
   };
 }
