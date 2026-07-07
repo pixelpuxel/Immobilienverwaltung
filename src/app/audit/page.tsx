@@ -5,12 +5,16 @@ import { activityHref, activityLabelMap, activityTitle } from "@/lib/activity-di
 import { requireUser } from "@/lib/auth";
 import { portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
+import { formatPortalDateTime, getPortalTimeZone } from "@/lib/time-zone";
 
 export const dynamic = "force-dynamic";
 
 export default async function AuditPage() {
   const user = await requireUser([Role.ADMIN]);
-  const logs = await prisma.auditLog.findMany({ where: portalWhere(user), include: { user: true }, orderBy: { createdAt: "desc" }, take: 300 });
+  const [logs, timeZone] = await Promise.all([
+    prisma.auditLog.findMany({ where: portalWhere(user), include: { user: true }, orderBy: { createdAt: "desc" }, take: 300 }),
+    getPortalTimeZone(user.portalInstanceId)
+  ]);
   const labels = await activityLabelMap(logs);
   return (
     <AppShell role={user.role} userId={user.id} email={user.email} canSwitchView={user.role === Role.ADMIN || Boolean(user.impersonatedByAdminId)}>
@@ -23,7 +27,7 @@ export default async function AuditPage() {
           <div className="grid gap-2 border-b border-line p-4 text-sm md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_180px]" key={log.id}>
             <div className="font-semibold">{href ? <Link className="text-accent hover:underline" href={href}>{title}</Link> : title}</div>
             <div className="text-muted">{log.user?.email || "System"} · {log.ipAddress || "ohne IP"}</div>
-            <div>{new Intl.DateTimeFormat("de-DE", { dateStyle: "short", timeStyle: "short" }).format(log.createdAt)}</div>
+            <div>{formatPortalDateTime(log.createdAt, timeZone)}</div>
           </div>
         );})}
       </div>

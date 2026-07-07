@@ -4,26 +4,34 @@ import { useState } from "react";
 import { UploadForm } from "@/components/UploadForm";
 
 type Option = { id: string; label: string; propertyId?: string };
+type TenantOption = { id: string; label: string; detail: string; unitId?: string };
 
 export function DocumentUploadPanel({
   properties,
   units,
+  tenants,
   categories,
   defaultPropertyId = "",
   defaultUnitId = "",
+  defaultTenantId = "",
   defaultCategoryId = ""
 }: {
   properties: Option[];
   units: Option[];
+  tenants?: TenantOption[];
   categories: Option[];
   defaultPropertyId?: string;
   defaultUnitId?: string;
+  defaultTenantId?: string;
   defaultCategoryId?: string;
 }) {
   const initialUnit = units.find((unit) => unit.id === defaultUnitId);
+  const initialTenant = tenants?.find((tenant) => tenant.id === defaultTenantId);
   const [propertyId, setPropertyId] = useState(defaultPropertyId || initialUnit?.propertyId || "");
-  const [unitId, setUnitId] = useState(defaultUnitId);
+  const [unitId, setUnitId] = useState(defaultUnitId || initialTenant?.unitId || "");
+  const [tenantId, setTenantId] = useState(defaultTenantId);
   const filteredUnits = propertyId ? units.filter((unit) => unit.propertyId === propertyId) : units;
+  const filteredTenants = unitId ? (tenants || []).filter((tenant) => tenant.unitId === unitId) : tenants || [];
 
   return (
     <UploadForm endpoint="/api/documents">
@@ -48,6 +56,22 @@ export function DocumentUploadPanel({
         }}>
           <option value="">Keine</option>
           {filteredUnits.map((unit) => <option key={unit.id} value={unit.id}>{unit.label}</option>)}
+        </select>
+      </label>
+      <label>
+        Mieterbezug
+        <select name="tenantProfileId" value={tenantId} onChange={(event) => {
+          const nextTenantId = event.currentTarget.value;
+          setTenantId(nextTenantId);
+          const tenant = tenants?.find((item) => item.id === nextTenantId);
+          if (tenant?.unitId) {
+            setUnitId(tenant.unitId);
+            const unit = units.find((item) => item.id === tenant.unitId);
+            if (unit?.propertyId) setPropertyId(unit.propertyId);
+          }
+        }}>
+          <option value="">Kein persönlicher Mieterbezug</option>
+          {filteredTenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.label} · {tenant.detail}</option>)}
         </select>
       </label>
       <label>Kategorie<select name="categoryId" defaultValue={defaultCategoryId}><option value="">Keine</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.label}</option>)}</select></label>

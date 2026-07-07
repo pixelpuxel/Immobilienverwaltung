@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { roleLabel } from "@/lib/display";
 
-type RoleName = "ADMIN" | "BROKER" | "TENANT";
+type RoleName = "ADMIN" | "BROKER" | "TENANT" | "TAX_ADVISOR";
 type SwitchUser = {
   id: string;
   email: string;
@@ -133,5 +133,6 @@ function RoleBadge({ role, compact = false }: { role: RoleName; compact?: boolea
 const roleConfig: Record<RoleName, { label: string; icon: string; tone: string }> = {
   ADMIN: { label: "Eigentümer", icon: "🏠", tone: "from-emerald-500 to-teal-700" },
   BROKER: { label: "Makler", icon: "💼", tone: "from-sky-500 to-blue-700" },
-  TENANT: { label: "Mieter", icon: "🔑", tone: "from-amber-400 to-orange-600" }
+  TENANT: { label: "Mieter", icon: "🔑", tone: "from-amber-400 to-orange-600" },
+  TAX_ADVISOR: { label: "Steuerberater", icon: "📊", tone: "from-violet-500 to-fuchsia-700" }
 };

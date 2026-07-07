@@ -22,7 +22,8 @@ export function entityLabel(entity?: string | null) {
     TenantProfile: "Mieter",
     Property: "Immobilie",
     Unit: "Einheit",
-    AccessPermission: "Dokumentrecht"
+    AccessPermission: "Dokumentrecht",
+    PublicShareFile: "geschützte Freigabe"
   };
   return entity ? labels[entity] || entity : "System";
 }
@@ -44,6 +45,7 @@ export function activityHref(entity?: string | null, entityId?: string | null) {
   if (entity === "Document" && entityId) return `/documents?documentId=${entityId}`;
   if (entity === "Document") return "/documents";
   if (entity === "LeaseContract") return "/contracts";
+  if (entity === "PublicShareFile") return "/shares";
   if (entity === "TenantProfile" || entity === "User" || entity === "AccessPermission") return "/users";
   if (entity === "Unit") return "/properties";
   return null;
@@ -53,7 +55,7 @@ export async function activityLabelMap(logs: Array<{ entity: string | null; enti
   const map = new Map<string, string>();
   const ids = (entity: string) => Array.from(new Set(logs.filter((log) => log.entity === entity && log.entityId).map((log) => log.entityId as string)));
 
-  const [properties, documents, contracts, tenants, users, units] = await Promise.all([
+  const [properties, documents, contracts, tenants, users, units, publicShareFiles] = await Promise.all([
     prisma.property.findMany({ where: { id: { in: ids("Property") } }, select: { id: true, name: true, address: true } }),
     prisma.document.findMany({ where: { id: { in: ids("Document") } }, select: { id: true, title: true, filename: true } }),
     prisma.leaseContract.findMany({
@@ -67,7 +69,8 @@ export async function activityLabelMap(logs: Array<{ entity: string | null; enti
     }),
     prisma.tenantProfile.findMany({ where: { id: { in: ids("TenantProfile") } }, select: { id: true, firstName: true, lastName: true } }),
     prisma.user.findMany({ where: { id: { in: ids("User") } }, select: { id: true, name: true, username: true, email: true } }),
-    prisma.unit.findMany({ where: { id: { in: ids("Unit") } }, select: { id: true, unitNumber: true, property: { select: { name: true } } } })
+    prisma.unit.findMany({ where: { id: { in: ids("Unit") } }, select: { id: true, unitNumber: true, property: { select: { name: true } } } }),
+    prisma.publicShareFile.findMany({ where: { id: { in: ids("PublicShareFile") } }, select: { id: true, filename: true, share: { select: { name: true } } } })
   ]);
 
   properties.forEach((property) => map.set(`Property:${property.id}`, property.name || property.address));
@@ -80,5 +83,6 @@ export async function activityLabelMap(logs: Array<{ entity: string | null; enti
   tenants.forEach((tenant) => map.set(`TenantProfile:${tenant.id}`, `${tenant.firstName} ${tenant.lastName}`.trim() || "Mieter"));
   users.forEach((mappedUser) => map.set(`User:${mappedUser.id}`, mappedUser.name || mappedUser.username || mappedUser.email));
   units.forEach((unit) => map.set(`Unit:${unit.id}`, `${unit.property.name} / ${unit.unitNumber}`));
+  publicShareFiles.forEach((file) => map.set(`PublicShareFile:${file.id}`, `${file.filename} (${file.share.name})`));
   return map;
 }

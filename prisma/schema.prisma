@@ -11,6 +11,7 @@ enum Role {
   ADMIN
   BROKER
   TENANT
+  TAX_ADVISOR
 }
 
 enum DocumentStatus {
@@ -45,12 +46,14 @@ model PortalInstance {
   id          String             @id @default(cuid())
   name        String
   slug        String             @unique
+  timeZone    String             @default("Europe/Berlin")
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
   users       User[]
   properties  Property[]
   documents   Document[]
   documentExports DocumentExport[]
+  publicShares PublicShare[]
   categories  DocumentCategory[]
   templates   ContractTemplate[]
   mailTemplates MailTemplate[]
@@ -86,6 +89,7 @@ model User {
   updatedAt    DateTime        @updatedAt
   documents    Document[]      @relation("UploadedDocuments")
   documentExports DocumentExport[]
+  publicShares PublicShare[]
   permissions  AccessPermission[]
   brokerLinks  BrokerRequest[]
   brokerValuations BrokerValuation[]
@@ -167,6 +171,7 @@ model PropertyTodo {
 model Unit {
   id          String          @id @default(cuid())
   propertyId  String
+  defaultContractTemplateId String?
   unitNumber  String
   floor       String?
   rooms       Decimal?        @db.Decimal(6, 2)
@@ -180,9 +185,11 @@ model Unit {
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
   property    Property        @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  defaultContractTemplate ContractTemplate? @relation("UnitDefaultContractTemplate", fields: [defaultContractTemplateId], references: [id], onDelete: SetNull)
   documents   Document[]
   tenants     TenantProfile[]
   contracts   LeaseContract[]
+  templates   ContractTemplate[] @relation("TemplateAssignedUnit")
   rentPayments RentPayment[]
 }
 
@@ -237,16 +244,19 @@ model Document {
   scope           DocumentScope   @default(PROPERTY)
   propertyId      String?
   unitId          String?
+  tenantProfileId String?
   categoryId      String?
   uploadedById    String
   isPropertyImage Boolean         @default(false)
   isPrimaryImage  Boolean         @default(false)
   summary         String?
   tags            String[]        @default([])
+  documentYear    Int?
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
   property        Property?       @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   unit            Unit?           @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  tenantProfile   TenantProfile?  @relation(fields: [tenantProfileId], references: [id], onDelete: SetNull)
   category        DocumentCategory? @relation(fields: [categoryId], references: [id])
   uploadedBy      User            @relation("UploadedDocuments", fields: [uploadedById], references: [id])
   permissions     AccessPermission[]
@@ -280,6 +290,41 @@ model DocumentExportItem {
 
   @@unique([exportId, documentId])
   @@index([documentId])
+}
+
+model PublicShare {
+  id               String            @id @default(cuid())
+  portalInstanceId String?
+  slug             String            @unique
+  name             String
+  description      String?           @db.Text
+  createdById      String
+  expiresAt        DateTime?
+  revokedAt        DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  portalInstance   PortalInstance?   @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
+  createdBy        User              @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  files            PublicShareFile[]
+
+  @@index([portalInstanceId, createdAt])
+  @@index([expiresAt])
+}
+
+model PublicShareFile {
+  id          String      @id @default(cuid())
+  shareId     String
+  sourceDocumentId String?
+  filename    String
+  mimeType    String
+  size        Int
+  storagePath String
+  downloadCount Int       @default(0)
+  lastDownloadedAt DateTime?
+  createdAt   DateTime    @default(now())
+  share       PublicShare @relation(fields: [shareId], references: [id], onDelete: Cascade)
+
+  @@index([shareId])
 }
 
 model AccessPermission {
@@ -362,6 +407,7 @@ model TenantProfile {
   user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   unit                  Unit?     @relation(fields: [unitId], references: [id], onDelete: SetNull)
   contracts             LeaseContract[]
+  documents             Document[]
   rentPayments          RentPayment[]
 }
 
@@ -369,6 +415,7 @@ model ContractTemplate {
   id          String          @id @default(cuid())
   portalInstanceId String?
   propertyId  String?
+  unitId      String?
   isGlobalTemplate Boolean    @default(true)
   name        String
   filename    String
@@ -378,6 +425,8 @@ model ContractTemplate {
   createdAt   DateTime        @default(now())
   contracts   LeaseContract[]
   property    Property?        @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  unit        Unit?            @relation("TemplateAssignedUnit", fields: [unitId], references: [id], onDelete: SetNull)
+  defaultForUnits Unit[]       @relation("UnitDefaultContractTemplate")
   portalInstance PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
 }
 

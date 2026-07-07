@@ -349,6 +349,8 @@ Query-Parameter:
 ```text
 propertyId=<PROPERTY_ID>
 unitId=<UNIT_ID>
+tenantId=<TENANT_PROFILE_ID>
+tenantProfileId=<TENANT_PROFILE_ID>
 categoryId=<CATEGORY_ID>
 q=Suchbegriff
 limit=50
@@ -371,6 +373,7 @@ Antwort:
       "scope": "PROPERTY",
       "propertyId": "cm...",
       "unitId": null,
+      "tenantProfileId": null,
       "category": {
         "group": "Allgemein",
         "name": "Grundbuchauszug"
@@ -384,6 +387,53 @@ Antwort:
   "nextCursor": null
 }
 ```
+
+`tenantId` und `tenantProfileId` sind Synonyme. Der Filter liefert nur Dokumente, die dem Mieter direkt per `tenantProfileId` zugeordnet sind oder dem Benutzer dieses Mieters explizit freigegeben wurden.
+
+### Dokumente eines Mieters listen
+
+Scope: `read:documents`
+
+```http
+GET /api/integrations/v1/tenants/:tenantId/documents
+```
+
+Query-Parameter:
+
+```text
+categoryId=<CATEGORY_ID optional>
+q=Suchbegriff optional
+limit=50
+updatedSince=2026-06-01T00:00:00.000Z
+```
+
+Antwort:
+
+```json
+{
+  "tenant": {
+    "id": "cm...",
+    "firstName": "Max",
+    "lastName": "Mustermann",
+    "email": "max@example.com",
+    "userId": "cm...",
+    "unitId": "cm..."
+  },
+  "items": [
+    {
+      "id": "cm...",
+      "title": "Mietvertrag Max Mustermann",
+      "filename": "mietvertrag.pdf",
+      "tenantProfileId": "cm...",
+      "previewUrl": "/api/integrations/v1/documents/cm.../preview",
+      "downloadUrl": "/api/integrations/v1/documents/cm.../download"
+    }
+  ],
+  "nextCursor": null
+}
+```
+
+Dieser Endpunkt ist fuer "Dokumente dieses Mieters" gedacht. Er zieht bewusst keine allgemeinen Dokumente der Einheit mit, damit Dokumente frueherer oder anderer Mieter nicht versehentlich erscheinen.
 
 ### Dokument hochladen
 
@@ -401,12 +451,15 @@ file=@grundbuch.pdf
 title=Grundbuchauszug
 propertyId=<PROPERTY_ID>
 unitId=<UNIT_ID optional>
+tenantProfileId=<TENANT_PROFILE_ID optional>
 categoryId=<CATEGORY_ID optional>
 status=AVAILABLE
 scope=PROPERTY
 summary=Beispiele Beschreibung
 tags=Grundbuch,Verkauf,Musterstraße
 ```
+
+Wenn `tenantProfileId` gesetzt ist, wird das Dokument als persoenliches Mieterdokument gespeichert (`scope=TENANT`) und Einheit/Immobilie werden aus dem Mieterprofil uebernommen.
 
 ### Dokument-Vorschau
 
@@ -473,7 +526,12 @@ Body:
 }
 ```
 
-`templateId` ist optional. Ohne Vorlage erzeugt das Portal den internen Standardvertrag.
+`templateId` ist optional. Ohne explizite Vorlage waehlt das Portal automatisch die passendste Vorlage:
+
+1. Vorlage der Einheit (`unitId`)
+2. Vorlage der Immobilie
+3. allgemeine Vorlage
+4. interner Standardvertrag
 
 ### Vertragsvorlagen listen
 
@@ -482,6 +540,15 @@ Scope: `read:contracts`
 ```http
 GET /api/integrations/v1/templates
 ```
+
+Optionale Filter:
+
+```text
+propertyId=<PROPERTY_ID>
+unitId=<UNIT_ID>
+```
+
+Die Antwort enthaelt `propertyId`, `unitId`, `isGlobalTemplate`, `property`, `unit` und `defaultForUnits`, damit n8n/Telegram eindeutig erkennen kann, welche Vorlage zu welcher Einheit gehoert.
 
 ### Suche
 
@@ -624,6 +691,7 @@ POST /api/integrations/v1/documents
 GET  /api/integrations/v1/documents/:id/preview
 GET  /api/integrations/v1/documents/:id/download
 GET  /api/integrations/v1/tenants
+GET  /api/integrations/v1/tenants/:id/documents
 PATCH /api/integrations/v1/tenants/:id
 GET  /api/integrations/v1/contracts
 POST /api/integrations/v1/contracts

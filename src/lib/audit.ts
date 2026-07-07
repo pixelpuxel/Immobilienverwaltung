@@ -3,6 +3,7 @@ import { prisma } from "./prisma";
 
 export async function auditLog(input: {
   userId?: string | null;
+  portalInstanceId?: string | null;
   action: AuditAction;
   entity?: string;
   entityId?: string;
@@ -14,7 +15,7 @@ export async function auditLog(input: {
       userId: input.userId || null,
       portalInstanceId: input.userId
         ? (await prisma.user.findUnique({ where: { id: input.userId }, select: { portalInstanceId: true } }))?.portalInstanceId ?? null
-        : null,
+        : input.portalInstanceId || null,
       action: input.action,
       entity: input.entity,
       entityId: input.entityId,

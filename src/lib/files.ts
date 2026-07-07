@@ -13,7 +13,9 @@ export const allowedExtensions = new Set([
   ".jpeg",
   ".png",
   ".webp",
-  ".txt"
+  ".txt",
+  ".csv",
+  ".zip"
 ]);
 
 export function safeFilename(name: string) {
@@ -40,6 +42,14 @@ export async function saveUpload(file: File, folder = env.uploadPath) {
   return { storagePath, filename: file.name, mimeType: file.type || "application/octet-stream", size: file.size };
 }
 
+export async function savePrivateBuffer(filename: string, data: Buffer, mimeType = "application/octet-stream", folder = env.uploadPath) {
+  await fs.mkdir(folder, { recursive: true });
+  const storageName = `${Date.now()}-${crypto.randomUUID()}-${safeFilename(filename)}`;
+  const storagePath = path.join(folder, storageName);
+  await fs.writeFile(storagePath, data, { flag: "wx" });
+  return { storagePath, filename, mimeType, size: data.length };
+}
+
 export async function readPrivateFile(storagePath: string) {
   const resolved = path.resolve(storagePath);
   const roots = [path.resolve(env.uploadPath), path.resolve(env.contractsPath)];
@@ -47,4 +57,17 @@ export async function readPrivateFile(storagePath: string) {
     throw new Error("Ungueltiger Dateipfad.");
   }
   return fs.readFile(resolved);
+}
+
+export async function deletePrivateFile(storagePath: string) {
+  const resolved = path.resolve(storagePath);
+  const roots = [path.resolve(env.uploadPath), path.resolve(env.contractsPath)];
+  if (!roots.some((root) => resolved === root || resolved.startsWith(`${root}${path.sep}`))) {
+    throw new Error("Ungueltiger Dateipfad.");
+  }
+  try {
+    await fs.unlink(resolved);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
 }

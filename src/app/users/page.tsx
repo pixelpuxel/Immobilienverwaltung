@@ -8,6 +8,7 @@ import { DeleteUserButton } from "@/components/DeleteUserButton";
 import { DocumentThumbnail } from "@/components/DocumentThumbnail";
 import { JsonForm } from "@/components/JsonForm";
 import { ScrollToQueryTarget } from "@/components/ScrollToQueryTarget";
+import { TaxAdvisorCreateForm } from "@/components/TaxAdvisorCreateForm";
 import { TenantCreateForm } from "@/components/TenantCreateForm";
 import { TenantDepositEditor } from "@/components/TenantDepositEditor";
 import { ToggleDetails } from "@/components/ToggleDetails";
@@ -56,6 +57,7 @@ export default async function UsersPage() {
   }));
   const ownerUsers = users.filter((item) => item.role === Role.ADMIN);
   const brokerUsers = users.filter((item) => item.role === Role.BROKER);
+  const taxAdvisorUsers = users.filter((item) => item.role === Role.TAX_ADVISOR);
   const tenantUsers = users.filter((item) => item.role === Role.TENANT);
   const tenantsByUnit = Array.from(tenantUsers.reduce((map, item) => {
     const label = item.tenantProfile?.unit ? `${item.tenantProfile.unit.property.name} / ${item.tenantProfile.unit.unitNumber}` : "Ohne zugeordnete Einheit";
@@ -78,7 +80,7 @@ export default async function UsersPage() {
           {!item.email.endsWith("@portal.local") ? <span className="rounded-full bg-panel px-2 py-1 text-muted">{item.email}</span> : null}
         </div>
         <div className="mt-2 flex flex-wrap gap-2 text-xs">
-          <span className="rounded-full bg-panel px-2 py-1">{item.role === Role.ADMIN ? "Eigentümer" : item.role === Role.BROKER ? "Makler" : "Mieter"}</span>
+          <span className="rounded-full bg-panel px-2 py-1">{item.role === Role.ADMIN ? "Eigentümer" : item.role === Role.BROKER ? "Makler" : item.role === Role.TAX_ADVISOR ? "Steuerberater" : "Mieter"}</span>
           <span className="rounded-full bg-panel px-2 py-1">{item.active ? "aktiv" : "gesperrt"}</span>
         </div>
         <div className="mt-3 text-muted">
@@ -90,6 +92,8 @@ export default async function UsersPage() {
               ? item.tenantProfile?.unit
                 ? `Einheit: ${item.tenantProfile.unit.property.name} / ${item.tenantProfile.unit.unitNumber} · ${item.tenantProfile.isCurrent ? "laufend" : "beendet"} · Einzug ${formatDate(item.tenantProfile.moveInDate)}`
                 : "Keine Einheit zugeordnet"
+              : item.role === Role.TAX_ADVISOR
+                ? "Zugriff nur auf einzeln freigegebene Dokumente"
               : "Eigentümer mit Vollzugriff"}
         </div>
         {item.role === Role.TENANT && item.tenantProfile ? (
@@ -177,6 +181,7 @@ export default async function UsersPage() {
         <div className="grid gap-4 self-start">
           <UserRoleGroup count={ownerUsers.length} title="Eigentümer" open>{ownerUsers.map(renderUserCard)}</UserRoleGroup>
           <UserRoleGroup count={brokerUsers.length} title="Makler">{brokerUsers.map(renderUserCard)}</UserRoleGroup>
+          <UserRoleGroup count={taxAdvisorUsers.length} title="Steuerberater">{taxAdvisorUsers.map(renderUserCard)}</UserRoleGroup>
           <UserRoleGroup count={tenantUsers.length} title="Mieter" open>
             <div className="grid gap-3 p-3">
               {tenantsByUnit.map((group) => (
@@ -213,6 +218,7 @@ export default async function UsersPage() {
             <label>Passwort<input name="password" type="text" defaultValue="BitteSofortAendern123!" required /></label>
           </JsonForm>
           <BrokerInviteForm properties={propertyOptions} />
+          <TaxAdvisorCreateForm />
           <TenantCreateForm units={tenantUnitOptions} />
         </div>
       </div>

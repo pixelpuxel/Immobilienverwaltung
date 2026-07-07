@@ -22,7 +22,7 @@ export default async function ContractsPage({ searchParams }: { searchParams?: {
     prisma.leaseContract.findMany({ where: { unit: { property: portalWhere(user) } }, include: { tenantProfile: true, unit: { include: { property: true } }, template: true }, orderBy: { createdAt: "desc" } }),
     prisma.tenantProfile.findMany({ where: { user: portalWhere(user) }, orderBy: { lastName: "asc" } }),
     prisma.unit.findMany({ where: { property: portalWhere(user) }, include: { property: true }, orderBy: { unitNumber: "asc" } }),
-    prisma.contractTemplate.findMany({ where: portalWhere(user), include: { property: { select: { id: true, name: true } } }, orderBy: { createdAt: "desc" } }),
+    prisma.contractTemplate.findMany({ where: portalWhere(user), include: { property: { select: { id: true, name: true } }, unit: { select: { id: true, unitNumber: true, property: { select: { id: true, name: true } } } }, defaultForUnits: { select: { id: true, unitNumber: true, property: { select: { id: true, name: true } } } } }, orderBy: { createdAt: "desc" } }),
     prisma.property.findMany({ where: portalWhere(user), orderBy: { name: "asc" }, select: { id: true, name: true } })
   ]);
   const visibleContracts = user.role === Role.TENANT ? contracts.filter((contract) => contract.tenantProfile.userId === user.id) : contracts;
@@ -30,6 +30,7 @@ export default async function ContractsPage({ searchParams }: { searchParams?: {
   const tenantOptions = tenants.map((tenant) => ({ id: tenant.id, label: `${tenant.firstName} ${tenant.lastName}` }));
   const filteredUnits = selectedPropertyId ? units.filter((unit) => unit.propertyId === selectedPropertyId) : units;
   const unitOptions = filteredUnits.map((unit) => ({ id: unit.id, label: `${unit.property.name} / ${unit.unitNumber}` }));
+  const allUnitOptions = units.map((unit) => ({ id: unit.id, propertyId: unit.propertyId, label: `${unit.property.name} / ${unit.unitNumber}` }));
   const tenantUnitOptions = filteredUnits.map((unit) => ({
     id: unit.id,
     label: `${unit.property.name} / ${unit.unitNumber}`,
@@ -37,7 +38,7 @@ export default async function ContractsPage({ searchParams }: { searchParams?: {
     garageRent: unit.garageRent?.toString() || "",
     serviceCharges: unit.serviceCharges?.toString() || ""
   }));
-  const templateOptions = templates.map((template) => ({ id: template.id, label: `${template.name}${template.property ? ` (${template.property.name})` : template.isGlobalTemplate ? " (allgemein)" : ""}` }));
+  const templateOptions = templates.map((template) => ({ id: template.id, label: `${template.name}${template.unit ? ` (${template.unit.property.name} / ${template.unit.unitNumber})` : template.property ? ` (${template.property.name})` : template.isGlobalTemplate ? " (allgemein)" : ""}` }));
   const propertyOptions = properties.map((property) => ({ id: property.id, label: property.name }));
   return (
     <AppShell role={user.role} userId={user.id} email={user.email} canSwitchView={user.role === Role.ADMIN || Boolean(user.impersonatedByAdminId)}>
@@ -75,7 +76,7 @@ export default async function ContractsPage({ searchParams }: { searchParams?: {
                     <a className="h-20 w-24 overflow-hidden rounded-md border border-line bg-white" href={`/api/templates/${template.id}/preview`} target="_blank" rel="noreferrer">
                       <img src={`/api/templates/${template.id}/thumbnail`} alt={`Vorschau ${template.name}`} className="h-full w-full object-cover" loading="lazy" />
                     </a>
-                    <TemplateManager template={template} properties={propertyOptions} />
+                    <TemplateManager template={template} properties={propertyOptions} units={allUnitOptions} />
                   </div>
                 ))}
                 {!templates.length ? <div className="text-sm text-muted">Noch keine Vorlagen hochgeladen.</div> : null}
@@ -127,9 +128,12 @@ export default async function ContractsPage({ searchParams }: { searchParams?: {
         </ContractTabs>
         {user.role === Role.ADMIN ? (
           <aside className="grid content-start gap-6 self-start">
-            <UploadForm endpoint="/api/templates" submitLabel="Vorlage hochladen">
+            <UploadForm endpoint="/api/templates" submitLabel="Vorlage hochladen" multiple={false}>
               <label>Name<input name="name" /></label>
               <label>Immobilie<select name="propertyId"><option value="">Keine bestimmte Immobilie</option>{propertyOptions.map((property) => <option key={property.id} value={property.id}>{property.label}</option>)}</select></label>
+              <label>Einheit<select name="unitId"><option value="">Keine bestimmte Einheit</option>{allUnitOptions.map((unit) => <option key={unit.id} value={unit.id}>{unit.label}</option>)}</select></label>
+              <label>Standardvorlage fuer Einheiten<select name="defaultUnitIds" multiple className="min-h-28">{allUnitOptions.map((unit) => <option key={unit.id} value={unit.id}>{unit.label}</option>)}</select></label>
+              <p className="text-xs text-muted">Einheiten mit dieser Standardvorlage nutzen sie beim Vertrag automatisch zuerst.</p>
               <label className="flex items-center gap-2 text-sm font-semibold"><input name="isGlobalTemplate" type="checkbox" defaultChecked /> Allgemeine Vorlage</label>
             </UploadForm>
             <ContractGenerateForm tenants={tenantOptions} units={unitOptions} templates={templateOptions} defaultUnitId={unitOptions[0]?.id || ""} />

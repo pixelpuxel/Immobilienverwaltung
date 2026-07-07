@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { reloadCurrentView } from "@/lib/client-refresh";
 
-export function UploadForm({ endpoint, children, submitLabel = "Hochladen" }: { endpoint: string; children: React.ReactNode; submitLabel?: string }) {
+export function UploadForm({ endpoint, children, submitLabel = "Hochladen", multiple = true }: { endpoint: string; children: React.ReactNode; submitLabel?: string; multiple?: boolean }) {
   const router = useRouter();
   const [message, setMessage] = useState("");
 
@@ -17,8 +17,9 @@ export function UploadForm({ endpoint, children, submitLabel = "Hochladen" }: { 
       setMessage(body.error || "Upload fehlgeschlagen.");
       return;
     }
+    const body = await response.json().catch(() => null);
     form.reset();
-    setMessage("Hochgeladen.");
+    setMessage(body?.count ? `${body.count} Dateien hochgeladen.` : "Hochgeladen.");
     reloadCurrentView(router);
   }
 
@@ -27,8 +28,9 @@ export function UploadForm({ endpoint, children, submitLabel = "Hochladen" }: { 
       {message ? <div className="rounded-md border border-line bg-white p-3 text-sm">{message}</div> : null}
       {children}
       <label className="grid min-h-28 place-items-center rounded-md border border-dashed border-line bg-white p-4 text-center text-sm font-semibold">
-        Datei hier auswaehlen oder hineinziehen
-        <input className="mt-3" name="file" type="file" required />
+        {multiple ? "Datei(en) hier auswaehlen oder hineinziehen" : "Datei hier auswaehlen oder hineinziehen"}
+        {multiple ? <span className="mt-1 text-xs font-normal text-muted">Mehrere Dateien erhalten dieselben Metadaten.</span> : null}
+        <input className="mt-3" name="file" type="file" required multiple={multiple} />
       </label>
       <button type="submit">{submitLabel}</button>
     </form>

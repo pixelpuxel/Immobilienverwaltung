@@ -27,7 +27,8 @@ export async function POST(request: NextRequest) {
   const permission = await prisma.accessPermission.upsert({
     where: { userId_documentId: { userId: body.data.userId, documentId: body.data.documentId } },
     update: { canView: body.data.canView, canDownload: body.data.canDownload },
-    create: body.data
+    create: body.data,
+    include: { user: { select: { id: true, email: true, username: true, name: true, role: true } } }
   });
   await auditLog({ userId: user.id, action: AuditAction.PERMISSION_CHANGED, entity: "AccessPermission", entityId: permission.id, ipAddress: clientIp(request), detail: body.data });
   return NextResponse.json(permission);

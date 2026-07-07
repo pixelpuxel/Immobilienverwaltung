@@ -16,6 +16,7 @@ import { OwnerProfileForm } from "@/components/OwnerProfileForm";
 import { PortalInstanceManager } from "@/components/PortalInstanceManager";
 import { TelegramBotSettings } from "@/components/TelegramBotSettings";
 import { TenantMailBroadcast } from "@/components/TenantMailBroadcast";
+import { TimeZoneSettings } from "@/components/TimeZoneSettings";
 import { requireUser } from "@/lib/auth";
 import { env } from "@/lib/env";
 import { DEFAULT_AGENT_SYSTEM_PROMPT, ensureAgentConfig } from "@/lib/agent";
@@ -23,6 +24,7 @@ import { readAgentRegressionTests } from "@/lib/agent-regression-tests";
 import { agentToolCatalogForUi } from "@/lib/agent-tools";
 import { ensureMailTemplates, mailTemplatePreviewContext, renderMailTemplate } from "@/lib/mail-templates";
 import { prisma } from "@/lib/prisma";
+import { DEFAULT_TIME_ZONE } from "@/lib/time-zone";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +32,7 @@ export default async function SettingsPage() {
   const user = await requireUser([Role.ADMIN]);
   await ensureMailTemplates(user.portalInstanceId);
   const agentTools = agentToolCatalogForUi(user.role);
-  const [rawCategories, ownerProfile, apiTokens, mailTemplates, tenantMailRecipients, telegramConfig, aiConfig, agentConfig, agentRegressionTests] = await Promise.all([
+  const [rawCategories, ownerProfile, apiTokens, mailTemplates, tenantMailRecipients, telegramConfig, aiConfig, agentConfig, agentRegressionTests, portalSettings] = await Promise.all([
     prisma.documentCategory.findMany({
       where: { OR: [{ portalInstanceId: user.portalInstanceId }, { portalInstanceId: null }] },
       orderBy: [{ group: "asc" }, { name: "asc" }]
@@ -74,7 +76,8 @@ export default async function SettingsPage() {
       select: { provider: true, embeddingModel: true, transcriptionModel: true, apiKeyEncrypted: true }
     }),
     ensureAgentConfig(user.portalInstanceId ?? null),
-    readAgentRegressionTests()
+    readAgentRegressionTests(),
+    user.portalInstanceId ? prisma.portalInstance.findUnique({ where: { id: user.portalInstanceId }, select: { timeZone: true } }) : null
   ]);
   const categories = dedupeCategories(rawCategories, user.portalInstanceId);
   return (
@@ -126,6 +129,9 @@ export default async function SettingsPage() {
               smtpFrom={env.smtpFrom}
               defaultTo={ownerProfile.contactEmail || ownerProfile.email}
             />
+          </SettingsFold>
+          <SettingsFold title="Zeitzone" description="Zeitstempel im Protokoll und Dashboard anzeigen." open>
+            <TimeZoneSettings initialTimeZone={portalSettings?.timeZone || DEFAULT_TIME_ZONE} />
           </SettingsFold>
           <SettingsFold title="Mail-Rundschreiben" description="Vorlage auswaehlen und an selektierte oder alle Mieter senden.">
             <TenantMailBroadcast

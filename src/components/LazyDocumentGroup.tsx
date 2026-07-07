@@ -4,10 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import { DeleteDocumentButton } from "@/components/DeleteDocumentButton";
 import { DocumentAssignmentForm } from "@/components/DocumentAssignmentForm";
 import { DocumentExportAddButton } from "@/components/DocumentExportManager";
+import { DocumentPermissionEditor, type DocumentPermissionView, type ShareUserOption } from "@/components/DocumentPermissionEditor";
 import { DocumentRenameForm } from "@/components/DocumentRenameForm";
 import { DocumentThumbnail } from "@/components/DocumentThumbnail";
+import { DocumentYearForm } from "@/components/DocumentYearForm";
 
 type Option = { id: string; label: string; propertyId?: string };
+type TenantOption = { id: string; label: string; detail: string; unitId?: string };
 
 type LazyDocument = {
   id: string;
@@ -20,10 +23,14 @@ type LazyDocument = {
   tags: string[];
   propertyId: string | null;
   unitId: string | null;
+  tenantProfileId: string | null;
   categoryId: string | null;
+  canDownload?: boolean;
+  documentYear?: number | null;
   property?: { id: string; name: string } | null;
   unit?: { id: string; unitNumber: string; property?: { id: string; name: string } | null } | null;
   category?: { id: string; group: string; name: string } | null;
+  permissions?: DocumentPermissionView[];
 };
 
 type DocumentFolder = {
@@ -41,14 +48,18 @@ export function LazyDocumentGroup({
   isAdmin,
   properties,
   units,
+  tenants,
   categories,
+  shareUsers,
   targetDocumentId = ""
 }: {
   group: { id: string; label: string; count: number; preview: string };
   isAdmin: boolean;
   properties: Option[];
   units: Option[];
+  tenants?: TenantOption[];
   categories: Option[];
+  shareUsers?: ShareUserOption[];
   targetDocumentId?: string;
 }) {
   const [folders, setFolders] = useState<DocumentFolder[]>([]);
@@ -107,7 +118,7 @@ export function LazyDocumentGroup({
       <div className="grid gap-3 bg-white p-3">
         {loading && !folders.length ? <div className="rounded-md border border-dashed border-line p-4 text-sm text-muted">Ordner werden geladen ...</div> : null}
         {error ? <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">{error}</div> : null}
-        <CategoryFolderList categories={categories} folders={folders} groupId={group.id} isAdmin={isAdmin} properties={properties} targetDocumentId={targetDocumentId} units={units} />
+        <CategoryFolderList categories={categories} folders={folders} groupId={group.id} isAdmin={isAdmin} properties={properties} shareUsers={shareUsers || []} targetDocumentId={targetDocumentId} tenants={tenants || []} units={units} />
         {loaded && !folders.length ? (
           <div className="rounded-md border border-dashed border-line p-4 text-sm text-muted">Keine Dokumente in dieser Gruppe.</div>
         ) : null}
@@ -122,7 +133,9 @@ function CategoryFolderList({
   isAdmin,
   properties,
   units,
+  tenants,
   categories,
+  shareUsers,
   targetDocumentId
 }: {
   folders: DocumentFolder[];
@@ -130,7 +143,9 @@ function CategoryFolderList({
   isAdmin: boolean;
   properties: Option[];
   units: Option[];
+  tenants: TenantOption[];
   categories: Option[];
+  shareUsers: ShareUserOption[];
   targetDocumentId: string;
 }) {
   const grouped = useMemo(() => {
@@ -159,8 +174,10 @@ function CategoryFolderList({
           isAdmin={isAdmin}
           key={`${folder.categoryId || "__none__"}:${folder.year}`}
           properties={properties}
+          shareUsers={shareUsers}
           targetDocumentId={targetDocumentId}
           units={units}
+          tenants={tenants}
         />
       );
     }
@@ -187,8 +204,10 @@ function CategoryFolderList({
               isAdmin={isAdmin}
               key={`${folder.categoryId || "__none__"}:${folder.year}`}
               properties={properties}
+              shareUsers={shareUsers}
               targetDocumentId={targetDocumentId}
               units={units}
+              tenants={tenants}
             />
           ))}
         </div>
@@ -203,7 +222,9 @@ function DocumentFolderItem({
   isAdmin,
   properties,
   units,
+  tenants,
   categories,
+  shareUsers,
   targetDocumentId
 }: {
   folder: DocumentFolder;
@@ -211,7 +232,9 @@ function DocumentFolderItem({
   isAdmin: boolean;
   properties: Option[];
   units: Option[];
+  tenants: TenantOption[];
   categories: Option[];
+  shareUsers: ShareUserOption[];
   targetDocumentId: string;
 }) {
   const [documents, setDocuments] = useState<LazyDocument[]>([]);
@@ -308,16 +331,26 @@ function DocumentFolderItem({
                     documentId={doc.id}
                     propertyId={doc.propertyId || ""}
                     unitId={doc.unitId || ""}
+                    tenantProfileId={doc.tenantProfileId || ""}
                     categoryId={doc.categoryId || ""}
                     properties={properties}
                     units={units}
+                    tenants={tenants}
                     categories={categories}
+                  />
+                  <DocumentYearForm documentId={doc.id} documentYear={doc.documentYear} />
+                  <DocumentPermissionEditor
+                    documentId={doc.id}
+                    initialPermissions={doc.permissions || []}
+                    users={shareUsers}
                   />
                 </>
               ) : null}
               <div className="mt-3 flex flex-wrap gap-2">
-                {doc.storagePath ? (
+                {doc.storagePath && (isAdmin || doc.canDownload !== false) ? (
                   <a className="button px-3 py-2 text-sm" href={`/api/documents/${doc.id}/download`}>Download</a>
+                ) : doc.storagePath ? (
+                  <span className="rounded-md border border-line bg-white px-3 py-2 text-sm text-muted">Download nicht freigegeben</span>
                 ) : (
                   <span className="rounded-md border border-line bg-white px-3 py-2 text-sm text-muted">Keine Datei</span>
                 )}

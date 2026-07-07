@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { refreshCurrentView } from "@/lib/client-refresh";
 
-type RoleName = "ADMIN" | "BROKER" | "TENANT";
+type RoleName = "ADMIN" | "BROKER" | "TENANT" | "TAX_ADVISOR";
 
 export function UserEditForm({
   user,
@@ -87,6 +87,7 @@ export function UserEditForm({
             <option value="ADMIN">Eigentümer</option>
             <option value="BROKER">Makler</option>
             <option value="TENANT">Mieter</option>
+            <option value="TAX_ADVISOR">Steuerberater</option>
           </select>
         </label>
         <label className="flex items-center gap-2 font-semibold text-muted">

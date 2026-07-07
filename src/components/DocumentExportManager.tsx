@@ -88,6 +88,21 @@ export function DocumentExportManager({ initialExports }: { initialExports: Docu
     setMessage("Export geloescht.");
   }
 
+  async function shareZip(id: string) {
+    setMessage("");
+    setBusy(`share:${id}`);
+    const response = await fetch(`/api/document-exports/${id}/share`, { method: "POST" });
+    setBusy(null);
+    const body = await response.json().catch(() => ({ error: "ZIP-Freigabe konnte nicht erstellt werden." }));
+    if (!response.ok) {
+      setMessage(body.error || "ZIP-Freigabe konnte nicht erstellt werden.");
+      return;
+    }
+    const url = body.share?.url;
+    setMessage(url ? `ZIP-Freigabe erstellt: ${url}` : "ZIP-Freigabe erstellt.");
+    if (url && navigator.clipboard) await navigator.clipboard.writeText(url);
+  }
+
   async function removeDocument(exportId: string, documentId: string) {
     setMessage("");
     setBusy(`${exportId}:${documentId}`);
@@ -104,6 +119,29 @@ export function DocumentExportManager({ initialExports }: { initialExports: Docu
     }
     await reload();
     setMessage("Dokument aus Export entfernt.");
+  }
+
+  async function updateExport(event: React.FormEvent<HTMLFormElement>, id: string) {
+    event.preventDefault();
+    setMessage("");
+    setBusy(`update:${id}`);
+    const form = new FormData(event.currentTarget);
+    const response = await fetch(`/api/document-exports/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: String(form.get("name") || ""),
+        description: String(form.get("description") || "")
+      })
+    });
+    setBusy(null);
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({ error: "Export konnte nicht gespeichert werden." }));
+      setMessage(body.error || "Export konnte nicht gespeichert werden.");
+      return;
+    }
+    await reload();
+    setMessage("Export gespeichert.");
   }
 
   return (
@@ -130,9 +168,22 @@ export function DocumentExportManager({ initialExports }: { initialExports: Docu
               <div className="flex flex-wrap gap-2">
                 <button className="button-secondary px-3 py-2 text-sm" type="button" onClick={() => activate(item.id)}>{item.id === activeId ? "Aktiv" : "Aktivieren"}</button>
                 <a className={`button px-3 py-2 text-sm ${item.items.length ? "" : "pointer-events-none opacity-50"}`} href={`/api/document-exports/${item.id}/download`}>ZIP laden</a>
+                <button className="button-secondary px-3 py-2 text-sm" disabled={!item.items.length || busy === `share:${item.id}`} type="button" onClick={() => shareZip(item.id)}>
+                  {busy === `share:${item.id}` ? "Freigabe..." : "ZIP freigeben"}
+                </button>
                 <button className="button-secondary px-3 py-2 text-sm" disabled={busy === item.id} type="button" onClick={() => remove(item.id)}>Loeschen</button>
               </div>
             </div>
+            <details className="mt-3 rounded-md border border-line bg-white">
+              <summary className="cursor-pointer list-none px-3 py-2 text-xs font-bold text-accent [&::-webkit-details-marker]:hidden">Exporttitel und Beschreibung bearbeiten</summary>
+              <form className="grid gap-2 border-t border-line p-3" onSubmit={(event) => updateExport(event, item.id)}>
+                <label className="text-xs font-semibold">Titel<input name="name" required defaultValue={item.name} /></label>
+                <label className="text-xs font-semibold">Beschreibung / Notiz<textarea name="description" defaultValue={item.description || ""} /></label>
+                <button className="justify-self-start px-3 py-2 text-sm" disabled={busy === `update:${item.id}`} type="submit">
+                  {busy === `update:${item.id}` ? "Speichere..." : "Speichern"}
+                </button>
+              </form>
+            </details>
             {item.items.length ? (
               <div className="mt-3 grid gap-2">
                 <div className="text-xs font-bold uppercase text-muted">Enthaltene Dokumente</div>
@@ -144,14 +195,17 @@ export function DocumentExportManager({ initialExports }: { initialExports: Docu
                       </a>
                       <div className="truncate text-muted">{document.filename}</div>
                     </div>
-                    <button
-                      className="button-secondary px-3 py-2 text-xs"
-                      disabled={busy === `${item.id}:${document.id}`}
-                      onClick={() => removeDocument(item.id, document.id)}
-                      type="button"
-                    >
-                      {busy === `${item.id}:${document.id}` ? "Entferne..." : "Entfernen"}
-                    </button>
+                    <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                      <DocumentPublicShareButton documentId={document.id} title={document.title} />
+                      <button
+                        className="button-secondary px-3 py-2 text-xs"
+                        disabled={busy === `${item.id}:${document.id}`}
+                        onClick={() => removeDocument(item.id, document.id)}
+                        type="button"
+                      >
+                        {busy === `${item.id}:${document.id}` ? "Entferne..." : "Entfernen"}
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -162,6 +216,57 @@ export function DocumentExportManager({ initialExports }: { initialExports: Docu
         {!exports.length ? <div className="rounded-md border border-dashed border-line p-3 text-sm text-muted">Noch kein Export angelegt.</div> : null}
       </div>
     </section>
+  );
+}
+
+function DocumentPublicShareButton({ documentId, title }: { documentId: string; title: string }) {
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [url, setUrl] = useState("");
+
+  async function createShare() {
+    setBusy(true);
+    setMessage("");
+    setUrl("");
+    const response = await fetch("/api/public-shares/from-document", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        documentId,
+        name: title,
+        description: `Gezielte Freigabe aus einem Dokumentenexport: ${title}`,
+        expiresDays: 14
+      })
+    });
+    setBusy(false);
+    const body = await response.json().catch(() => ({ error: "Freigabe konnte nicht erstellt werden." }));
+    if (!response.ok) {
+      setMessage(body.error || "Freigabe konnte nicht erstellt werden.");
+      return;
+    }
+    setUrl(body.share?.url || "");
+    setMessage("Freigabe erstellt.");
+  }
+
+  async function copyUrl() {
+    if (!url) return;
+    await navigator.clipboard?.writeText(url);
+    setMessage("Link kopiert.");
+  }
+
+  return (
+    <span className="inline-grid gap-1">
+      <button className="button-secondary px-3 py-2 text-xs" disabled={busy} onClick={createShare} type="button">
+        {busy ? "Freigabe..." : "Freigeben"}
+      </button>
+      {url ? (
+        <span className="flex flex-wrap items-center gap-2 text-xs">
+          <a className="font-semibold text-accent hover:underline" href={url} target="_blank" rel="noreferrer">Link öffnen</a>
+          <button className="button-secondary px-2 py-1 text-xs" onClick={copyUrl} type="button">Kopieren</button>
+        </span>
+      ) : null}
+      {message ? <span className="text-xs text-muted">{message}</span> : null}
+    </span>
   );
 }
 

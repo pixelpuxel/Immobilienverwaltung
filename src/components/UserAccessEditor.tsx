@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { refreshCurrentView } from "@/lib/client-refresh";
 
-type RoleName = "ADMIN" | "BROKER" | "TENANT";
+type RoleName = "ADMIN" | "BROKER" | "TENANT" | "TAX_ADVISOR";
 type PropertyOption = { id: string; name: string };
 type UnitOption = { id: string; label: string };
 
@@ -35,6 +35,9 @@ export function UserAccessEditor({
 
   if (role === "ADMIN") {
     return <div className="text-sm text-muted">Vollzugriff</div>;
+  }
+  if (role === "TAX_ADVISOR") {
+    return <div className="rounded-md bg-panel p-3 text-sm text-muted">Zugriff nur über einzelne Dokumentfreigaben in der Dokumentenverwaltung.</div>;
   }
 
   async function save(event: React.FormEvent<HTMLFormElement>) {

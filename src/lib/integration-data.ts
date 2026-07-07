@@ -50,6 +50,7 @@ export function serializeDocument(document: Document & {
     scope: document.scope,
     propertyId: document.propertyId,
     unitId: document.unitId,
+    tenantProfileId: document.tenantProfileId,
     categoryId: document.categoryId,
     property: document.property,
     unit: document.unit,
@@ -62,4 +63,3 @@ export function serializeDocument(document: Document & {
     downloadUrl: `/api/integrations/v1/documents/${document.id}/download`
   };
 }
-

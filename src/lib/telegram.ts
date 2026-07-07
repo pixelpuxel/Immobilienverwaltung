@@ -64,7 +64,7 @@ export function telegramHelpText() {
     "",
     "Beispiele:",
     "/suche Musterstraße",
-    "/mieter Alina",
+    "/mieter Beispiel",
     "/vertrag Max",
     "Erstelle Mietvertrag"
   ].join("\n");
@@ -437,7 +437,7 @@ async function generateContractReply(config: TelegramConfig, token: string, chat
     return;
   }
   await sendTelegramMessage(token, chatId, `Erzeuge Mietvertrag fuer ${tenant.firstName} ${tenant.lastName}...`, threadId);
-  const template = await selectContractTemplate({ portalInstanceId: config.portalInstanceId, propertyId: tenant.unit.propertyId });
+  const template = await selectContractTemplate({ portalInstanceId: config.portalInstanceId, propertyId: tenant.unit.propertyId, unitId: tenant.unitId });
   const generated = await generateContract({ tenantProfileId: tenant.id, unitId: tenant.unitId!, templateId: template?.id || null });
   const contract = await prisma.leaseContract.create({
     data: {
@@ -859,7 +859,7 @@ async function createContractFromWizardDraft(config: TelegramConfig, draft: Cont
       data: { isCurrent: false, moveOutDate: parseDateStrict(draft.moveInDate) }
     });
   }
-  const template = await selectContractTemplate({ portalInstanceId: config.portalInstanceId, propertyId: unit.propertyId });
+  const template = await selectContractTemplate({ portalInstanceId: config.portalInstanceId, propertyId: unit.propertyId, unitId: unit.id });
   const generated = await generateContract({ tenantProfileId: profile.id, unitId: unit.id, templateId: template?.id || null });
   const contract = await prisma.leaseContract.create({
     data: {

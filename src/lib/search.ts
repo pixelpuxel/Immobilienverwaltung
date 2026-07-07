@@ -109,6 +109,7 @@ function propertySearchWhere(user: ScopedUser, terms: string[], brokerIds: strin
   };
   if (user.role === Role.ADMIN) return { ...portalWhere(user), ...search };
   if (user.role === Role.BROKER) return { id: { in: brokerIds }, ...search };
+  if (user.role === Role.TAX_ADVISOR) return { id: "__no_property_access__", ...search };
   return { units: { some: { id: tenantUnit || "" } }, ...search };
 }
 
@@ -118,6 +119,7 @@ function unitSearchWhere(user: ScopedUser, terms: string[], brokerIds: string[],
   };
   if (user.role === Role.ADMIN) return { property: portalWhere(user), ...search };
   if (user.role === Role.BROKER) return { propertyId: { in: brokerIds }, ...search };
+  if (user.role === Role.TAX_ADVISOR) return { id: "__no_unit_access__", ...search };
   return { id: tenantUnit || "", ...search };
 }
 
@@ -136,6 +138,14 @@ function documentSearchWhere(user: ScopedUser, terms: string[], brokerIds: strin
     return {
       AND: [
         { ...portalWhere(user), ...brokerVisibleDocumentWhere(user.id, brokerIds) },
+        search
+      ]
+    };
+  }
+  if (user.role === Role.TAX_ADVISOR) {
+    return {
+      AND: [
+        { ...portalWhere(user), permissions: { some: { userId: user.id, canView: true } } },
         search
       ]
     };
@@ -166,6 +176,7 @@ function tenantSearchWhere(user: ScopedUser, terms: string[], brokerIds: string[
   };
   if (user.role === Role.ADMIN) return { user: portalWhere(user), ...search };
   if (user.role === Role.BROKER) return { isCurrent: true, unit: { propertyId: { in: brokerIds } }, ...search };
+  if (user.role === Role.TAX_ADVISOR) return { id: "__no_tenant_access__", ...search };
   return { userId: user.id, ...search };
 }
 
@@ -179,6 +190,7 @@ function contractSearchWhere(user: ScopedUser, terms: string[], brokerIds: strin
   };
   if (user.role === Role.ADMIN) return { unit: { property: portalWhere(user) }, ...search };
   if (user.role === Role.BROKER) return { unit: { propertyId: { in: brokerIds } }, ...search };
+  if (user.role === Role.TAX_ADVISOR) return { id: "__no_contract_access__", ...search };
   return { tenantProfile: { userId: user.id }, ...search };
 }
 

@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { auditLog } from "@/lib/audit";
 import { clientIp } from "@/lib/auth";
-import { generateContract } from "@/lib/contracts";
+import { generateContract, selectContractTemplate } from "@/lib/contracts";
 import { integrationError, requireAdminIntegration, requireIntegrationUser } from "@/lib/integration-auth";
 import { brokerPropertyIds } from "@/lib/permissions";
 import { portalWhere } from "@/lib/portal-instance";
@@ -61,17 +61,17 @@ export async function POST(request: NextRequest) {
   const tenantProfile = await prisma.tenantProfile.findFirst({
     where: { id: body.data.tenantProfileId, user: portalWhere(user) }
   });
-  const template = body.data.templateId ? await prisma.contractTemplate.findFirst({ where: { id: body.data.templateId, ...portalWhere(user) } }) : null;
+  const template = unit ? await selectContractTemplate({ portalInstanceId: user.portalInstanceId, propertyId: unit.propertyId, unitId: unit.id, templateId: body.data.templateId }) : null;
   if (!unit || !tenantProfile || (body.data.templateId && !template)) {
     return integrationError("FORBIDDEN", "Mieter, Einheit oder Vorlage gehoert nicht zu dieser Instanz.", 403);
   }
 
-  const generated = await generateContract(body.data);
+  const generated = await generateContract({ ...body.data, templateId: template?.id || null });
   const contract = await prisma.leaseContract.create({
     data: {
       tenantProfileId: body.data.tenantProfileId,
       unitId: body.data.unitId,
-      templateId: body.data.templateId,
+      templateId: template?.id || null,
       docxPath: generated.docxPath,
       pdfPath: generated.pdfPath
     },

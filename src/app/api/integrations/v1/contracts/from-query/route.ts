@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { auditLog } from "@/lib/audit";
 import { clientIp } from "@/lib/auth";
-import { generateContract } from "@/lib/contracts";
+import { generateContract, selectContractTemplate } from "@/lib/contracts";
 import { integrationError, requireAdminIntegration, requireIntegrationUser } from "@/lib/integration-auth";
 import { portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
         "",
         "Beispiele:",
         "/vertrag Max",
-        "/vertrag Alina",
+        "/vertrag Beispiel",
         "",
         "Ich suche dann den aktuellen Mieter, waehle die passende Vorlage und erzeuge den Mietvertrag im Portal."
       ].join("\n"),
@@ -91,12 +91,11 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const templates = await prisma.contractTemplate.findMany({
-    where: portalWhere(user),
-    orderBy: { createdAt: "desc" },
-    select: { id: true, name: true, filename: true, mimeType: true, size: true, createdAt: true }
+  const template = await selectContractTemplate({
+    portalInstanceId: user.portalInstanceId,
+    propertyId: tenant.unit.property.id,
+    unitId: tenant.unitId
   });
-  const template = pickTemplate(templates, tenant.unit.property.name);
   const debug = {
     query: body.data.query,
     dryRun: body.data.dryRun,
@@ -191,15 +190,6 @@ function compactTenant(tenant: {
     propertyId: tenant.unit?.property.id || null,
     propertyName: tenant.unit?.property.name || null
   };
-}
-
-function pickTemplate<T extends { id: string; name: string }>(templates: T[], propertyName: string) {
-  const propertyKey = normalize(propertyName);
-  return templates.find((item) => propertyKey && normalize(item.name).includes(propertyKey.split(" ")[0]))
-    || templates.find((item) => propertyKey.includes("mainau") && normalize(item.name).includes("mainau"))
-    || templates.find((item) => propertyKey.includes("tiroler") && normalize(item.name).includes("tiroler"))
-    || templates[0]
-    || null;
 }
 
 function absoluteUrl(request: NextRequest, path: string) {

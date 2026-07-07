@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { Role } from "@prisma/client";
 import { AppShell } from "@/components/AppShell";
 import { DocumentThumbnail } from "@/components/DocumentThumbnail";
+import { DocumentUploadPanel } from "@/components/DocumentUploadPanel";
 import { EditableField } from "@/components/EditableField";
 import { JsonForm } from "@/components/JsonForm";
 import { PropertyImageGallery } from "@/components/PropertyImageGallery";
@@ -21,7 +22,7 @@ export const dynamic = "force-dynamic";
 
 export default async function PropertyDetailPage({ params }: { params: { id: string } }) {
   const user = await requireUser();
-  const [property, energyCategory] = await Promise.all([
+  const [property, energyCategory, documentCategories] = await Promise.all([
     prisma.property.findFirst({
       where: { id: params.id, ...portalWhere(user) },
       include: {
@@ -32,7 +33,11 @@ export default async function PropertyDetailPage({ params }: { params: { id: str
         todos: { orderBy: [{ completedAt: "asc" }, { createdAt: "desc" }], select: { id: true, title: true, dueDate: true, completedAt: true, createdAt: true } }
       }
     }),
-    prisma.documentCategory.findFirst({ where: { name: "Energieausweis" } })
+    prisma.documentCategory.findFirst({ where: { name: "Energieausweis" } }),
+    prisma.documentCategory.findMany({
+      where: { OR: [{ portalInstanceId: user.portalInstanceId }, { portalInstanceId: null }] },
+      orderBy: [{ group: "asc" }, { name: "asc" }]
+    })
   ]);
 
   if (!property) notFound();
@@ -327,6 +332,20 @@ export default async function PropertyDetailPage({ params }: { params: { id: str
               <Link className="button button-secondary block text-center" href={`/contracts?propertyId=${property.id}`}>Vertrag fuer dieses Objekt</Link>
             </div>
           </section> : null}
+          {canEdit ? (
+            <section className="rounded-lg border border-line bg-white p-4">
+              <h2 className="text-lg font-bold">Dokument hochladen</h2>
+              <p className="mt-1 text-sm text-muted">Dateien werden direkt dieser Immobilie zugeordnet. Bei Bedarf kannst du eine Einheit auswählen.</p>
+              <div className="mt-3">
+                <DocumentUploadPanel
+                  properties={[{ id: property.id, label: property.name }]}
+                  units={property.units.map((unit) => ({ id: unit.id, label: unit.unitNumber, propertyId: property.id }))}
+                  categories={documentCategories.map((category) => ({ id: category.id, label: `${category.group} / ${category.name}` }))}
+                  defaultPropertyId={property.id}
+                />
+              </div>
+            </section>
+          ) : null}
         </aside>
       </div>
     </AppShell>

@@ -41,6 +41,7 @@ export async function GET(request: NextRequest) {
         id: true,
         title: true,
         filename: true,
+        documentYear: true,
         createdAt: true,
         categoryId: true,
         category: { select: { group: true, name: true } }
@@ -49,7 +50,7 @@ export async function GET(request: NextRequest) {
     });
     const folders = new Map<string, { categoryIds: string[]; categoryId: string | null; categoryLabel: string; year: string; count: number; preview: string[]; containsTarget: boolean }>();
     for (const document of rows) {
-      const year = extractDocumentYear(document.title, document.filename) || "ohne Jahr";
+      const year = document.documentYear ? String(document.documentYear) : extractDocumentYear(document.title, document.filename) || "ohne Jahr";
       const categoryLabel = document.category ? `${document.category.group} / ${document.category.name}` : "Ohne Kategorie";
       const key = `${categoryLabel}:${year}`;
       const folder = folders.get(key) || { categoryIds: [], categoryId: document.categoryId, categoryLabel, year, count: 0, preview: [], containsTarget: false };
@@ -72,15 +73,15 @@ export async function GET(request: NextRequest) {
     if (folderYear) {
       const rows = await prisma.document.findMany({
         where: scopedWhere,
-        include: { property: true, unit: { include: { property: true } }, category: true },
+        include: documentInclude(user.role === Role.ADMIN, user.id),
         orderBy: { createdAt: "desc" }
       });
       const filteredRows = rows.filter((document) => {
-        const year = extractDocumentYear(document.title, document.filename) || "ohne Jahr";
+        const year = document.documentYear ? String(document.documentYear) : extractDocumentYear(document.title, document.filename) || "ohne Jahr";
         return year === folderYear;
       });
       const start = (page - 1) * limit;
-      const documents = filteredRows.slice(start, start + limit).map(withGeneratedMetadata);
+      const documents = filteredRows.slice(start, start + limit).map((document) => withDocumentAccess(document, user));
       return NextResponse.json({
         documents,
         total: filteredRows.length,
@@ -91,7 +92,7 @@ export async function GET(request: NextRequest) {
     const [documents, total] = await Promise.all([
       prisma.document.findMany({
         where: scopedWhere,
-        include: { property: true, unit: { include: { property: true } }, category: true },
+        include: documentInclude(user.role === Role.ADMIN, user.id),
         orderBy: { createdAt: "desc" },
         skip: (page - 1) * limit,
         take: limit
@@ -99,7 +100,7 @@ export async function GET(request: NextRequest) {
       prisma.document.count({ where: scopedWhere })
     ]);
     return NextResponse.json({
-      documents: documents.map(withGeneratedMetadata),
+      documents: documents.map((document) => withDocumentAccess(document, user)),
       total,
       page,
       nextPage: page * limit < total ? page + 1 : null
@@ -108,10 +109,10 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json(await prisma.document.findMany({
     where: baseWhere,
-    include: { property: true, unit: { include: { property: true } }, category: true },
+    include: documentInclude(user.role === Role.ADMIN, user.id),
     orderBy: { createdAt: "desc" },
     take: 200
-  }).then((documents) => documents.map(withGeneratedMetadata)));
+  }).then((documents) => documents.map((document) => withDocumentAccess(document, user))));
 }
 
 async function documentVisibilityWhere(user: NonNullable<Awaited<ReturnType<typeof requireApiUser>>>): Promise<Prisma.DocumentWhereInput> {
@@ -120,17 +121,63 @@ async function documentVisibilityWhere(user: NonNullable<Awaited<ReturnType<type
     const propertyIds = await brokerPropertyIds(user.id);
     return { ...portalWhere(user), ...brokerVisibleDocumentWhere(user.id, propertyIds) };
   }
+  if (user.role === Role.TAX_ADVISOR) {
+    return { ...portalWhere(user), permissions: { some: { userId: user.id, canView: true } } };
+  }
   const unitId = await tenantUnitId(user.id);
   return {
     ...portalWhere(user),
     OR: [
       { permissions: { some: { userId: user.id, canView: true } } },
+      { tenantProfile: { userId: user.id } },
       { unitId, category: { visibleToTenant: true }, scope: { in: [DocumentScope.UNIT, DocumentScope.CONTRACT] } }
     ]
   };
 }
 
-function withGeneratedMetadata<T extends { summary: string | null; tags: string[]; title: string; filename: string; mimeType?: string | null; createdAt?: Date | string | null; property?: { name: string } | null; unit?: { unitNumber: string; property?: { name: string } | null } | null; category?: { group: string; name: string } | null }>(document: T) {
+function documentInclude(includeAllPermissions: boolean, userId: string) {
+  return {
+    property: true,
+    unit: { include: { property: true } },
+    tenantProfile: { include: { user: { select: { id: true, email: true, name: true } } } },
+    category: true,
+    permissions: includeAllPermissions
+      ? {
+          include: {
+            user: { select: { id: true, email: true, username: true, name: true, role: true } }
+          },
+          orderBy: { updatedAt: "desc" as const }
+        }
+      : {
+          where: { userId },
+          select: { id: true, userId: true, canView: true, canDownload: true }
+        }
+  };
+}
+
+type DocumentForMetadata = {
+  summary: string | null;
+  tags: string[];
+  title: string;
+  filename: string;
+  mimeType?: string | null;
+  createdAt?: Date | string | null;
+  documentYear?: number | null;
+  property?: { name: string } | null;
+  unit?: { unitNumber: string; property?: { name: string } | null } | null;
+  category?: { group: string; name: string } | null;
+};
+
+function withDocumentAccess<T extends DocumentForMetadata & { permissions?: Array<{ userId: string; canDownload: boolean; canView: boolean }> }>(document: T, user: NonNullable<Awaited<ReturnType<typeof requireApiUser>>>) {
+  const enriched = withGeneratedMetadata(document);
+  const permission = document.permissions?.find((item) => item.userId === user.id && item.canView);
+  return {
+    ...enriched,
+    canDownload: user.role === Role.ADMIN || Boolean(permission?.canDownload)
+  };
+}
+
+function withGeneratedMetadata<T extends DocumentForMetadata>(document: T) {
   if (document.summary && document.tags.length) return document;
   const metadata = buildDocumentMetadata(document);
   return {
@@ -145,15 +192,24 @@ export async function POST(request: NextRequest) {
   const user = await requireApiUser(request);
   if (!user) return NextResponse.json({ error: "Nicht angemeldet." }, { status: 401 });
   const form = await request.formData();
-  const file = form.get("file");
-  if (!(file instanceof File)) return NextResponse.json({ error: "Datei fehlt." }, { status: 400 });
+  const files = form.getAll("file").filter((item): item is File => item instanceof File && item.size > 0);
+  if (!files.length) return NextResponse.json({ error: "Datei fehlt." }, { status: 400 });
 
-  const saved = await saveUpload(file);
-  const propertyId = String(form.get("propertyId") || "") || null;
-  const unitId = String(form.get("unitId") || "") || null;
+  let propertyId = String(form.get("propertyId") || "") || null;
+  let unitId = String(form.get("unitId") || "") || null;
+  const tenantProfileId = String(form.get("tenantProfileId") || "") || null;
   const isPropertyImage = String(form.get("isPropertyImage") || "") === "true";
   const isPrimaryImage = String(form.get("isPrimaryImage") || "") === "true";
-  if (isPropertyImage && (!file.type.startsWith("image/") || !propertyId)) {
+  if (tenantProfileId) {
+    const tenant = await prisma.tenantProfile.findFirst({
+      where: { id: tenantProfileId, user: portalWhere(user) },
+      include: { unit: true }
+    });
+    if (!tenant) return NextResponse.json({ error: "Mieterbezug gehoert nicht zu dieser Instanz." }, { status: 403 });
+    unitId = tenant.unitId || unitId;
+    propertyId = tenant.unit?.propertyId || propertyId;
+  }
+  if (isPropertyImage && (!files.every((file) => file.type.startsWith("image/")) || !propertyId)) {
     return NextResponse.json({ error: "Objektbilder brauchen eine Bilddatei und eine Immobilie." }, { status: 400 });
   }
   if (!(await assertPropertyInPortal(propertyId, user)) || !(await assertUnitInPortal(unitId, user))) {
@@ -165,31 +221,45 @@ export async function POST(request: NextRequest) {
       data: { isPrimaryImage: false }
     });
   }
-  const document = await prisma.document.create({
-    data: {
-      portalInstanceId: user.portalInstanceId,
-      title: String(form.get("title") || file.name),
-      filename: saved.filename,
-      mimeType: saved.mimeType,
-      size: saved.size,
-      storagePath: saved.storagePath,
-      status: (String(form.get("status") || "AVAILABLE") as DocumentStatus),
-      scope: (String(form.get("scope") || "PROPERTY") as DocumentScope),
-      propertyId,
-      unitId,
-      categoryId: String(form.get("categoryId") || "") || null,
-      isPropertyImage,
-      isPrimaryImage,
-      uploadedById: user.id
-    },
-    include: { property: true, unit: { include: { property: true } }, category: true }
-  });
-  const metadata = buildDocumentMetadata(document);
-  const enrichedDocument = await prisma.document.update({
-    where: { id: document.id },
-    data: metadata
-  });
-  await auditLog({ userId: user.id, action: AuditAction.FILE_UPLOADED, entity: "Document", entityId: document.id, ipAddress: clientIp(request) });
-  indexDocument(document.id).catch((error) => console.error("Document index failed", document.id, error));
-  return NextResponse.json(enrichedDocument, { status: 201 });
+  const uploadedDocuments = [];
+  const baseTitle = String(form.get("title") || "").trim();
+  for (let index = 0; index < files.length; index += 1) {
+    const file = files[index];
+    const saved = await saveUpload(file);
+    const document = await prisma.document.create({
+      data: {
+        portalInstanceId: user.portalInstanceId,
+        title: documentTitle(baseTitle, file.name, index, files.length),
+        filename: saved.filename,
+        mimeType: saved.mimeType,
+        size: saved.size,
+        storagePath: saved.storagePath,
+        status: (String(form.get("status") || "AVAILABLE") as DocumentStatus),
+        scope: tenantProfileId ? DocumentScope.TENANT : (String(form.get("scope") || "PROPERTY") as DocumentScope),
+        propertyId,
+        unitId,
+        tenantProfileId,
+        categoryId: String(form.get("categoryId") || "") || null,
+        isPropertyImage,
+        isPrimaryImage: isPropertyImage && isPrimaryImage && index === 0,
+        uploadedById: user.id
+      },
+      include: { property: true, unit: { include: { property: true } }, category: true }
+    });
+    const metadata = buildDocumentMetadata(document);
+    const enrichedDocument = await prisma.document.update({
+      where: { id: document.id },
+      data: metadata
+    });
+    await auditLog({ userId: user.id, action: AuditAction.FILE_UPLOADED, entity: "Document", entityId: document.id, ipAddress: clientIp(request) });
+    indexDocument(document.id).catch((error) => console.error("Document index failed", document.id, error));
+    uploadedDocuments.push(enrichedDocument);
+  }
+  return NextResponse.json(files.length === 1 ? uploadedDocuments[0] : { documents: uploadedDocuments, count: uploadedDocuments.length }, { status: 201 });
+}
+
+function documentTitle(baseTitle: string, filename: string, index: number, total: number) {
+  if (!baseTitle) return filename;
+  if (total === 1) return baseTitle;
+  return `${baseTitle} ${index + 1}`;
 }

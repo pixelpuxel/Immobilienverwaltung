@@ -343,6 +343,8 @@ GET  /api/templates/:id/preview
 GET  /api/templates/:id/thumbnail
 ```
 
+Vertragsvorlagen koennen global, einer Immobilie oder einer konkreten Einheit zugeordnet werden. Bei der Vertragserzeugung gilt die Prioritaet: Einheit vor Immobilie vor globaler Vorlage vor internem Standardvertrag.
+
 Aktivitaeten:
 
 ```text

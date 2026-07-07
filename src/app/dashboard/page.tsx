@@ -7,11 +7,13 @@ import { requireUser } from "@/lib/auth";
 import { brokerPropertyIds, brokerVisibleDocumentWhere, tenantUnitId } from "@/lib/permissions";
 import { portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
+import { formatPortalDateTime, getPortalTimeZone } from "@/lib/time-zone";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const user = await requireUser();
+  const timeZone = await getPortalTimeZone(user.portalInstanceId);
   const brokerIds = user.role === Role.BROKER ? await brokerPropertyIds(user.id) : null;
   const tenantUnit = user.role === Role.TENANT ? await tenantUnitId(user.id) : null;
   const [properties, units, documents, contracts, auditLogs, propertyValue, loanValue, income, openTodos] = user.role === Role.ADMIN
@@ -43,6 +45,18 @@ export default async function DashboardPage() {
           totalMonthlyIncome(brokerIds || []),
           []
         ])
+      : user.role === Role.TAX_ADVISOR
+        ? await Promise.all([
+            0,
+            0,
+            prisma.document.count({ where: { ...portalWhere(user), permissions: { some: { userId: user.id, canView: true } } } }),
+            0,
+            [],
+            0,
+            0,
+            { cold: 0, warm: 0 },
+            []
+          ])
       : await Promise.all([
           prisma.property.count({ where: { units: { some: { id: tenantUnit || "" } } } }),
           tenantUnit ? 1 : 0,
@@ -71,21 +85,21 @@ export default async function DashboardPage() {
         </div>
       </div>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {user.role !== Role.TENANT ? (
+        {user.role === Role.ADMIN || user.role === Role.BROKER ? (
           <>
             <Link href={user.role === Role.BROKER ? "/broker" : "/properties"}><StatCard label="Immobilien" value={properties} detail="Objekte in Ihrer Ansicht" icon="IM" tone="emerald" /></Link>
             <Link href={user.role === Role.BROKER ? "/broker" : "/properties"}><StatCard label="Einheiten" value={units} detail="Wohn- und Nutzungseinheiten" icon="WE" tone="blue" /></Link>
           </>
         ) : null}
         <Link href="/documents"><StatCard label="Dokumente" value={documents} detail={user.role === Role.TENANT ? "Für Sie bereitgestellt" : "Geschuetzte Unterlagen"} icon="DU" tone="violet" /></Link>
-        <Link href="/contracts"><StatCard label="Verträge" value={contracts} detail={user.role === Role.TENANT ? "Ihre Mietvertraege" : "Erzeugte Vertragsdokumente"} icon="MV" tone="amber" /></Link>
+        {user.role !== Role.TAX_ADVISOR ? <Link href="/contracts"><StatCard label="Verträge" value={contracts} detail={user.role === Role.TENANT ? "Ihre Mietvertraege" : "Erzeugte Vertragsdokumente"} icon="MV" tone="amber" /></Link> : null}
         {user.role === Role.ADMIN ? <Link href="/properties?auswertung=immobilienwert"><StatCard label="Immobilienwert" value={money(propertyValue)} detail="Summe der Kaufpreisvorstellungen" icon="€" tone="rose" /></Link> : null}
         {user.role === Role.ADMIN ? <Link href="/properties?auswertung=darlehen"><StatCard label="Valutierte Darlehen" value={money(loanValue)} detail="Noch offene Darlehenssumme" icon="DL" tone="slate" /></Link> : null}
         {user.role === Role.ADMIN ? <Link href="/properties?auswertung=nettowert"><StatCard label="Nettowert" value={money(netValue)} detail="Kaufpreisvorstellung minus Darlehen" icon="NW" tone="blue" /></Link> : null}
         {user.role === Role.ADMIN ? <Link href="/properties?auswertung=rendite"><StatCard label="Rendite" value={percent(annualColdRent, propertyValue)} detail="Jahreskaltmiete geteilt durch Kaufpreisvorstellung" icon="%" tone="emerald" /></Link> : null}
         {user.role === Role.ADMIN ? <Link href="/properties?auswertung=gehebelte-rendite"><StatCard label="Gehebelte Rendite" value={percent(annualColdRent, netValue)} detail="Jahreskaltmiete geteilt durch Nettowert" icon="GR" tone="amber" /></Link> : null}
-        {user.role !== Role.TENANT ? <Link href={`${propertyBaseHref}?auswertung=kaltmiete`}><StatCard label="Kaltmiete" value={money(income.cold)} detail={`${money(income.cold * 12)} / Jahr inkl. Tiefgarage, ohne Nebenkosten`} icon="KM" tone="slate" /></Link> : null}
-        {user.role !== Role.TENANT ? <Link href={`${propertyBaseHref}?auswertung=warmmiete`}><StatCard label="Warmmiete" value={money(income.warm)} detail={`${money(income.warm * 12)} / Jahr inkl. Nebenkosten`} icon="WM" tone="emerald" /></Link> : null}
+        {user.role === Role.ADMIN || user.role === Role.BROKER ? <Link href={`${propertyBaseHref}?auswertung=kaltmiete`}><StatCard label="Kaltmiete" value={money(income.cold)} detail={`${money(income.cold * 12)} / Jahr inkl. Tiefgarage, ohne Nebenkosten`} icon="KM" tone="slate" /></Link> : null}
+        {user.role === Role.ADMIN || user.role === Role.BROKER ? <Link href={`${propertyBaseHref}?auswertung=warmmiete`}><StatCard label="Warmmiete" value={money(income.warm)} detail={`${money(income.warm * 12)} / Jahr inkl. Nebenkosten`} icon="WM" tone="emerald" /></Link> : null}
       </div>
       {user.role === Role.ADMIN ? (
         <>
@@ -135,7 +149,7 @@ export default async function DashboardPage() {
                   </div>
                   <div className="text-muted md:text-right">
                     <div>{log.user?.name || log.user?.email || "System"}</div>
-                    <div>{new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(log.createdAt)}</div>
+                    <div>{formatPortalDateTime(log.createdAt, timeZone, { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", dateStyle: undefined, timeStyle: undefined })}</div>
                   </div>
                 </div>
               );

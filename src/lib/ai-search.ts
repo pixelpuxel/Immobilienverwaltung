@@ -249,6 +249,12 @@ async function documentAccessFilter(user: ScopedUser) {
     must.push({ key: "propertyId", match: { any: propertyIds } });
     return { must };
   }
+  if (user.role === Role.TAX_ADVISOR) {
+    const permissions = await prisma.accessPermission.findMany({ where: { userId: user.id, canView: true }, select: { documentId: true } });
+    const documentIds = permissions.map((permission) => permission.documentId);
+    must.push({ key: "documentId", match: { any: documentIds.length ? documentIds : ["__no_document_access__"] } });
+    return { must };
+  }
   const unitId = await tenantUnitId(user.id);
   must.push({ key: "unitId", match: { value: unitId || "" } });
   return { must };

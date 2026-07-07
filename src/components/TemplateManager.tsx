@@ -10,13 +10,17 @@ type TemplateManagerProps = {
     name: string;
     filename: string;
     propertyId: string | null;
+    unitId: string | null;
     isGlobalTemplate: boolean;
     property?: { id: string; name: string } | null;
+    unit?: { id: string; unitNumber: string; property?: { id: string; name: string } | null } | null;
+    defaultForUnits?: Array<{ id: string; unitNumber: string; property?: { id: string; name: string } | null }>;
   };
   properties: Array<{ id: string; label: string }>;
+  units: Array<{ id: string; label: string; propertyId: string }>;
 };
 
-export function TemplateManager({ template, properties }: TemplateManagerProps) {
+export function TemplateManager({ template, properties, units }: TemplateManagerProps) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -53,8 +57,10 @@ export function TemplateManager({ template, properties }: TemplateManagerProps) 
         <div className="font-semibold">{template.name}</div>
         <div className="text-muted">{template.filename}</div>
         <div className="mt-1 flex flex-wrap gap-2 text-xs">
+          {template.unit ? <span className="rounded-full bg-white px-2 py-1 font-semibold text-muted">Einheit: {template.unit.property?.name ? `${template.unit.property.name} / ` : ""}{template.unit.unitNumber}</span> : null}
+          {template.defaultForUnits?.length ? <span className="rounded-full bg-white px-2 py-1 font-semibold text-muted">Standard fuer {template.defaultForUnits.length} Einheit(en)</span> : null}
           <span className="rounded-full bg-white px-2 py-1 font-semibold text-muted">{template.property ? `Immobilie: ${template.property.name}` : "Keine Immobilie"}</span>
-          <span className="rounded-full bg-white px-2 py-1 font-semibold text-muted">{template.isGlobalTemplate ? "Allgemeine Vorlage" : "Nur zugeordnete Immobilie"}</span>
+          <span className="rounded-full bg-white px-2 py-1 font-semibold text-muted">{template.isGlobalTemplate ? "Allgemeine Vorlage" : template.unit ? "Nur zugeordnete Einheit" : "Nur zugeordnete Immobilie"}</span>
         </div>
       </div>
       {message ? <div className="rounded-md border border-line bg-white p-2 text-xs">{message}</div> : null}
@@ -69,6 +75,14 @@ export function TemplateManager({ template, properties }: TemplateManagerProps) 
           <option value="">Keine bestimmte Immobilie</option>
           {properties.map((property) => <option key={property.id} value={property.id}>{property.label}</option>)}
         </select></label>
+        <label>Einheit<select name="unitId" defaultValue={template.unitId || ""}>
+          <option value="">Keine bestimmte Einheit</option>
+          {units.map((unit) => <option key={unit.id} value={unit.id}>{unit.label}</option>)}
+        </select></label>
+        <label>Standardvorlage fuer Einheiten<select name="defaultUnitIds" multiple defaultValue={(template.defaultForUnits || []).map((unit) => unit.id)} className="min-h-28">
+          {units.map((unit) => <option key={unit.id} value={unit.id}>{unit.label}</option>)}
+        </select></label>
+        <p className="text-xs text-muted">Einheiten mit dieser Standardvorlage verwenden sie automatisch bei der Vertragserzeugung. Mehrfachauswahl mit Cmd/Strg.</p>
         <label className="flex items-center gap-2 text-sm font-semibold">
           <input name="isGlobalTemplate" type="checkbox" defaultChecked={template.isGlobalTemplate} />
           Allgemeine Vorlage

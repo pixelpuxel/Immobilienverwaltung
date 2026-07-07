@@ -57,6 +57,7 @@ export async function generateWohnungsgeberbestaetigung(input: { tenantProfileId
       scope: DocumentScope.TENANT,
       propertyId: tenant.unit.propertyId,
       unitId: tenant.unitId,
+      tenantProfileId: tenant.id,
       categoryId: category.id,
       uploadedById: input.actorUserId,
       permissions: {

@@ -6,6 +6,7 @@ export async function canAccessDocument(user: Pick<User, "id" | "role">, documen
   if (user.role === Role.TENANT) {
     const profile = await prisma.tenantProfile.findUnique({ where: { userId: user.id }, include: { unit: true } });
     const document = await prisma.document.findUnique({ where: { id: documentId }, include: { category: true } });
+    if (profile?.id && document?.tenantProfileId === profile.id) return !download || Boolean(document.storagePath);
     if (profile?.unit?.propertyId && document?.propertyId === profile.unit.propertyId && document.isPropertyImage && !download) return true;
     if (profile?.unitId && document?.unitId === profile.unitId && document.category?.visibleToTenant && document.scope !== "PROPERTY" && !download) return true;
   }
@@ -25,15 +26,20 @@ export async function canAccessDocument(user: Pick<User, "id" | "role">, documen
 
 export function brokerVisibleDocumentWhere(userId: string, propertyIds: string[]) {
   return {
-    propertyId: { in: propertyIds },
+    OR: [
+      { propertyId: { in: propertyIds } },
+      { unit: { propertyId: { in: propertyIds } } }
+    ],
+    AND: [{
     OR: [
       { isPropertyImage: true },
       { category: { name: "Grundbuchauszug" } },
+      { permissions: { some: { userId, canView: true } } },
       {
-        permissions: { some: { userId, canView: true } },
         category: { visibleToBroker: true }
       }
     ]
+    }]
   };
 }
 

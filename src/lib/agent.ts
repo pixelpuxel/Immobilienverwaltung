@@ -647,6 +647,21 @@ function fallbackDecision(message: string, previousResults: AgentToolResult[], s
   if (/(was kannst du|was.*moeglich|was.*möglich|funktionen|faehigkeiten|fähigkeiten|tools|hilfe|help)/i.test(normalized)) {
     return { type: "tool_calls", statusMessage: "Ich pruefe meine verfuegbaren Portal-Tools.", toolCalls: [{ tool: "agent_capabilities", args: { topic: message } }] };
   }
+  if (/(dokumente|dokument|unterlagen|dateien|datei)/i.test(normalized) && /(mieter|mieterin|bewohner|person|dieses mieters|dieser mieterin|von|fuer|für)/i.test(normalized) && (tenantQuery || state.facts.tenantId)) {
+    return {
+      type: "tool_calls",
+      statusMessage: "Ich lade die persoenlichen Dokumente des Mieters.",
+      toolCalls: [{
+        tool: "get_tenant_documents",
+        args: {
+          tenantId: state.facts.tenantId,
+          tenantQuery: tenantQuery || "",
+          propertyQuery: propertyQuery || "",
+          q: message
+        }
+      }]
+    };
+  }
   if (/(dokumente|dokument|unterlagen|dateien|datei|grundbuch|energieausweis|mietvertrag|nebenkosten|abrechnung|vertrag)/i.test(normalized)) {
     return {
       type: "tool_calls",

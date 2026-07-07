@@ -53,9 +53,14 @@ export const contractPlaceholders = [
 export async function generateContract(input: { tenantProfileId: string; unitId: string; templateId?: string | null }) {
   const tenant = await prisma.tenantProfile.findUniqueOrThrow({ where: { id: input.tenantProfileId } });
   const unit = await prisma.unit.findUniqueOrThrow({ where: { id: input.unitId }, include: { property: true } });
-  const template = input.templateId
+  const explicitTemplate = input.templateId
     ? await prisma.contractTemplate.findUnique({ where: { id: input.templateId } })
     : null;
+  const template = explicitTemplate || await selectContractTemplate({
+    portalInstanceId: unit.property.portalInstanceId,
+    propertyId: unit.propertyId,
+    unitId: unit.id
+  });
   const owner = await prisma.user.findFirst({ where: { role: "ADMIN", active: true, portalInstanceId: unit.property.portalInstanceId }, orderBy: { createdAt: "asc" } });
 
   await fs.mkdir(env.contractsPath, { recursive: true });
@@ -93,40 +98,57 @@ export async function generateContract(input: { tenantProfileId: string; unitId:
   return checked;
 }
 
-export async function contractTemplateCandidates(input: { portalInstanceId: string | null; propertyId: string }) {
+export async function contractTemplateCandidates(input: { portalInstanceId: string | null; propertyId: string; unitId?: string | null }) {
   return prisma.contractTemplate.findMany({
     where: {
       portalInstanceId: input.portalInstanceId,
       OR: [
-        { propertyId: input.propertyId },
-        { isGlobalTemplate: true, propertyId: null }
+        ...(input.unitId ? [{ unitId: input.unitId }] : []),
+        { unitId: null, propertyId: input.propertyId },
+        { isGlobalTemplate: true, unitId: null, propertyId: null }
       ]
     },
-    include: { property: { select: { id: true, name: true } } },
+    include: { property: { select: { id: true, name: true } }, unit: { select: { id: true, unitNumber: true, property: { select: { id: true, name: true } } } } },
     orderBy: [
-      { propertyId: "desc" },
       { createdAt: "desc" }
     ]
   });
 }
 
-export async function selectContractTemplate(input: { portalInstanceId: string | null; propertyId: string; templateId?: string | null }) {
+export async function selectContractTemplate(input: { portalInstanceId: string | null; propertyId: string; unitId?: string | null; templateId?: string | null }) {
   if (input.templateId) {
     return prisma.contractTemplate.findFirst({
       where: {
         id: input.templateId,
         portalInstanceId: input.portalInstanceId,
         OR: [
-          { propertyId: input.propertyId },
-          { isGlobalTemplate: true },
-          { propertyId: null }
+          ...(input.unitId ? [{ unitId: input.unitId }] : []),
+          { unitId: null, propertyId: input.propertyId },
+          { isGlobalTemplate: true, unitId: null, propertyId: null },
+          { unitId: null, propertyId: null }
         ]
       },
-      include: { property: { select: { id: true, name: true } } }
+      include: { property: { select: { id: true, name: true } }, unit: { select: { id: true, unitNumber: true, property: { select: { id: true, name: true } } } } }
     });
   }
+  if (input.unitId) {
+    const unitDefault = await prisma.unit.findFirst({
+      where: {
+        id: input.unitId,
+        propertyId: input.propertyId,
+        property: { portalInstanceId: input.portalInstanceId }
+      },
+      select: {
+        defaultContractTemplate: {
+          include: { property: { select: { id: true, name: true } }, unit: { select: { id: true, unitNumber: true, property: { select: { id: true, name: true } } } } }
+        }
+      }
+    });
+    if (unitDefault?.defaultContractTemplate) return unitDefault.defaultContractTemplate;
+  }
   const candidates = await contractTemplateCandidates(input);
-  return candidates.find((template) => template.propertyId === input.propertyId)
+  return (input.unitId ? candidates.find((template) => template.unitId === input.unitId) : null)
+    || candidates.find((template) => !template.unitId && template.propertyId === input.propertyId)
     || candidates.find((template) => template.isGlobalTemplate)
     || null;
 }

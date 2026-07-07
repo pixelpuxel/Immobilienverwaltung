@@ -16,6 +16,7 @@ const adminLinks = [
   ["Aktuelle Mieterliste", "/current-tenants"],
   ["Offene To-dos", "/todos"],
   ["Dokumente", "/documents"],
+  ["Freigaben", "/shares"],
   ["Benutzer", "/users"],
   ["Vertraege", "/contracts"],
   ["Aktivitäten", "/audit"],
@@ -37,6 +38,12 @@ const tenantLinks = [
   ["Vertraege", "/contracts"]
 ];
 
+const taxAdvisorLinks = [
+  ["Dashboard", "/dashboard"],
+  ["Suche", "/search"],
+  ["Dokumente", "/documents"]
+];
+
 export function AppShell({
   role,
   userId,
@@ -50,7 +57,7 @@ export function AppShell({
   canSwitchView?: boolean;
   children: React.ReactNode;
 }) {
-  const links = role === Role.ADMIN ? adminLinks : role === Role.BROKER ? brokerLinks : tenantLinks;
+  const links = role === Role.ADMIN ? adminLinks : role === Role.BROKER ? brokerLinks : role === Role.TAX_ADVISOR ? taxAdvisorLinks : tenantLinks;
   return (
     <div className="min-h-screen bg-white">
       <MobileNav email={email} links={links} userId={userId} canSwitchView={canSwitchView} />

@@ -1,6 +1,7 @@
 type MetadataDocument = {
   title: string;
   filename: string;
+  documentYear?: number | null;
   mimeType?: string | null;
   createdAt?: Date | string | null;
   property?: { name: string } | null;
@@ -28,7 +29,7 @@ export function buildDocumentMetadata(document: MetadataDocument) {
   const category = document.category ? `${document.category.group} / ${document.category.name}` : "ohne Kategorie";
   const propertyName = document.property?.name || document.unit?.property?.name || null;
   const unitName = document.unit?.unitNumber || null;
-  const year = extractDocumentYear(document.title, document.filename) || extractDateYear(document.createdAt);
+  const year = document.documentYear ? String(document.documentYear) : extractDocumentYear(document.title, document.filename) || extractDateYear(document.createdAt);
   const fileType = readableFileType(document.mimeType, document.filename);
   const tags = unique([
     document.category?.group,

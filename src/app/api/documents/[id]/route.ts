@@ -17,11 +17,13 @@ const documentUpdateSchema = z.object({
   scope: z.nativeEnum(DocumentScope).optional(),
   propertyId: z.string().nullable().optional(),
   unitId: z.string().nullable().optional(),
+  tenantProfileId: z.string().nullable().optional(),
   categoryId: z.string().nullable().optional(),
   isPropertyImage: z.boolean().optional(),
   isPrimaryImage: z.boolean().optional(),
   summary: z.string().nullable().optional(),
-  tags: z.array(z.string()).optional()
+  tags: z.array(z.string()).optional(),
+  documentYear: z.number().int().min(1900).max(2049).nullable().optional()
 });
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
@@ -41,6 +43,16 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   if (rename) {
     data.filename = rename.filename;
     Object.assign(data, { storagePath: rename.storagePath });
+  }
+  if (data.tenantProfileId) {
+    const tenant = await prisma.tenantProfile.findFirst({
+      where: { id: data.tenantProfileId, user: portalWhere(user) },
+      include: { unit: true }
+    });
+    if (!tenant) return NextResponse.json({ error: "Mieterbezug gehoert nicht zu dieser Instanz." }, { status: 403 });
+    data.unitId = tenant.unitId || data.unitId || null;
+    data.propertyId = tenant.unit?.propertyId || data.propertyId || null;
+    data.scope = DocumentScope.TENANT;
   }
   if (data.unitId) {
     const unit = await prisma.unit.findFirst({ where: { id: data.unitId, property: { portalInstanceId: user.portalInstanceId } } });
@@ -64,7 +76,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     data,
     include: { property: true, unit: { include: { property: true } }, category: true }
   });
-  const shouldRegenerate = !data.summary && !data.tags && (data.title !== undefined || data.propertyId !== undefined || data.unitId !== undefined || data.categoryId !== undefined);
+  const shouldRegenerate = !data.summary && !data.tags && (data.title !== undefined || data.propertyId !== undefined || data.unitId !== undefined || data.categoryId !== undefined || data.documentYear !== undefined);
   const enrichedDocument = shouldRegenerate
     ? await prisma.document.update({ where: { id: params.id }, data: buildDocumentMetadata(document) })
     : document;
@@ -105,7 +117,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
 
 function normalizeEmptyStrings(data: z.infer<typeof documentUpdateSchema>) {
   const normalized = { ...data };
-  for (const key of ["propertyId", "unitId", "categoryId"] as const) {
+  for (const key of ["propertyId", "unitId", "tenantProfileId", "categoryId"] as const) {
     if (normalized[key] === "") normalized[key] = null;
   }
   return normalized;

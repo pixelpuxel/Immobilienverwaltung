@@ -82,12 +82,16 @@ export async function GET(request: NextRequest) {
         ? user.brokerLinks.map((link) => link.property.name).join(", ")
         : user.role === Role.TENANT && user.tenantProfile?.unit
           ? `${user.tenantProfile.unit.property.name} / ${user.tenantProfile.unit.unitNumber}`
+          : user.role === Role.TAX_ADVISOR
+            ? "Einzelne Dokumentfreigaben"
           : "",
       group: user.role === Role.ADMIN
         ? "Eigentümer"
         : user.role === Role.BROKER
           ? "Makler"
-          : `${user.tenantProfile?.isCurrent ? "Aktuelle Mieter" : "Ehemalige Mieter"} - ${propertyName}`,
+          : user.role === Role.TAX_ADVISOR
+            ? "Steuerberater"
+            : `${user.tenantProfile?.isCurrent ? "Aktuelle Mieter" : "Ehemalige Mieter"} - ${propertyName}`,
       isCurrent: user.tenantProfile?.isCurrent ?? null,
       sortLabel: `${propertyName} ${unitNumber} ${user.tenantProfile?.lastName || ""} ${user.tenantProfile?.firstName || ""}`
     };
@@ -121,7 +125,7 @@ function compareSwitchUsers(
     };
   }
 ) {
-  const roleOrder = (role: Role) => role === Role.ADMIN ? 0 : role === Role.BROKER ? 1 : 2;
+  const roleOrder = (role: Role) => role === Role.ADMIN ? 0 : role === Role.BROKER ? 1 : role === Role.TAX_ADVISOR ? 2 : 3;
   const byRole = roleOrder(left.role) - roleOrder(right.role);
   if (byRole !== 0) return byRole;
   if (left.role === Role.TENANT && right.role === Role.TENANT) {

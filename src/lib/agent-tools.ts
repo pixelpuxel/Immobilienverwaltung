@@ -5,6 +5,7 @@ import { auditLog } from "./audit";
 import { bestContractAttachment, contractPublicLinks } from "./contract-downloads";
 import { generateContract, selectContractTemplate } from "./contracts";
 import { env } from "./env";
+import { integrationDocumentInclude, integrationDocumentVisibilityWhere, tenantPersonalDocumentWhere } from "./integration-document-access";
 import { canAccessDocument } from "./permissions";
 import { portalWhere, type ScopedUser } from "./portal-instance";
 import { prisma } from "./prisma";
@@ -62,6 +63,12 @@ const optionalQuerySchema = z.object({ query: z.string().trim().max(300).optiona
 const documentSearchSchema = z.object({
   query: z.string().trim().max(300).optional().default(""),
   propertyQuery: z.string().trim().max(300).optional().default("")
+});
+const tenantDocumentsSchema = z.object({
+  tenantId: z.string().trim().optional(),
+  tenantQuery: z.string().trim().max(300).optional().default(""),
+  propertyQuery: z.string().trim().max(300).optional().default(""),
+  q: z.string().trim().max(300).optional().default("")
 });
 const idSchema = z.object({ id: z.string().trim().min(1) });
 
@@ -310,30 +317,102 @@ export const agentToolRegistry = {
       };
     }
   }),
+  get_tenant_documents: tool({
+    name: "get_tenant_documents",
+    description: "Persoenliche Dokumente eines Mieters anzeigen. Liefert nur direkt dem Mieter zugeordnete oder explizit fuer ihn freigegebene Dokumente, keine allgemeinen Dokumente der Einheit.",
+    parameters: "{ tenantId?: string, tenantQuery?: string, propertyQuery?: string, q?: string }",
+    schema: tenantDocumentsSchema,
+    kind: "read",
+    getStatusMessage: (args) => args.tenantQuery
+      ? `Ich lade die Dokumente des Mieters "${args.tenantQuery}".`
+      : "Ich lade die Dokumente des Mieters.",
+    run: async (ctx, args) => {
+      let tenant = args.tenantId
+        ? await prisma.tenantProfile.findFirst({ where: { id: args.tenantId, ...tenantAccessWhere(ctx.user) }, include: { unit: { include: { property: true } }, user: true } })
+        : null;
+      if (!tenant) {
+        const matches = await searchTenantRows(ctx.user, args.tenantQuery || "", args.propertyQuery || "", false);
+        if (!matches.length) return failed("get_tenant_documents", "Kein passender Mieter gefunden.");
+        if (matches.length > 1) {
+          return {
+            name: "get_tenant_documents",
+            ok: false,
+            needsClarification: true,
+            summary: [
+              "Mehrere Mieter passen. Bitte einen auswaehlen:",
+              ...matches.slice(0, 8).map((item, index) => `${index + 1}. ${tenantName(item)} - ${item.unit ? `${item.unit.property.name} / ${item.unit.unitNumber}` : "keine Einheit"} - tenantId=${item.id}`)
+            ].join("\n"),
+            data: matches.slice(0, 8).map((item) => ({ id: item.id, name: tenantName(item), unitId: item.unitId, propertyName: item.unit?.property.name }))
+          };
+        }
+        tenant = matches[0];
+      }
+      const documents = await prisma.document.findMany({
+        where: {
+          AND: [
+            await integrationDocumentVisibilityWhere(ctx.user),
+            tenantPersonalDocumentWhere(tenant),
+            args.q ? { OR: [{ title: { contains: args.q, mode: "insensitive" } }, { filename: { contains: args.q, mode: "insensitive" } }, { summary: { contains: args.q, mode: "insensitive" } }] } : {}
+          ]
+        },
+        include: integrationDocumentInclude(),
+        orderBy: [{ documentYear: "desc" }, { updatedAt: "desc" }],
+        take: 50
+      });
+      const results = documents.map((document) => ({
+        title: document.title,
+        description: [
+          document.category ? `${document.category.group} / ${document.category.name}` : null,
+          document.unit ? `${document.unit.property?.name || document.property?.name} / ${document.unit.unitNumber}` : document.property?.name,
+          document.summary
+        ].filter(Boolean).join(" · "),
+        href: document.storagePath ? `/api/documents/${document.id}/preview` : `/documents?documentId=${document.id}`,
+        badge: document.tags.slice(0, 3).join(", ") || document.status
+      }));
+      return {
+        name: "get_tenant_documents",
+        ok: true,
+        summary: documents.length
+          ? [`Dokumente fuer ${tenantName(tenant)}:`, formatDocumentList(results)].join("\n")
+          : `Fuer ${tenantName(tenant)} sind keine persoenlichen oder explizit freigegebenen Dokumente vorhanden.`,
+        data: {
+          tenant: { id: tenant.id, name: tenantName(tenant), unitId: tenant.unitId, propertyName: tenant.unit?.property.name },
+          documents
+        },
+        artifacts: documents.slice(0, 10).map((document) => ({ type: "document", label: document.title, url: publicPortalUrl(document.storagePath ? `/api/documents/${document.id}/preview` : `/documents?documentId=${document.id}`), thumbnailUrl: document.mimeType.startsWith("image/") || document.mimeType === "application/pdf" ? publicPortalUrl(`/api/documents/${document.id}/thumbnail`) : undefined }))
+      };
+    }
+  }),
   search_templates: tool({
     name: "search_templates",
-    description: "Mietvertragsvorlagen suchen, optional passend zu einer Immobilie.",
-    parameters: "{ query?: string, propertyId?: string }",
-    schema: z.object({ query: z.string().trim().max(300).optional().default(""), propertyId: z.string().trim().optional() }),
+    description: "Mietvertragsvorlagen suchen, optional passend zu einer Immobilie oder Einheit.",
+    parameters: "{ query?: string, propertyId?: string, unitId?: string }",
+    schema: z.object({ query: z.string().trim().max(300).optional().default(""), propertyId: z.string().trim().optional(), unitId: z.string().trim().optional() }),
     kind: "read",
     getStatusMessage: () => "Ich suche Vertragsvorlagen.",
     run: async (ctx, args) => {
       if (ctx.user.role !== Role.ADMIN) return failed("search_templates", "Vertragsvorlagen sind nur fuer Eigentuemer/Admins sichtbar.");
+      const scopedTemplateOr = args.unitId
+        ? [{ unitId: args.unitId }, ...(args.propertyId ? [{ propertyId: args.propertyId, unitId: null }] : []), { isGlobalTemplate: true, propertyId: null, unitId: null }]
+        : args.propertyId
+          ? [{ propertyId: args.propertyId, unitId: null }, { isGlobalTemplate: true, propertyId: null, unitId: null }]
+          : undefined;
       const templates = await prisma.contractTemplate.findMany({
         where: {
           portalInstanceId: ctx.user.portalInstanceId,
-          ...(args.propertyId ? { OR: [{ propertyId: args.propertyId }, { isGlobalTemplate: true, propertyId: null }] } : {}),
+          ...(scopedTemplateOr ? { OR: scopedTemplateOr } : {}),
           ...(args.query ? { name: { contains: args.query, mode: "insensitive" } } : {})
         },
-        include: { property: true },
-        orderBy: [{ propertyId: "desc" }, { createdAt: "desc" }],
+        include: { property: true, unit: { include: { property: true } }, defaultForUnits: { include: { property: true } } },
+        orderBy: [{ createdAt: "desc" }],
         take: 20
       });
+      const assignment = (t: { unit?: { unitNumber: string; property?: { name: string } | null } | null; property?: { name: string } | null }) => t.unit ? `${t.unit.property?.name || "Immobilie"} / ${t.unit.unitNumber}` : t.property?.name || "Allgemein";
       return {
         name: "search_templates",
         ok: true,
-        summary: templates.length ? ["Vorlagen:", ...templates.map((t) => `- ${t.name}: ${t.property?.name || "Allgemein"} (${t.id})`)].join("\n") : "Keine Vorlagen gefunden.",
-        data: templates.map((t) => ({ id: t.id, name: t.name, propertyId: t.propertyId, propertyName: t.property?.name || null }))
+        summary: templates.length ? ["Vorlagen:", ...templates.map((t) => `- ${t.name}: ${assignment(t)} (${t.id})`)].join("\n") : "Keine Vorlagen gefunden.",
+        data: templates.map((t) => ({ id: t.id, name: t.name, propertyId: t.propertyId, propertyName: t.property?.name || t.unit?.property?.name || null, unitId: t.unitId, unitNumber: t.unit?.unitNumber || null, defaultForUnits: t.defaultForUnits.map((unit) => ({ id: unit.id, unitNumber: unit.unitNumber, propertyName: unit.property.name })) }))
       };
     }
   }),
@@ -346,9 +425,10 @@ export const agentToolRegistry = {
     getStatusMessage: () => "Ich lade die Vertragsvorlage.",
     run: async (ctx, args) => {
       if (ctx.user.role !== Role.ADMIN) return failed("get_template", "Vertragsvorlagen sind nur fuer Eigentuemer/Admins sichtbar.");
-      const template = await prisma.contractTemplate.findFirst({ where: { id: args.id, portalInstanceId: ctx.user.portalInstanceId }, include: { property: true } });
+      const template = await prisma.contractTemplate.findFirst({ where: { id: args.id, portalInstanceId: ctx.user.portalInstanceId }, include: { property: true, unit: { include: { property: true } }, defaultForUnits: { include: { property: true } } } });
       if (!template) return failed("get_template", "Vorlage nicht gefunden.");
-      return { name: "get_template", ok: true, summary: `Vorlage: ${template.name}\nZuordnung: ${template.property?.name || "Allgemein"}`, data: template };
+      const assignment = template.unit ? `${template.unit.property.name} / ${template.unit.unitNumber}` : template.property?.name || "Allgemein";
+      return { name: "get_template", ok: true, summary: `Vorlage: ${template.name}\nZuordnung: ${assignment}`, data: template };
     }
   }),
   search_documents: tool({
@@ -543,6 +623,13 @@ function sanitizeToolArgs(toolName: string, args: Record<string, unknown>) {
     if (propertyQuery) next.propertyQuery = propertyQuery;
     if (propertyQuery && looksLikeCurrentTenantQuestion(query)) next.query = "";
   }
+  if (toolName === "get_tenant_documents") {
+    const tenantQuery = String(next.tenantQuery || "");
+    const q = String(next.q || "");
+    const propertyQuery = String(next.propertyQuery || extractLikelyPropertyQuery(tenantQuery) || extractLikelyPropertyQuery(q));
+    if (propertyQuery) next.propertyQuery = propertyQuery;
+    if (!tenantQuery && q) next.tenantQuery = extractLikelyTenantQuery(q);
+  }
   if (toolName === "create_landlord_confirmation") {
     const tenantQuery = String(next.tenantQuery || "");
     const propertyQuery = String(next.propertyQuery || "");
@@ -574,6 +661,7 @@ function capabilityList(role: Role, topic = "") {
     "Einheiten suchen, inklusive Einheiten ohne aktuellen Mieter.",
     "Aktuelle oder ehemalige Mieter suchen und Mietdaten wie Einzug, Mietbeginn und Auszug anzeigen.",
     "Dokumente suchen, Vorschau- und Download-Links liefern, soweit Rechte vorhanden sind.",
+    "Persoenliche Dokumente eines konkreten Mieters anzeigen, ohne fremde Dokumente derselben Einheit beizumischen.",
     "Vertraege und erzeugte Dokumente verlinken; in Telegram erzeugte PDFs als Datei senden.",
     ...ownerOnly
   ];
@@ -676,10 +764,10 @@ async function createContractTool(ctx: AgentContext, args: z.infer<typeof create
   if (args.propertyId && args.propertyId !== tenant.unit.propertyId) return failed("create_contract", "Der angegebene Mieter gehoert nicht zu dieser Immobilie.");
 
   const template = args.templateId
-    ? await selectContractTemplate({ portalInstanceId: ctx.user.portalInstanceId, propertyId: tenant.unit.propertyId, templateId: args.templateId })
-    : await resolveTemplate(ctx.user.portalInstanceId, tenant.unit.propertyId, args.templateQuery);
+    ? await selectContractTemplate({ portalInstanceId: ctx.user.portalInstanceId, propertyId: tenant.unit.propertyId, unitId: tenant.unitId, templateId: args.templateId })
+    : await resolveTemplate(ctx.user.portalInstanceId, tenant.unit.propertyId, tenant.unitId, args.templateQuery);
   if (template === "ambiguous") {
-    const templates = await prisma.contractTemplate.findMany({ where: { portalInstanceId: ctx.user.portalInstanceId, OR: [{ propertyId: tenant.unit.propertyId }, { isGlobalTemplate: true, propertyId: null }] }, orderBy: [{ propertyId: "desc" }, { createdAt: "desc" }], take: 8 });
+    const templates = await prisma.contractTemplate.findMany({ where: { portalInstanceId: ctx.user.portalInstanceId, OR: [{ unitId: tenant.unitId }, { unitId: null, propertyId: tenant.unit.propertyId }, { isGlobalTemplate: true, unitId: null, propertyId: null }] }, orderBy: [{ createdAt: "desc" }], take: 8 });
     return { name: "create_contract", ok: false, needsClarification: true, summary: ["Mehrere passende Vorlagen gefunden. Bitte eine Vorlage nennen:", ...templates.map((item, index) => `${index + 1}. ${item.name}`)].join("\n") };
   }
 
@@ -844,21 +932,24 @@ async function resolveTenant(user: ScopedUser, tenantId?: string, tenantQuery?: 
   return { ok: true, tenant: scored[0].tenant };
 }
 
-async function resolveTemplate(portalInstanceId: string | null, propertyId: string, templateQuery?: string) {
+async function resolveTemplate(portalInstanceId: string | null, propertyId: string, unitId?: string | null, templateQuery?: string) {
   const templates = await prisma.contractTemplate.findMany({
-    where: { portalInstanceId, OR: [{ propertyId }, { isGlobalTemplate: true, propertyId: null }] },
-    include: { property: true },
-    orderBy: [{ propertyId: "desc" }, { createdAt: "desc" }]
+    where: { portalInstanceId, OR: [...(unitId ? [{ unitId }] : []), { unitId: null, propertyId }, { isGlobalTemplate: true, unitId: null, propertyId: null }] },
+    include: { property: true, unit: { include: { property: true } } },
+    orderBy: [{ createdAt: "desc" }]
   });
   if (!templates.length) return null;
   if (templateQuery) {
-    const scored = templates.map((template) => ({ template, score: scoreText(templateQuery, [template.name, template.property?.name]) })).filter((item) => item.score > 0).sort((a, b) => b.score - a.score);
+    const scored = templates.map((template) => ({ template, score: scoreText(templateQuery, [template.name, template.property?.name, template.unit?.unitNumber, template.unit?.property?.name]) })).filter((item) => item.score > 0).sort((a, b) => b.score - a.score);
     if (scored.length === 1 || (scored.length > 1 && scored[0].score > scored[1].score)) return scored[0].template;
   }
-  const propertySpecific = templates.filter((template) => template.propertyId === propertyId);
+  const unitSpecific = unitId ? templates.filter((template) => template.unitId === unitId) : [];
+  if (unitSpecific.length === 1) return unitSpecific[0];
+  if (unitSpecific.length > 1) return "ambiguous" as const;
+  const propertySpecific = templates.filter((template) => !template.unitId && template.propertyId === propertyId);
   if (propertySpecific.length === 1) return propertySpecific[0];
   if (propertySpecific.length > 1) return "ambiguous" as const;
-  const global = templates.filter((template) => template.isGlobalTemplate && !template.propertyId);
+  const global = templates.filter((template) => template.isGlobalTemplate && !template.propertyId && !template.unitId);
   if (global.length === 1) return global[0];
   if (global.length > 1) return "ambiguous" as const;
   return null;
@@ -1039,7 +1130,7 @@ function normalizeGenericPropertyQuery(query?: string) {
   const normalized = normalize(query);
   const asksForList = /(welche|alle|gib|zeige|liste|auflisten|gibt es|vorhanden|was sind)/i.test(normalized);
   const mentionsProperty = /(immobilien|immobilie|immos|immo|objekte|objekt|haeuser|hauser|haus|adressen)/i.test(normalized);
-  const hasSpecificAddressSignal = /\d/.test(normalized) || /(strasse|gasse|weg|platz|ring|markt|mainau|tiroler|mozart|jahn|karlsruher|schreiber)/i.test(normalized);
+  const hasSpecificAddressSignal = /\d/.test(normalized) || /(strasse|str|gasse|weg|platz|ring|markt|allee|ufer|steig|pfad|hof)/i.test(normalized);
   return asksForList && mentionsProperty && !hasSpecificAddressSignal ? "" : query;
 }
 
@@ -1060,6 +1151,15 @@ function extractLikelyPropertyQuery(message: string) {
   return "";
 }
 
+function extractLikelyTenantQuery(message: string) {
+  const explicit = message.match(/\b(?:von|fuer|für|mieter|mieterin|bewohner|person)\s+(?:der|die|dem|den)?\s*([A-ZÄÖÜ][\wäöüß.-]+(?:\s+[A-ZÄÖÜ][\wäöüß.-]+)?)/);
+  if (explicit?.[1]) return explicit[1].trim();
+  return message
+    .replace(/dokumente|dokument|unterlagen|dateien|datei|dieses mieters|dieser mieterin|von|fuer|für|zeige|gib|alle/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function isToolAvailableForRole(toolName: string, role?: Role) {
   if (!role) return true;
   if (["create_contract", "create_landlord_confirmation", "update_tenant_status", "search_templates", "get_template"].includes(toolName)) return role === Role.ADMIN;
@@ -1076,6 +1176,7 @@ function toolExamples(toolName: string) {
     get_unit: ["Details zu dieser Einheit"],
     search_tenants: ["Wer wohnt in der Kulturstraße?", "Seit wann wohnt Frau Beispiel dort?"],
     get_tenant: ["Zeige mir diesen Mieter", "Welche Daten sind zu Frau Beispiel gespeichert?"],
+    get_tenant_documents: ["Welche Dokumente hat Frau Beispiel?", "Zeige Dokumente dieses Mieters"],
     search_templates: ["Welche Mietvertragsvorlagen gibt es?", "Welche Vorlage passt zur Beispielweg?"],
     get_template: ["Zeige diese Vertragsvorlage"],
     search_documents: ["Suche Energieausweis Musterstraße", "Finde Grundbuchauszug Kulturstraße"],
