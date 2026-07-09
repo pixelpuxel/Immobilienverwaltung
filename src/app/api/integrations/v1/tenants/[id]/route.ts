@@ -28,7 +28,16 @@ const tenantUpdateSchema = z.object({
   depositReturnedAt: z.string().nullable().optional(),
   depositStatus: z.string().optional(),
   occupantCount: z.coerce.number().int().nullable().optional(),
-  rentDueDay: z.coerce.number().int().nullable().optional()
+  rentDueDay: z.coerce.number().int().nullable().optional(),
+  bankAccount: z.string().nullable().optional(),
+  landlordBankAccount: z.string().nullable().optional(),
+  landlordBankName: z.string().nullable().optional(),
+  roomDescription: z.string().nullable().optional(),
+  sharedRooms: z.string().nullable().optional(),
+  steppedRent: z.string().nullable().optional(),
+  contractNotes: z.string().nullable().optional(),
+  pets: z.string().nullable().optional(),
+  specialAgreements: z.string().nullable().optional()
 });
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {

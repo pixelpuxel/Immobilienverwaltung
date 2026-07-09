@@ -43,7 +43,16 @@ const tenantCreateSchema = z.object({
   depositReturnedAt: z.string().nullable().optional(),
   depositStatus: z.string().optional().default("OPEN"),
   occupantCount: optionalInt,
-  rentDueDay: optionalInt
+  rentDueDay: optionalInt,
+  bankAccount: z.string().nullable().optional(),
+  landlordBankAccount: z.string().nullable().optional(),
+  landlordBankName: z.string().nullable().optional(),
+  roomDescription: z.string().nullable().optional(),
+  sharedRooms: z.string().nullable().optional(),
+  steppedRent: z.string().nullable().optional(),
+  contractNotes: z.string().nullable().optional(),
+  pets: z.string().nullable().optional(),
+  specialAgreements: z.string().nullable().optional()
 });
 
 export async function GET(request: NextRequest) {
@@ -133,7 +142,16 @@ export async function POST(request: NextRequest) {
       depositReturnedAt: body.data.depositReturnedAt ? new Date(body.data.depositReturnedAt) : null,
       depositStatus: body.data.depositStatus,
       occupantCount: body.data.occupantCount ?? null,
-      rentDueDay: body.data.rentDueDay ?? null
+      rentDueDay: body.data.rentDueDay ?? null,
+      bankAccount: optionalText(body.data.bankAccount),
+      landlordBankAccount: optionalText(body.data.landlordBankAccount),
+      landlordBankName: optionalText(body.data.landlordBankName),
+      roomDescription: optionalText(body.data.roomDescription),
+      sharedRooms: optionalText(body.data.sharedRooms),
+      steppedRent: optionalText(body.data.steppedRent),
+      contractNotes: optionalText(body.data.contractNotes),
+      pets: optionalText(body.data.pets),
+      specialAgreements: optionalText(body.data.specialAgreements)
   };
   const tenant = await prisma.tenantProfile.upsert({
     where: { userId: portalUser.id },
@@ -183,6 +201,10 @@ function accountIdentity(email?: string, username?: string) {
 
 function cleanText(value?: string) {
   return value?.trim() || "";
+}
+
+function optionalText(value?: string | null) {
+  return value?.trim() || null;
 }
 
 function slugify(value: string) {
