@@ -1,0 +1,49 @@
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { env } from "@/lib/env";
+import { requireAdminIntegration, requireIntegrationUser } from "@/lib/integration-auth";
+import { isMailConfigured, isRealEmail, sendMail } from "@/lib/mail";
+
+const schema = z.object({
+  to: z.string().email().optional()
+});
+
+export async function POST(request: NextRequest) {
+  const { user, response } = await requireIntegrationUser(request, ["write:settings"]);
+  if (!user) return response;
+
+  const forbidden = requireAdminIntegration(user);
+  if (forbidden) return forbidden;
+  if (!isMailConfigured()) {
+    return NextResponse.json({ error: { code: "MAIL_NOT_CONFIGURED", message: "Mailversand ist nicht konfiguriert. SMTP_HOST und SMTP_FROM fehlen." } }, { status: 400 });
+  }
+
+  const body = schema.safeParse(await request.json());
+  if (!body.success) {
+    return NextResponse.json({ error: { code: "BAD_REQUEST", message: "Bitte eine gültige E-Mail-Adresse angeben.", issues: body.error.issues } }, { status: 400 });
+  }
+
+  const to = body.data.to || user.email;
+  if (!isRealEmail(to)) {
+    return NextResponse.json({ error: { code: "BAD_REQUEST", message: "Für Testmail bitte eine echte E-Mail-Adresse verwenden." } }, { status: 400 });
+  }
+
+  const result = await sendMail({
+    to,
+    subject: "Testmail aus dem Immobilienportal",
+    text: [
+      "Diese Testmail wurde vom Immobilienportal versendet.",
+      "",
+      `Portal: ${env.appUrl}`,
+      `SMTP: ${env.smtpHost}:${env.smtpPort}`,
+      "",
+      "Wenn diese Mail angekommen ist, funktioniert der SMTP-Versand grundsätzlich."
+    ].join("\n")
+  }).catch((error) => ({ sent: false, reason: error instanceof Error ? error.message : "unknown" }));
+
+  if (!result.sent) {
+    return NextResponse.json({ error: { code: "MAIL_SEND_FAILED", message: `Testmail konnte nicht versendet werden: ${result.reason || "unbekannter Fehler"}` } }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true, to });
+}
