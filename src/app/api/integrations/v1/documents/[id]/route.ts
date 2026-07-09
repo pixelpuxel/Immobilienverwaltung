@@ -1,8 +1,11 @@
-import { DocumentScope, DocumentStatus } from "@prisma/client";
+import { AuditAction, DocumentScope, DocumentStatus, Role } from "@prisma/client";
+import fs from "fs/promises";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { auditLog } from "@/lib/audit";
+import { clientIp } from "@/lib/auth";
 import { integrationDocumentInclude, integrationDocumentVisibilityWhere } from "@/lib/integration-document-access";
-import { requireIntegrationUser } from "@/lib/integration-auth";
+import { integrationError, requireIntegrationUser } from "@/lib/integration-auth";
 import { serializeDocument } from "@/lib/integration-data";
 import { prisma } from "@/lib/prisma";
 
@@ -54,6 +57,35 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   });
 
   return NextResponse.json(serializeDocument(document));
+}
+
+export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+  const { user, response } = await requireIntegrationUser(request, ["write:documents"]);
+  if (!user) return response;
+  if (user.role !== Role.ADMIN) {
+    return integrationError("FORBIDDEN", "Dieser Endpunkt braucht einen Eigentuemer-Token.", 403);
+  }
+
+  const document = await prisma.document.findFirst({
+    where: { AND: [{ id: params.id }, await integrationDocumentVisibilityWhere(user)] }
+  });
+  if (!document) {
+    return integrationError("NOT_FOUND", "Dokument wurde nicht gefunden.", 404);
+  }
+
+  await prisma.document.delete({ where: { id: params.id } });
+  if (document.storagePath) {
+    await fs.unlink(document.storagePath).catch(() => undefined);
+  }
+  await auditLog({
+    userId: user.id,
+    action: AuditAction.FILE_DOWNLOADED,
+    entity: "Document",
+    entityId: document.id,
+    ipAddress: clientIp(request),
+    detail: { deleted: true, title: document.title, source: "integration" }
+  });
+  return NextResponse.json({ ok: true });
 }
 
 function normalizeEmptyStrings(data: z.infer<typeof documentUpdateSchema>) {
