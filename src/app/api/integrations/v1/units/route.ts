@@ -5,6 +5,7 @@ import { serializeUnit } from "@/lib/integration-data";
 import { brokerPropertyIds } from "@/lib/permissions";
 import { assertPropertyInPortal, portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
+import { withCalculatedWarmRent } from "@/lib/rent";
 import { unitSchema } from "@/lib/unit-schema";
 
 export async function GET(request: NextRequest) {
@@ -24,7 +25,7 @@ export async function POST(request: NextRequest) {
   const body = unitSchema.safeParse(await request.json());
   if (!body.success) return NextResponse.json({ error: { code: "BAD_REQUEST", message: "Ungueltige Daten.", issues: body.error.issues } }, { status: 400 });
   if (!(await assertPropertyInPortal(body.data.propertyId, user))) return NextResponse.json({ error: { code: "FORBIDDEN", message: "Immobilie gehoert nicht zu dieser Instanz." } }, { status: 403 });
-  const unit = await prisma.unit.create({ data: body.data });
+  const unit = await prisma.unit.create({ data: withCalculatedWarmRent(body.data) });
   return NextResponse.json(serializeUnit(unit), { status: 201 });
 }
 
@@ -34,4 +35,3 @@ async function unitAccessWhere(user: { id: string; role: Role; portalInstanceId:
   const profile = await prisma.tenantProfile.findUnique({ where: { userId: user.id } });
   return { id: profile?.unitId || "" };
 }
-

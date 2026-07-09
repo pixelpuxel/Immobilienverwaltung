@@ -3,6 +3,7 @@ import { requireAdminIntegration, requireIntegrationUser } from "@/lib/integrati
 import { serializeUnit } from "@/lib/integration-data";
 import { portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
+import { calculateWarmRent } from "@/lib/rent";
 import { unitUpdateSchema } from "@/lib/unit-schema";
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
@@ -14,7 +15,10 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   if (!body.success) return NextResponse.json({ error: { code: "BAD_REQUEST", message: "Ungueltige Daten.", issues: body.error.issues } }, { status: 400 });
   const existing = await prisma.unit.findFirst({ where: { id: params.id, property: portalWhere(user) } });
   if (!existing) return NextResponse.json({ error: { code: "NOT_FOUND", message: "Einheit nicht gefunden." } }, { status: 404 });
-  const unit = await prisma.unit.update({ where: { id: params.id }, data: body.data });
+  const data = { ...body.data };
+  if (body.data.rentAmount !== undefined || body.data.garageRent !== undefined || body.data.serviceCharges !== undefined) {
+    Object.assign(data, { warmRent: calculateWarmRent({ ...existing, ...body.data }) });
+  }
+  const unit = await prisma.unit.update({ where: { id: params.id }, data });
   return NextResponse.json(serializeUnit(unit));
 }
-
