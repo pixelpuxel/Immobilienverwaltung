@@ -22,3 +22,14 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   const unit = await prisma.unit.update({ where: { id: params.id }, data });
   return NextResponse.json(serializeUnit(unit));
 }
+
+export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+  const { user, response } = await requireIntegrationUser(request, ["write:units"]);
+  if (!user) return response;
+  const forbidden = requireAdminIntegration(user);
+  if (forbidden) return forbidden;
+  const existing = await prisma.unit.findFirst({ where: { id: params.id, property: portalWhere(user) } });
+  if (!existing) return NextResponse.json({ error: { code: "NOT_FOUND", message: "Einheit nicht gefunden." } }, { status: 404 });
+  await prisma.unit.delete({ where: { id: params.id } });
+  return NextResponse.json({ ok: true });
+}
