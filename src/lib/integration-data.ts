@@ -102,6 +102,7 @@ export function serializeDocument(document: Document & {
     category: document.category ? { id: document.category.id, group: document.category.group, name: document.category.name } : null,
     summary: document.summary,
     tags: document.tags,
+    documentYear: document.documentYear,
     isPropertyImage: document.isPropertyImage,
     isPrimaryImage: document.isPrimaryImage,
     createdAt: document.createdAt,
