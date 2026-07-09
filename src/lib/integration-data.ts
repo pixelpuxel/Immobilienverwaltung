@@ -1,4 +1,4 @@
-import { type Document, type DocumentCategory, type Prisma, type Property, type Unit } from "@prisma/client";
+import { type BrokerValuation, type Document, type DocumentCategory, type Prisma, type Property, type Unit, type User } from "@prisma/client";
 
 export function propertySelect(include?: string[]): Prisma.PropertyInclude | undefined {
   if (!include?.length) return undefined;
@@ -6,10 +6,16 @@ export function propertySelect(include?: string[]): Prisma.PropertyInclude | und
     units: include.includes("units"),
     documents: include.includes("documents"),
     brokerValuations: include.includes("brokerValuations")
+      ? { include: { user: { select: { id: true, email: true, username: true, name: true, role: true } } }, orderBy: { updatedAt: "desc" } }
+      : false
   };
 }
 
-export function serializeProperty(property: Property & { units?: Unit[]; documents?: Document[] }) {
+export function serializeProperty(property: Property & {
+  units?: Unit[];
+  documents?: Document[];
+  brokerValuations?: Array<BrokerValuation & { user?: Pick<User, "id" | "email" | "username" | "name" | "role"> | null }>;
+}) {
   return {
     ...property,
     livingArea: property.livingArea?.toString() ?? null,
@@ -27,6 +33,22 @@ export function serializeProperty(property: Property & { units?: Unit[]; documen
       isPropertyImage: document.isPropertyImage,
       isPrimaryImage: document.isPrimaryImage,
       previewUrl: `/api/integrations/v1/documents/${document.id}/preview`
+    })),
+    brokerValuations: property.brokerValuations?.map((valuation) => ({
+      id: valuation.id,
+      userId: valuation.userId,
+      propertyId: valuation.propertyId,
+      amount: valuation.amount?.toString() ?? null,
+      note: valuation.note,
+      createdAt: valuation.createdAt,
+      updatedAt: valuation.updatedAt,
+      user: valuation.user ? {
+        id: valuation.user.id,
+        email: valuation.user.email,
+        username: valuation.user.username,
+        name: valuation.user.name,
+        role: valuation.user.role
+      } : null
     }))
   };
 }
