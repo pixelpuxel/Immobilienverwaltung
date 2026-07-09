@@ -6,6 +6,7 @@ const scopeGroups = [
   ["Lesen", ["read:properties", "read:units", "read:documents", "download:documents", "read:tenants", "read:contracts"]],
   ["Schreiben", ["write:properties", "write:units", "write:documents", "write:tenants"]],
   ["Vertraege", ["write:contracts"]],
+  ["Einstellungen", ["write:settings"]],
   ["Backup", ["backup:export", "backup:import"]]
 ];
 
