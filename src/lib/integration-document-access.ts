@@ -43,6 +43,12 @@ export function integrationDocumentInclude() {
     property: { select: { id: true, name: true } },
     unit: { include: { property: { select: { id: true, name: true } } } },
     tenantProfile: { select: { id: true, firstName: true, lastName: true, email: true, userId: true } },
-    category: true
+    category: true,
+    permissions: {
+      include: {
+        user: { select: { id: true, email: true, username: true, name: true, role: true } }
+      },
+      orderBy: { updatedAt: "desc" as const }
+    }
   } satisfies Prisma.DocumentInclude;
 }

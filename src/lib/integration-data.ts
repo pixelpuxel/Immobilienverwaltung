@@ -48,6 +48,13 @@ export function serializeDocument(document: Document & {
   unit?: { id: string; unitNumber: string; property?: { id: string; name: string } | null } | null;
   tenantProfile?: { id: string; firstName: string | null; lastName: string | null; email: string | null; userId: string | null } | null;
   category?: DocumentCategory | null;
+  permissions?: Array<{
+    id: string;
+    userId: string;
+    canView: boolean;
+    canDownload: boolean;
+    user?: { id: string; email: string; username: string | null; name: string | null; role: string } | null;
+  }>;
 }) {
   return {
     id: document.id,
@@ -77,6 +84,19 @@ export function serializeDocument(document: Document & {
     isPrimaryImage: document.isPrimaryImage,
     createdAt: document.createdAt,
     updatedAt: document.updatedAt,
+    permissions: document.permissions?.map((permission) => ({
+      id: permission.id,
+      userId: permission.userId,
+      canView: permission.canView,
+      canDownload: permission.canDownload,
+      user: permission.user ? {
+        id: permission.user.id,
+        email: permission.user.email,
+        username: permission.user.username,
+        name: permission.user.name,
+        role: permission.user.role
+      } : null
+    })) || [],
     previewUrl: `/api/integrations/v1/documents/${document.id}/preview`,
     downloadUrl: `/api/integrations/v1/documents/${document.id}/download`
   };
