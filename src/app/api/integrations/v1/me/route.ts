@@ -11,7 +11,8 @@ export async function GET(request: NextRequest) {
       username: user.username,
       name: user.name,
       role: user.role,
-      portalInstanceId: user.portalInstanceId
+      portalInstanceId: user.portalInstanceId,
+      platformAdmin: user.platformAdmin
     },
     token: {
       id: user.tokenId,
@@ -20,4 +21,3 @@ export async function GET(request: NextRequest) {
     }
   });
 }
-
