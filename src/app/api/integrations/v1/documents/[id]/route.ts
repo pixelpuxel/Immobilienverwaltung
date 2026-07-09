@@ -7,6 +7,7 @@ import { clientIp } from "@/lib/auth";
 import { integrationDocumentInclude, integrationDocumentVisibilityWhere } from "@/lib/integration-document-access";
 import { integrationError, requireIntegrationUser } from "@/lib/integration-auth";
 import { serializeDocument } from "@/lib/integration-data";
+import { assertPropertyInPortal, assertUnitInPortal, portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 
 const documentUpdateSchema = z.object({
@@ -14,6 +15,9 @@ const documentUpdateSchema = z.object({
   filename: z.string().min(1).optional(),
   status: z.nativeEnum(DocumentStatus).optional(),
   scope: z.nativeEnum(DocumentScope).optional(),
+  propertyId: z.string().nullable().optional(),
+  unitId: z.string().nullable().optional(),
+  tenantProfileId: z.string().nullable().optional(),
   summary: z.string().nullable().optional(),
   tags: z.array(z.string()).optional(),
   categoryId: z.string().nullable().optional(),
@@ -38,8 +42,27 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   }
 
   const data = normalizeEmptyStrings(body.data);
+  if (data.tenantProfileId) {
+    const tenant = await prisma.tenantProfile.findFirst({
+      where: { id: data.tenantProfileId, user: portalWhere(user) },
+      include: { unit: true }
+    });
+    if (!tenant) {
+      return integrationError("FORBIDDEN", "Mieterbezug gehoert nicht zu dieser Instanz.", 403);
+    }
+    data.unitId = tenant.unitId || data.unitId || null;
+    data.propertyId = tenant.unit?.propertyId || data.propertyId || null;
+    data.scope = DocumentScope.TENANT;
+  }
+  if (data.unitId) {
+    const unit = await prisma.unit.findFirst({ where: { id: data.unitId, property: { portalInstanceId: user.portalInstanceId } } });
+    if (unit) data.propertyId = unit.propertyId;
+  }
+  if (!(await assertPropertyInPortal(data.propertyId, user)) || !(await assertUnitInPortal(data.unitId, user))) {
+    return integrationError("FORBIDDEN", "Zuordnung gehoert nicht zu dieser Instanz.", 403);
+  }
   if (data.isPrimaryImage) {
-    const propertyId = existing.propertyId;
+    const propertyId = data.propertyId ?? existing.propertyId;
     if (!propertyId) {
       return NextResponse.json({ error: { code: "BAD_REQUEST", message: "Hauptbild braucht eine Immobilie." } }, { status: 400 });
     }
@@ -89,10 +112,13 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
 }
 
 function normalizeEmptyStrings(data: z.infer<typeof documentUpdateSchema>) {
-  return {
+  const normalized = {
     ...data,
     summary: data.summary === "" ? null : data.summary,
-    categoryId: data.categoryId === "" ? null : data.categoryId,
     tags: data.tags?.map((tag) => tag.trim()).filter(Boolean)
   };
+  for (const key of ["propertyId", "unitId", "tenantProfileId", "categoryId"] as const) {
+    if (normalized[key] === "") normalized[key] = null;
+  }
+  return normalized;
 }
