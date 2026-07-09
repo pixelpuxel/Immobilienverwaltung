@@ -1,3 +1,4 @@
+import { rm } from "fs/promises";
 import { NextRequest, NextResponse } from "next/server";
 import { env } from "@/lib/env";
 import { saveUpload } from "@/lib/files";
@@ -5,64 +6,18 @@ import { requireAdminIntegration, requireIntegrationUser } from "@/lib/integrati
 import { portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 
-export async function GET(request: NextRequest) {
-  const { user, response } = await requireIntegrationUser(request, ["read:contracts"]);
-  if (!user) return response;
-  const forbidden = requireAdminIntegration(user);
-  if (forbidden) return forbidden;
-  const propertyId = request.nextUrl.searchParams.get("propertyId");
-  const unitId = request.nextUrl.searchParams.get("unitId");
-  if (unitId) {
-    const unit = await prisma.unit.findFirst({ where: { id: unitId, property: portalWhere(user) } });
-    if (!unit) return NextResponse.json({ error: { code: "FORBIDDEN", message: "Einheit gehoert nicht zu dieser Instanz." } }, { status: 403 });
-  }
-  if (propertyId) {
-    const property = await prisma.property.findFirst({ where: { id: propertyId, ...portalWhere(user) } });
-    if (!property) return NextResponse.json({ error: { code: "FORBIDDEN", message: "Immobilie gehoert nicht zu dieser Instanz." } }, { status: 403 });
-  }
-  const templates = await prisma.contractTemplate.findMany({
-    where: {
-      ...portalWhere(user),
-      ...(unitId ? { unitId } : propertyId ? { propertyId } : {})
-    },
-    orderBy: { createdAt: "desc" },
-    select: {
-      id: true,
-      name: true,
-      filename: true,
-      mimeType: true,
-      size: true,
-      propertyId: true,
-      unitId: true,
-      isGlobalTemplate: true,
-      property: { select: { id: true, name: true } },
-      unit: { select: { id: true, unitNumber: true, property: { select: { id: true, name: true } } } },
-      defaultForUnits: { select: { id: true, unitNumber: true, property: { select: { id: true, name: true } } } },
-      createdAt: true
-    }
-  });
-  return NextResponse.json({
-    items: templates.map((template) => ({
-      ...template,
-      previewUrl: `/api/integrations/v1/templates/${template.id}/preview`,
-      downloadUrl: `/api/integrations/v1/templates/${template.id}/download`
-    })),
-    nextCursor: null
-  });
-}
-
-export async function POST(request: NextRequest) {
+export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   const { user, response } = await requireIntegrationUser(request, ["write:contracts"]);
   if (!user) return response;
   const forbidden = requireAdminIntegration(user);
   if (forbidden) return forbidden;
 
-  const form = await request.formData();
-  const file = form.get("file");
-  if (!(file instanceof File) || !file.name.endsWith(".docx")) {
-    return NextResponse.json({ error: { code: "BAD_REQUEST", message: "Bitte DOCX-Vorlage hochladen." } }, { status: 400 });
-  }
+  const template = await prisma.contractTemplate.findFirst({ where: { id: params.id, ...portalWhere(user) } });
+  if (!template) return NextResponse.json({ error: { code: "NOT_FOUND", message: "Vorlage wurde nicht gefunden." } }, { status: 404 });
 
+  const form = await request.formData();
+  const name = String(form.get("name") || template.name).trim();
+  const file = form.get("file");
   let propertyId = String(form.get("propertyId") || "").trim() || null;
   const unitId = String(form.get("unitId") || "").trim() || null;
   const defaultUnitIds = templateDefaultUnitIds(form);
@@ -81,19 +36,22 @@ export async function POST(request: NextRequest) {
     if (units.length !== new Set(defaultUnitIds).size) return NextResponse.json({ error: { code: "FORBIDDEN", message: "Mindestens eine Standard-Einheit gehoert nicht zu dieser Instanz." } }, { status: 403 });
   }
 
-  const saved = await saveUpload(file, env.contractsPath);
-  const template = await prisma.contractTemplate.create({
-    data: {
-      name: String(form.get("name") || file.name),
-      propertyId,
-      unitId,
-      isGlobalTemplate,
+  const data: { name: string; propertyId: string | null; unitId: string | null; isGlobalTemplate: boolean; filename?: string; storagePath?: string; mimeType?: string; size?: number } = { name, propertyId, unitId, isGlobalTemplate };
+  if (file instanceof File && file.size > 0) {
+    if (!file.name.endsWith(".docx")) return NextResponse.json({ error: { code: "BAD_REQUEST", message: "Bitte DOCX-Vorlage hochladen." } }, { status: 400 });
+    const saved = await saveUpload(file, env.contractsPath);
+    await rm(template.storagePath, { force: true }).catch(() => undefined);
+    Object.assign(data, {
       filename: saved.filename,
       storagePath: saved.storagePath,
       mimeType: saved.mimeType,
-      size: saved.size,
-      portalInstanceId: user.portalInstanceId
-    },
+      size: saved.size
+    });
+  }
+
+  const updated = await prisma.contractTemplate.update({
+    where: { id: template.id },
+    data,
     select: {
       id: true,
       name: true,
@@ -109,14 +67,28 @@ export async function POST(request: NextRequest) {
       createdAt: true
     }
   });
+  await prisma.unit.updateMany({ where: { defaultContractTemplateId: template.id, property: portalWhere(user), id: { notIn: defaultUnitIds } }, data: { defaultContractTemplateId: null } });
   if (defaultUnitIds.length) {
     await prisma.unit.updateMany({ where: { id: { in: defaultUnitIds }, property: portalWhere(user) }, data: { defaultContractTemplateId: template.id } });
   }
   return NextResponse.json({
-    ...template,
-    previewUrl: `/api/integrations/v1/templates/${template.id}/preview`,
-    downloadUrl: `/api/integrations/v1/templates/${template.id}/download`
-  }, { status: 201 });
+    ...updated,
+    previewUrl: `/api/integrations/v1/templates/${updated.id}/preview`,
+    downloadUrl: `/api/integrations/v1/templates/${updated.id}/download`
+  });
+}
+
+export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+  const { user, response } = await requireIntegrationUser(request, ["write:contracts"]);
+  if (!user) return response;
+  const forbidden = requireAdminIntegration(user);
+  if (forbidden) return forbidden;
+
+  const template = await prisma.contractTemplate.findFirst({ where: { id: params.id, ...portalWhere(user) } });
+  if (!template) return NextResponse.json({ error: { code: "NOT_FOUND", message: "Vorlage wurde nicht gefunden." } }, { status: 404 });
+  await prisma.contractTemplate.delete({ where: { id: template.id } });
+  await rm(template.storagePath, { force: true }).catch(() => undefined);
+  return NextResponse.json({ ok: true });
 }
 
 function templateDefaultUnitIds(form: FormData) {
