@@ -1,9 +1,12 @@
 import { AuditAction, DocumentScope, DocumentStatus, Role } from "@prisma/client";
 import fs from "fs/promises";
+import path from "path";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { auditLog } from "@/lib/audit";
 import { clientIp } from "@/lib/auth";
+import { buildDocumentMetadata } from "@/lib/document-metadata";
+import { safeFilename } from "@/lib/files";
 import { integrationDocumentInclude, integrationDocumentVisibilityWhere } from "@/lib/integration-document-access";
 import { integrationError, requireIntegrationUser } from "@/lib/integration-auth";
 import { serializeDocument } from "@/lib/integration-data";
@@ -22,7 +25,8 @@ const documentUpdateSchema = z.object({
   tags: z.array(z.string()).optional(),
   categoryId: z.string().nullable().optional(),
   isPropertyImage: z.boolean().optional(),
-  isPrimaryImage: z.boolean().optional()
+  isPrimaryImage: z.boolean().optional(),
+  documentYear: z.number().int().min(1900).max(2049).nullable().optional()
 });
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
@@ -42,6 +46,11 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   }
 
   const data = normalizeEmptyStrings(body.data);
+  const rename = data.filename ? await renameStoredFile(existing.storagePath, existing.filename, data.filename) : null;
+  if (rename) {
+    data.filename = rename.filename;
+    Object.assign(data, { storagePath: rename.storagePath });
+  }
   if (data.tenantProfileId) {
     const tenant = await prisma.tenantProfile.findFirst({
       where: { id: data.tenantProfileId, user: portalWhere(user) },
@@ -78,8 +87,20 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     data,
     include: integrationDocumentInclude()
   });
+  const shouldRegenerate = !data.summary && !data.tags && (data.title !== undefined || data.propertyId !== undefined || data.unitId !== undefined || data.categoryId !== undefined || data.documentYear !== undefined);
+  const enrichedDocument = shouldRegenerate
+    ? await prisma.document.update({ where: { id: params.id }, data: buildDocumentMetadata(document), include: integrationDocumentInclude() })
+    : document;
 
-  return NextResponse.json(serializeDocument(document));
+  await auditLog({
+    userId: user.id,
+    action: AuditAction.PROPERTY_CHANGED,
+    entity: "Document",
+    entityId: enrichedDocument.id,
+    ipAddress: clientIp(request),
+    detail: { ...data, storagePath: undefined }
+  });
+  return NextResponse.json(serializeDocument(enrichedDocument));
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
@@ -121,4 +142,20 @@ function normalizeEmptyStrings(data: z.infer<typeof documentUpdateSchema>) {
     if (normalized[key] === "") normalized[key] = null;
   }
   return normalized;
+}
+
+async function renameStoredFile(storagePath: string, currentFilename: string, requestedFilename: string) {
+  const safeRequested = safeDocumentFilename(requestedFilename, currentFilename);
+  if (safeRequested === currentFilename) return null;
+  const directory = path.dirname(storagePath);
+  const nextStoragePath = path.join(directory, `${Date.now()}-${safeFilename(safeRequested)}`);
+  await fs.rename(storagePath, nextStoragePath);
+  return { filename: safeRequested, storagePath: nextStoragePath };
+}
+
+function safeDocumentFilename(requested: string, current: string) {
+  const currentExt = path.extname(current);
+  const requestedExt = path.extname(requested);
+  const filename = requestedExt ? requested : `${requested}${currentExt}`;
+  return safeFilename(filename);
 }
