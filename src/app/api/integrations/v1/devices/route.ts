@@ -36,6 +36,9 @@ export async function GET(request: NextRequest) {
       locale: true,
       timeZone: true,
       lastSeenAt: true,
+      lastPushAttemptAt: true,
+      lastPushStatus: true,
+      lastPushError: true,
       revokedAt: true,
       createdAt: true,
       user: {
@@ -99,7 +102,14 @@ export async function POST(request: NextRequest) {
       deviceName: true,
       appVersion: true,
       buildNumber: true,
-      lastSeenAt: true
+      locale: true,
+      timeZone: true,
+      lastSeenAt: true,
+      lastPushAttemptAt: true,
+      lastPushStatus: true,
+      lastPushError: true,
+      revokedAt: true,
+      createdAt: true
     }
   });
 

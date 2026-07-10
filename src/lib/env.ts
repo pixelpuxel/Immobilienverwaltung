@@ -12,7 +12,12 @@ export const env = {
   smtpUser: process.env.SMTP_USER || "",
   smtpPassword: process.env.SMTP_PASSWORD || "",
   smtpSecure: process.env.SMTP_SECURE === "true",
-  qdrantUrl: process.env.QDRANT_URL || "http://qdrant:6333"
+  qdrantUrl: process.env.QDRANT_URL || "http://qdrant:6333",
+  apnsTeamId: process.env.APNS_TEAM_ID || "",
+  apnsKeyId: process.env.APNS_KEY_ID || "",
+  apnsBundleId: process.env.APNS_BUNDLE_ID || "",
+  apnsPrivateKey: (process.env.APNS_PRIVATE_KEY || "").replace(/\\n/g, "\n"),
+  apnsEnvironment: process.env.APNS_ENVIRONMENT || "auto"
 };
 
 export function isProductionUrl() {
