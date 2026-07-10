@@ -63,6 +63,7 @@ model PortalInstance {
   agentConversations AgentConversation[]
   auditLogs   AuditLog[]
   apiTokens   ApiToken[]
+  deviceInstallations DeviceInstallation[]
 }
 
 model User {
@@ -96,6 +97,7 @@ model User {
   tenantProfile TenantProfile?
   auditLogs    AuditLog[]
   apiTokens    ApiToken[]
+  deviceInstallations DeviceInstallation[]
   portalInstance PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
 }
 
@@ -110,6 +112,26 @@ model ApiToken {
   expiresAt       DateTime?
   revokedAt       DateTime?
   createdAt       DateTime        @default(now())
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  portalInstance  PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
+}
+
+model DeviceInstallation {
+  id              String          @id @default(cuid())
+  portalInstanceId String?
+  userId          String
+  deviceToken     String          @unique
+  platform        String          @default("ios")
+  environment     String          @default("production")
+  deviceName      String?
+  appVersion      String?
+  buildNumber     String?
+  locale          String?
+  timeZone        String?
+  lastSeenAt      DateTime        @default(now())
+  revokedAt       DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
   user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   portalInstance  PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
 }
