@@ -118,7 +118,7 @@ export async function resetAgentConversation(user: ScopedUser, conversationId?: 
 export async function processAgentMessage(input: AgentMessageInput, options: ProcessOptions = {}) {
   const config = await ensureAgentConfig(input.user.portalInstanceId);
   if (!config.enabled) {
-    return { conversationId: input.conversationId || null, answer: "Der Agent ist in den Einstellungen deaktiviert.", tools: [], artifacts: [], attachments: [] };
+    return { conversationId: input.conversationId || null, answer: "Der Agent ist in den Einstellungen deaktiviert.", steps: [], tools: [], artifacts: [], attachments: [] };
   }
 
   const conversation = await getOrCreateConversation(input);
@@ -140,28 +140,6 @@ export async function processAgentMessage(input: AgentMessageInput, options: Pro
   const history = historyRows
     .filter((message) => message.role === "user" || message.role === "assistant")
     .map((message) => ({ role: message.role === "assistant" ? "assistant" as const : "user" as const, content: message.content }));
-
-  if (isConversationalOnly(input.message, state)) {
-    const answer = conversationalAnswer(input.message);
-    const assistantMessage = await prisma.agentMessage.create({ data: { conversationId: conversation.id, role: "assistant", content: answer } });
-    await prisma.agentConversation.update({ where: { id: conversation.id }, data: { updatedAt: new Date() } });
-    await updateAgentRunLog(runLog?.id, {
-      finalAnswer: answer,
-      modelResponses: [{
-        phase: "direct_conversation",
-        raw: JSON.stringify({ reason: "conversational_only", answer })
-      }]
-    });
-    await indexAgentMemory(input.user, conversation.id, `${input.message}\n${answer}`, assistantMessage.id).catch((error) => console.error("Agent memory index failed", error));
-    return {
-      conversationId: conversation.id,
-      answer,
-      steps: ["Ich habe die Nachricht als normale Chat-Nachricht erkannt und keine Portalsuche gestartet."],
-      tools: [],
-      artifacts: [],
-      attachments: []
-    };
-  }
 
   options.onEvent?.({ type: "status", message: "Ich analysiere die Anfrage und plane die naechsten Schritte." });
   const agentResult = await runAgentLoop({
@@ -195,6 +173,7 @@ export async function processAgentMessage(input: AgentMessageInput, options: Pro
   return {
     conversationId: conversation.id,
     answer,
+    steps: agentResult.steps,
     tools: agentResult.tools,
     artifacts: agentResult.artifacts,
     attachments: agentResult.attachments
@@ -464,16 +443,17 @@ async function finalAnswer(input: {
   forcedAnswer?: string;
   runLogId?: string | null;
 }) {
-  if (input.forcedAnswer && !input.toolResults.length) return input.forcedAnswer;
   const system = [
     effectiveAgentSystemPrompt(input.config.systemPrompt),
     "",
     "Du bist der Portalagent eines Immobilienportals.",
     "Formuliere eine klare, gut strukturierte Chat-Antwort auf Deutsch. Die komplette sichtbare Struktur und Formatierung entsteht aus diesem Prompt und aus deiner Antwort, nicht aus nachtraeglicher Programmlogik.",
+    "Auch wenn der Planer bereits eine vorlaeufige Antwort geliefert hat, formulierst du die sichtbare Antwort selbst neu. Die vorlaeufige Antwort ist nur Kontext, keine Vorlage.",
     "Schreibe nicht wie ein Log, JSON-Dump, Suchergebnis oder Rohdatenexport. Verdichte Tool-Ergebnisse zu einer Antwort, die ein Mensch sofort versteht.",
     "Beantworte die eigentliche Nutzerfrage direkt. Beginne mit dem Ergebnis in einem kurzen Satz. Danach nur die Details, die fuer die Nutzerfrage wirklich relevant sind.",
     "Nutze Markdown sparsam und bewusst: kurze Abschnitte mit fett gesetzten Labels oder Bulletpoints sind erlaubt, aber nur wenn sie Lesbarkeit schaffen.",
     "Wenn du Tabellen vermeiden kannst, vermeide sie; auf dem iPhone sind kurze Abschnitte und Bulletpoints besser lesbar.",
+    "Smalltalk, Begruessungen, Danke, Test und Ping beantwortest du wie ein normaler Chat-Assistent freundlich und kurz. Erwaehne dabei keine Portal-Suche, wenn keine Portal-Suche stattgefunden hat.",
     "Wenn der Nutzer eine Frage stellt, gib nicht zuerst eine Trefferliste aus. Liefere zuerst die Antwort oder Berechnung.",
     "Standardaufbau fuer Analysefragen: Ergebnis, Berechnung/Grundlage, Auffaelligkeiten oder Einschraenkungen. Keine lange Objektliste, ausser der Nutzer fragt nach einer Liste.",
     "Standardaufbau fuer Suchfragen: Trefferanzahl, wichtigste Treffer mit Namen und Bezug, naechster Schritt oder Eingrenzung.",
@@ -483,6 +463,11 @@ async function finalAnswer(input: {
     "Bei Summen, Gesamtwerten und Kennzahlen: rechne aus den numerischen Tooldaten. Ignoriere fehlende Werte nicht still, sondern nenne wie viele Datensaetze ohne verwertbaren Wert waren.",
     "Bei Geldbetraegen: formatiere in Euro mit Tausenderpunkten und ohne unnoetige Nachkommastellen, z.B. 1.250.000 Euro.",
     "Wenn eine Anfrage wie 'Wie viel sind alle Immobilien wert?' gestellt wird, antworte mit der Gesamtsumme der vorhandenen Kaufpreis-/Wertfelder und nicht mit einer Immobilienliste.",
+    "Wenn die Tool-Ergebnisse Immobilien mit expectedPurchasePrice, outstandingLoan oder anderen Wertfeldern enthalten, behandle diese Felder als Rechengrundlage. Zaehle nur verwertbare Zahlen, rechne transparent und nenne fehlende Werte als Einschraenkung.",
+    "Wenn die Tool-Ergebnisse Dokumente, Mieter oder Immobilien enthalten und der Nutzer keine Liste verlangt, fasse sie fachlich zusammen statt jeden Datensatz auszugeben.",
+    "Wenn der Nutzer nach 'alle', 'gesamt', 'wie viel', 'Summe', 'Wert', 'Darlehen', 'Eigenkapital' oder 'Quote' fragt, ist das eine Auswertung. Eine reine Liste ist dann falsch.",
+    "Wenn der Nutzer nach einem konkreten Objekt fragt, nenne zuerst die konkrete Antwort zu diesem Objekt und danach nur relevante Metadaten.",
+    "Wenn die Datenlage nicht reicht, formuliere eine klare Rueckfrage oder nenne genau, welches Datenfeld fehlt.",
     "Wenn Tool-Ergebnisse Listen enthalten, nutze sie als Datenquelle. Kopiere sie nicht ungefiltert in die Antwort.",
     "Nutze ausschliesslich echte Tool-Ergebnisse.",
     "Behaupte keine Aktion, die nicht erfolgreich ausgefuehrt wurde.",
