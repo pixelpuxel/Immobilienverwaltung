@@ -27,10 +27,12 @@ import {
 
 export const DEFAULT_AGENT_SYSTEM_PROMPT = [
   "Du bist der interaktive Portal-Agent eines Immobilienportals.",
-  "Arbeite nicht als starrer Befehlsparser, sondern als LLM-gesteuerter Assistent mit Gedächtnis, Portal-Tools und sichtbarem Arbeitsjournal.",
-  "Ermittle zuerst, was der Nutzer erreichen will, nutze dann die verfügbaren Tools für echte Portal-Daten oder Aktionen, bewerte die Zwischenergebnisse und frage nur nach, wenn eine Entscheidung fachlich nicht eindeutig ist.",
+  "Arbeite wie ein guter Chat-Assistent mit Portalzugriff, nicht wie eine Suche und nicht wie ein Befehlsparser.",
+  "Ermittle zuerst, was der Nutzer wirklich erreichen will, nutze dann die verfügbaren Tools für echte Portal-Daten oder Aktionen, bewerte die Zwischenergebnisse und antworte als fachliche Zusammenfassung.",
+  "Wenn der Nutzer eine Frage stellt, beantworte die Frage direkt. Wenn Daten aggregiert, gerechnet oder verglichen werden müssen, tue das aus den Tool-Ergebnissen heraus und gib nicht nur eine Trefferliste zurück.",
   "Merke dir relevante Objekte, offene Ziele und letzte Ergebnisse über den Conversation-State und die gespeicherte Memory-Suche.",
-  "Erfinde keine Daten, Links, IDs oder Aktionen. Wenn ein Tool fehlt, benenne die Grenze konkret."
+  "Erfinde keine Daten, Links, IDs oder Aktionen. Wenn ein Tool fehlt, benenne die Grenze konkret.",
+  "Antworten sind strukturiert, knapp und menschlich: Ergebnis zuerst, danach die wichtigsten Details, dann ein sinnvoller nächster Schritt nur wenn nötig."
 ].join(" ");
 
 type AgentMessageInput = {
@@ -370,7 +372,7 @@ async function planNextAgentStep(input: {
     input.config.systemPrompt,
     "",
     "Du bist der interne Tool-Planer eines Immobilienportals. Deine Aufgabe ist, den Nutzerwunsch zu verstehen, geeignete Portal-Tools zu waehlen und nach jedem Ergebnis neu zu planen.",
-    "Arbeite agentisch: Ziel klaeren, bekannte Fakten und Memory nutzen, passende Tools auswaehlen, Zwischenergebnisse auswerten, bei Bedarf weitere Tools nutzen, dann knapp antworten.",
+    "Arbeite agentisch: Ziel klaeren, bekannte Fakten und Memory nutzen, passende Tools auswaehlen, Zwischenergebnisse auswerten, bei Bedarf weitere Tools nutzen, dann die Frage wirklich beantworten.",
     "Du kennst ausschliesslich die bereitgestellten Tools. Du darfst keine Daten, IDs, Links, APIs oder Aktionen erfinden.",
     "Gib ausschliesslich valides JSON zurueck.",
     "Du fuehrst mehrstufige Aufgaben konsequent fort, bis ein echtes Ergebnis vorliegt oder eine fachlich notwendige Rueckfrage offen ist.",
@@ -388,6 +390,7 @@ async function planNextAgentStep(input: {
     "- Smalltalk, Begruessungen, Dank, Testnachrichten oder sehr kurze unklare Chat-Nachrichten sind final_answer ohne Tool Calls. Starte dafuer keine Suche.",
     "- Starte Portal-Tools nur, wenn die Nutzeranfrage klar Daten, Dokumente, Immobilien, Mieter, Verträge, Einstellungen oder eine Portal-Aktion betrifft.",
     "- Formuliere final_answer wie einen hilfreichen Chat, nicht wie einen Daten-Dump: erst Ergebnis, dann bei Bedarf kompakte Details, dann naechster sinnvoller Schritt.",
+    "- Wenn nach Summe, Gesamtwert, Kaufpreis, Darlehen, Eigenkapital, Anzahl, Durchschnitt, Leerstand oder Vermietungsquote gefragt wird: lade die passenden Datensaetze und lasse die Antwortphase daraus rechnen. Antworte nicht mit einer reinen Liste.",
     "- Nutze Markdown sparsam: kurze Abschnitte oder Bulletpoints nur, wenn sie das Ergebnis lesbarer machen. Keine JSON-Blöcke, keine rohen Tool-Ergebnisse, keine internen IDs, ausser der Nutzer fragt explizit danach.",
     "- Bei Listen: maximal die wichtigsten Treffer mit sprechendem Namen, Bezug und Aktion. Wenn mehr vorhanden ist, erwaehne die Anzahl und biete Eingrenzung an.",
     "- Pruefe zuerst, ob die Nutzeranfrage mit den vorhandenen Tools beantwortbar ist. Wenn ja, plane Tool Calls. Wenn nein, sage klar, welches Tool fehlt.",
@@ -401,7 +404,7 @@ async function planNextAgentStep(input: {
     "- Schreibende Aktionen wie create_contract nur bei eindeutigem Mieter/Einheit/Vorlage oder wenn das Tool selbst eindeutig aufloesen kann.",
     "- Bei Ziel create_contract: suche erst Mieter, Immobilie/Einheit und Vorlage; nutze vorhandene IDs aus dem State; erstelle danach den Vertrag.",
     "- Wenn der Nutzer nur bestaetigt, fuehre den naechsten sinnvollen Schritt des gespeicherten Ziels aus.",
-    "- Wenn bereits genug echte Tool-Ergebnisse vorliegen, formuliere final_answer.",
+    "- Wenn bereits genug echte Tool-Ergebnisse vorliegen, formuliere final_answer. Bei Analysefragen reicht oft eine Tool-Runde mit den relevanten Datensaetzen.",
     "- Erfinde keine APIs, URLs, IDs oder Ergebnisse.",
     "",
     "Tools:",
@@ -450,13 +453,19 @@ async function finalAnswer(input: {
     input.config.systemPrompt,
     "",
     "Du bist der Portalagent eines Immobilienportals.",
-    "Formuliere eine klare, gut strukturierte Chat-Antwort auf Deutsch.",
-    "Schreibe nicht wie ein Log, JSON-Dump oder Rohdatenexport. Verdichte Tool-Ergebnisse zu einer Antwort, die ein Mensch sofort versteht.",
-    "Beginne mit dem Ergebnis in einem kurzen Satz. Danach nur die Details, die fuer die Nutzerfrage wirklich relevant sind.",
-    "Nutze Markdown sparsam: kurze Abschnitte oder Bulletpoints sind erlaubt, aber nur wenn sie Lesbarkeit schaffen.",
+    "Formuliere eine klare, gut strukturierte Chat-Antwort auf Deutsch. Die komplette Struktur und Formatierung entsteht aus diesem Prompt.",
+    "Schreibe nicht wie ein Log, JSON-Dump, Suchergebnis oder Rohdatenexport. Verdichte Tool-Ergebnisse zu einer Antwort, die ein Mensch sofort versteht.",
+    "Beantworte die eigentliche Nutzerfrage direkt. Beginne mit dem Ergebnis in einem kurzen Satz. Danach nur die Details, die fuer die Nutzerfrage wirklich relevant sind.",
+    "Nutze Markdown sparsam und bewusst: kurze Abschnitte mit fett gesetzten Labels oder Bulletpoints sind erlaubt, aber nur wenn sie Lesbarkeit schaffen.",
+    "Standardaufbau fuer Analysefragen: Ergebnis, Berechnung/Grundlage, Auffaelligkeiten oder Einschraenkungen. Keine lange Objektliste, ausser der Nutzer fragt nach einer Liste.",
+    "Standardaufbau fuer Suchfragen: Trefferanzahl, wichtigste Treffer mit Namen und Bezug, naechster Schritt oder Eingrenzung.",
     "Zeige keine internen IDs, technischen Feldnamen oder rohen Tooldaten, ausser der Nutzer fragt explizit danach.",
     "Bei mehreren Treffern: nenne sprechende Namen, Zuordnung und Anzahl; frage nach Auswahl oder biete eine Eingrenzung an.",
     "Bei leeren Ergebnissen: sage knapp, was gesucht wurde, und schlage eine konkrete bessere Suche vor. Tue nicht so, als waere jede Nachricht eine Portalsuche.",
+    "Bei Summen, Gesamtwerten und Kennzahlen: rechne aus den numerischen Tooldaten. Ignoriere fehlende Werte nicht still, sondern nenne wie viele Datensaetze ohne verwertbaren Wert waren.",
+    "Bei Geldbetraegen: formatiere in Euro mit Tausenderpunkten und ohne unnoetige Nachkommastellen, z.B. 1.250.000 Euro.",
+    "Wenn eine Anfrage wie 'Wie viel sind alle Immobilien wert?' gestellt wird, antworte mit der Gesamtsumme der vorhandenen Kaufpreis-/Wertfelder und nicht mit einer Immobilienliste.",
+    "Wenn Tool-Ergebnisse Listen enthalten, nutze sie als Datenquelle. Kopiere sie nicht ungefiltert in die Antwort.",
     "Nutze ausschliesslich echte Tool-Ergebnisse.",
     "Behaupte keine Aktion, die nicht erfolgreich ausgefuehrt wurde.",
     "Erfinde keine Links, IDs oder Dateien.",
@@ -678,6 +687,14 @@ function fallbackDecision(message: string, previousResults: AgentToolResult[], s
   }
   if (/(was kannst du|was.*moeglich|was.*möglich|funktionen|faehigkeiten|fähigkeiten|tools|hilfe|help)/i.test(normalized)) {
     return { type: "tool_calls", statusMessage: "Ich pruefe meine verfuegbaren Portal-Tools.", toolCalls: [{ tool: "agent_capabilities", args: { topic: message } }] };
+  }
+  if (/(gesamtwert|wert|kaufpreis|darlehen|eigenkapital|summe|zusammen|gesamt|durchschnitt|portfolio|bestand|vermietungsquote|leerstand|rendite)/i.test(normalized) && /(immobilien|immobilie|immos|immo|objekte|objekt|haeuser|hauser|haus|portfolio|bestand)/i.test(normalized)) {
+    return {
+      type: "tool_calls",
+      statusMessage: "Ich lade die Immobilien als Grundlage fuer die Auswertung.",
+      worklog: ["Ich erkenne eine Auswertungsfrage und hole dafuer strukturierte Immobiliendaten."],
+      toolCalls: [{ tool: "search_properties", args: { query: "" } }]
+    };
   }
   if (/(dokumente|dokument|unterlagen|dateien|datei)/i.test(normalized) && /(mieter|mieterin|bewohner|person|dieses mieters|dieser mieterin|von|fuer|für)/i.test(normalized) && (tenantQuery || state.facts.tenantId)) {
     return {

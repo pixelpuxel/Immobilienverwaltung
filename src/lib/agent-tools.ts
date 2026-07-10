@@ -172,7 +172,17 @@ export const agentToolRegistry = {
         summary: properties.length
           ? ["Immobilien:", ...properties.map((p) => `- ${p.name}\n  ${p.address || "keine Adresse"} · ${p.units.length} Einheiten · ${p.documents.length} Dokumente\n  ${publicPortalUrl(`/properties/${p.id}`)}`)].join("\n")
           : "Keine Immobilien gefunden.",
-        data: properties.map((p) => ({ id: p.id, name: p.name, address: p.address, rentalStatus: p.rentalStatus, href: publicPortalUrl(`/properties/${p.id}`) })),
+        data: properties.map((p) => ({
+          id: p.id,
+          name: p.name,
+          address: p.address,
+          rentalStatus: p.rentalStatus,
+          expectedPurchasePrice: p.expectedPurchasePrice?.toString() ?? null,
+          outstandingLoan: p.outstandingLoan?.toString() ?? null,
+          livingArea: p.livingArea?.toString() ?? null,
+          unitCount: p.unitCount,
+          href: publicPortalUrl(`/properties/${p.id}`)
+        })),
         artifacts: properties.slice(0, 10).map((p) => {
           const image = p.documents.find((document) => document.isPrimaryImage && document.isPropertyImage && document.mimeType.startsWith("image/"))
             || p.documents.find((document) => document.isPropertyImage && document.mimeType.startsWith("image/"));
