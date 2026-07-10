@@ -14,6 +14,45 @@ const deviceSchema = z.object({
   timeZone: z.string().trim().nullable().optional()
 });
 
+export async function GET(request: NextRequest) {
+  const { user, response } = await requireIntegrationUser(request);
+  if (!user) return response;
+
+  const where = user.role === "ADMIN"
+    ? { portalInstanceId: user.portalInstanceId, platform: "ios" }
+    : { userId: user.id, platform: "ios" };
+
+  const items = await prisma.deviceInstallation.findMany({
+    where,
+    orderBy: { lastSeenAt: "desc" },
+    take: 50,
+    select: {
+      id: true,
+      platform: true,
+      environment: true,
+      deviceName: true,
+      appVersion: true,
+      buildNumber: true,
+      locale: true,
+      timeZone: true,
+      lastSeenAt: true,
+      revokedAt: true,
+      createdAt: true,
+      user: {
+        select: {
+          id: true,
+          email: true,
+          username: true,
+          name: true,
+          role: true
+        }
+      }
+    }
+  });
+
+  return NextResponse.json({ items });
+}
+
 export async function POST(request: NextRequest) {
   const { user, response } = await requireIntegrationUser(request);
   if (!user) return response;
