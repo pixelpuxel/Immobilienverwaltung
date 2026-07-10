@@ -28,6 +28,14 @@ describe("agent tool pipeline", () => {
     expect(() => validateAgentToolCalls([{ tool: "prisma_raw_query", args: {} }])).toThrow(/Unbekanntes Agent-Tool/);
   });
 
+  it("answers greetings without starting a portal search", () => {
+    const decision = fallbackDecisionForTest("Hallo");
+    expect(decision.type).toBe("final_answer");
+    if (decision.type === "final_answer") {
+      expect(decision.answer).toMatch(/Portal-Agent|Hallo/i);
+    }
+  });
+
   it("plans tenant lookup for natural current-resident questions", () => {
     const decision = fallbackDecisionForTest("Wer wohnt aktuell in meinen Objekten?");
     expect(decision.type).toBe("tool_calls");

@@ -24,6 +24,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   const q = request.nextUrl.searchParams.get("q")?.trim();
   const updatedSince = request.nextUrl.searchParams.get("updatedSince");
   const limit = Math.min(100, Math.max(1, Number(request.nextUrl.searchParams.get("limit") || "50") || 50));
+  const page = Math.max(1, Number(request.nextUrl.searchParams.get("page") || "1") || 1);
 
   const where: Prisma.DocumentWhereInput = {
     AND: [
@@ -35,12 +36,16 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     ]
   };
 
-  const documents = await prisma.document.findMany({
-    where,
-    include: integrationDocumentInclude(),
-    orderBy: [{ documentYear: "desc" }, { updatedAt: "desc" }],
-    take: limit
-  });
+  const [documents, total] = await Promise.all([
+    prisma.document.findMany({
+      where,
+      include: integrationDocumentInclude(),
+      orderBy: [{ documentYear: "desc" }, { updatedAt: "desc" }],
+      skip: (page - 1) * limit,
+      take: limit
+    }),
+    prisma.document.count({ where })
+  ]);
 
   return NextResponse.json({
     tenant: {
@@ -53,6 +58,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       unit: tenant.unit
     },
     items: documents.map(serializeDocument),
-    nextCursor: null
+    nextCursor: null,
+    nextPage: page * limit < total ? page + 1 : null
   });
 }

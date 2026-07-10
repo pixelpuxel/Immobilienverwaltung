@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
   const categoryId = request.nextUrl.searchParams.get("categoryId");
   const updatedSince = request.nextUrl.searchParams.get("updatedSince");
   const limit = Math.min(100, Math.max(1, Number(request.nextUrl.searchParams.get("limit") || "50") || 50));
+  const page = Math.max(1, Number(request.nextUrl.searchParams.get("page") || "1") || 1);
   const tenant = tenantId
     ? await prisma.tenantProfile.findFirst({
         where: { AND: [{ id: tenantId }, await integrationTenantAccessWhere(user)] },
@@ -36,13 +37,21 @@ export async function GET(request: NextRequest) {
       q ? { OR: [{ title: { contains: q, mode: "insensitive" } }, { filename: { contains: q, mode: "insensitive" } }, { summary: { contains: q, mode: "insensitive" } }] } : {}
     ]
   };
-  const documents = await prisma.document.findMany({
-    where,
-    include: integrationDocumentInclude(),
-    orderBy: { updatedAt: "desc" },
-    take: limit
+  const [documents, total] = await Promise.all([
+    prisma.document.findMany({
+      where,
+      include: integrationDocumentInclude(),
+      orderBy: { updatedAt: "desc" },
+      skip: (page - 1) * limit,
+      take: limit
+    }),
+    prisma.document.count({ where })
+  ]);
+  return NextResponse.json({
+    items: documents.map(serializeDocument),
+    nextCursor: null,
+    nextPage: page * limit < total ? page + 1 : null
   });
-  return NextResponse.json({ items: documents.map(serializeDocument), nextCursor: null });
 }
 
 export async function POST(request: NextRequest) {

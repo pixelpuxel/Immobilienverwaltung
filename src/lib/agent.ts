@@ -123,6 +123,28 @@ export async function processAgentMessage(input: AgentMessageInput, options: Pro
     .filter((message) => message.role === "user" || message.role === "assistant")
     .map((message) => ({ role: message.role === "assistant" ? "assistant" as const : "user" as const, content: message.content }));
 
+  if (isConversationalOnly(input.message, state)) {
+    const answer = conversationalAnswer(input.message);
+    const assistantMessage = await prisma.agentMessage.create({ data: { conversationId: conversation.id, role: "assistant", content: answer } });
+    await prisma.agentConversation.update({ where: { id: conversation.id }, data: { updatedAt: new Date() } });
+    await updateAgentRunLog(runLog?.id, {
+      finalAnswer: answer,
+      modelResponses: [{
+        phase: "direct_conversation",
+        raw: JSON.stringify({ reason: "conversational_only", answer })
+      }]
+    });
+    await indexAgentMemory(input.user, conversation.id, `${input.message}\n${answer}`, assistantMessage.id).catch((error) => console.error("Agent memory index failed", error));
+    return {
+      conversationId: conversation.id,
+      answer,
+      steps: ["Ich habe die Nachricht als normale Chat-Nachricht erkannt und keine Portalsuche gestartet."],
+      tools: [],
+      artifacts: [],
+      attachments: []
+    };
+  }
+
   options.onEvent?.({ type: "status", message: "Ich analysiere die Anfrage und plane die naechsten Schritte." });
   const agentResult = await runAgentLoop({
     config,
@@ -363,6 +385,11 @@ async function planNextAgentStep(input: {
     '{"type":"final_answer","worklog":["..."],"answer":"..."}',
     "",
     "Regeln:",
+    "- Smalltalk, Begruessungen, Dank, Testnachrichten oder sehr kurze unklare Chat-Nachrichten sind final_answer ohne Tool Calls. Starte dafuer keine Suche.",
+    "- Starte Portal-Tools nur, wenn die Nutzeranfrage klar Daten, Dokumente, Immobilien, Mieter, Verträge, Einstellungen oder eine Portal-Aktion betrifft.",
+    "- Formuliere final_answer wie einen hilfreichen Chat, nicht wie einen Daten-Dump: erst Ergebnis, dann bei Bedarf kompakte Details, dann naechster sinnvoller Schritt.",
+    "- Nutze Markdown sparsam: kurze Abschnitte oder Bulletpoints nur, wenn sie das Ergebnis lesbarer machen. Keine JSON-Blöcke, keine rohen Tool-Ergebnisse, keine internen IDs, ausser der Nutzer fragt explizit danach.",
+    "- Bei Listen: maximal die wichtigsten Treffer mit sprechendem Namen, Bezug und Aktion. Wenn mehr vorhanden ist, erwaehne die Anzahl und biete Eingrenzung an.",
     "- Pruefe zuerst, ob die Nutzeranfrage mit den vorhandenen Tools beantwortbar ist. Wenn ja, plane Tool Calls. Wenn nein, sage klar, welches Tool fehlt.",
     "- Bei Fragen nach deinen Faehigkeiten, Grenzen oder moeglichen Aktionen nutze agent_capabilities.",
     "- Wenn Daten fehlen, nutze Suchtools, statt sofort nachzufragen.",
@@ -423,7 +450,13 @@ async function finalAnswer(input: {
     input.config.systemPrompt,
     "",
     "Du bist der Portalagent eines Immobilienportals.",
-    "Formuliere eine klare Antwort auf Deutsch.",
+    "Formuliere eine klare, gut strukturierte Chat-Antwort auf Deutsch.",
+    "Schreibe nicht wie ein Log, JSON-Dump oder Rohdatenexport. Verdichte Tool-Ergebnisse zu einer Antwort, die ein Mensch sofort versteht.",
+    "Beginne mit dem Ergebnis in einem kurzen Satz. Danach nur die Details, die fuer die Nutzerfrage wirklich relevant sind.",
+    "Nutze Markdown sparsam: kurze Abschnitte oder Bulletpoints sind erlaubt, aber nur wenn sie Lesbarkeit schaffen.",
+    "Zeige keine internen IDs, technischen Feldnamen oder rohen Tooldaten, ausser der Nutzer fragt explizit danach.",
+    "Bei mehreren Treffern: nenne sprechende Namen, Zuordnung und Anzahl; frage nach Auswahl oder biete eine Eingrenzung an.",
+    "Bei leeren Ergebnissen: sage knapp, was gesucht wurde, und schlage eine konkrete bessere Suche vor. Tue nicht so, als waere jede Nachricht eine Portalsuche.",
     "Nutze ausschliesslich echte Tool-Ergebnisse.",
     "Behaupte keine Aktion, die nicht erfolgreich ausgefuehrt wurde.",
     "Erfinde keine Links, IDs oder Dateien.",
@@ -534,6 +567,13 @@ export function fallbackDecisionForTest(message: string, previousResults: AgentT
 
 function fallbackDecision(message: string, previousResults: AgentToolResult[], state: AgentConversationStateValue): AgentDecision {
   if (previousResults.length) return { type: "final_answer", answer: fallbackAnswer(message, previousResults) };
+  if (isConversationalOnly(message, state)) {
+    return {
+      type: "final_answer",
+      answer: conversationalAnswer(message),
+      worklog: ["Ich erkenne eine normale Chat-Nachricht und starte keine Portalsuche."]
+    };
+  }
   const normalized = normalize(message);
   const propertyQuery = extractLikelyPropertyQuery(message) || state.facts.propertyQuery || state.facts.propertyName;
   const tenantQuery = state.facts.tenantQuery || state.facts.tenantName || extractLikelyTenantName(message);
@@ -683,7 +723,37 @@ function fallbackDecision(message: string, previousResults: AgentToolResult[], s
   if (/(immobilie|immos|immo|objekt|haus|adresse)/i.test(normalized)) {
     return { type: "tool_calls", statusMessage: "Ich suche passende Immobilien.", toolCalls: [{ tool: "search_properties", args: { query: propertyQuery || message } }] };
   }
-  return { type: "tool_calls", statusMessage: "Ich suche im Portal.", toolCalls: [{ tool: "global_search", args: { query: message } }] };
+  return {
+    type: "final_answer",
+    answer: "Ich bin da. Sag mir einfach, was du im Immobilienportal tun möchtest, zum Beispiel Mieter prüfen, Dokumente finden, einen Vertrag vorbereiten oder eine Immobilie ansehen. Ich starte erst dann eine Portalsuche, wenn dein Wunsch fachlich klar ist.",
+    worklog: ["Die Anfrage war nicht eindeutig genug fuer eine Portal-Aktion; ich antworte ohne Suche."]
+  };
+}
+
+function isConversationalOnly(message: string, state?: AgentConversationStateValue) {
+  const normalized = normalize(message).trim();
+  if (!normalized) return true;
+  if ((state?.pendingQuestion || state?.goal) && isAffirmation(message)) {
+    return false;
+  }
+  const portalIntent = /(immobil|immo|objekt|haus|adresse|wohnung|einheit|mieter|bewohner|dokument|unterlage|datei|vertrag|mietvertrag|vorlage|wohnungsgeber|bestaetigung|bestätigung|nebenkosten|abrechnung|energieausweis|grundbuch|kaufpreis|darlehen|miete|kaution|todo|aufgabe|telegram|mail|backup|token|suche|finde|zeige|liste|erstelle|generier|mach|loesch|lösch|aendere|ändere|speicher|upload|hochladen|freigabe|teilen)/i.test(normalized);
+  if (portalIntent) return false;
+  if (/^(hallo|hi|hey|moin|servus|guten morgen|guten tag|guten abend|tach|test|ping|danke|dankeschoen|dankeschön|ok|okay|alles klar|ja|nein|weiter)[\s!.?,-]*$/i.test(normalized)) {
+    return true;
+  }
+  const words = normalized.split(/\s+/).filter(Boolean);
+  return words.length <= 3 && !/[0-9]/.test(normalized);
+}
+
+function conversationalAnswer(message: string) {
+  const normalized = normalize(message).trim();
+  if (/^(danke|dankeschoen|dankeschön|merci)/i.test(normalized)) {
+    return "Gerne. Wenn du möchtest, kann ich direkt im Portal weiterhelfen: Immobilien, Mieter, Dokumente, Verträge, Freigaben oder Einstellungen.";
+  }
+  if (/^(test|ping)/i.test(normalized)) {
+    return "Ich bin erreichbar. Du kannst mir normal schreiben, was du im Portal erledigen möchtest; ich frage nach, wenn mir noch etwas fehlt.";
+  }
+  return "Hallo! Ich bin dein Portal-Agent. Du kannst ganz normal mit mir schreiben, zum Beispiel: „Zeig mir die Dokumente zur Mozartstraße“, „Wer wohnt aktuell in Einheit 2?“ oder „Bereite einen Mietvertrag für Alina vor“. Ich suche erst im Portal, wenn deine Anfrage wirklich eine Portal-Aktion oder konkrete Daten betrifft.";
 }
 
 function collectAgentOutput(answer: string, tools: AgentToolResult[], steps: string[] = []) {
