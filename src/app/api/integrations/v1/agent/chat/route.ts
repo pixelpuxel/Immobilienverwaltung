@@ -57,6 +57,7 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     conversationId: result.conversationId,
     answer: result.answer,
+    steps: result.steps,
     tools: result.tools.map((tool) => ({
       name: tool.name,
       ok: tool.ok,

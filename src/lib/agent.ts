@@ -25,7 +25,13 @@ import {
   type AgentConversationStateValue
 } from "./agent-state";
 
-export const DEFAULT_AGENT_SYSTEM_PROMPT = "Du bist ein Agent für ein Immobilienportal. Du hast die API-Dokumentation und die fachlichen Regeln als Kontext. Analysiere Nutzeranfragen: Bei fachlichen Aktionen wähle den passenden API-Endpunkt und führe ihn aus. Bei allgemeinen Fragen zum System beantworte sie basierend auf dem System-Prompt. Merke dir den Kontext, wie aktuelle Objekte, und greife auf gespeicherte Zusammenfassungen zurück, um sinnvoll zu reagieren.";
+export const DEFAULT_AGENT_SYSTEM_PROMPT = [
+  "Du bist der interaktive Portal-Agent eines Immobilienportals.",
+  "Arbeite nicht als starrer Befehlsparser, sondern als LLM-gesteuerter Assistent mit Gedächtnis, Portal-Tools und sichtbarem Arbeitsjournal.",
+  "Ermittle zuerst, was der Nutzer erreichen will, nutze dann die verfügbaren Tools für echte Portal-Daten oder Aktionen, bewerte die Zwischenergebnisse und frage nur nach, wenn eine Entscheidung fachlich nicht eindeutig ist.",
+  "Merke dir relevante Objekte, offene Ziele und letzte Ergebnisse über den Conversation-State und die gespeicherte Memory-Suche.",
+  "Erfinde keine Daten, Links, IDs oder Aktionen. Wenn ein Tool fehlt, benenne die Grenze konkret."
+].join(" ");
 
 type AgentMessageInput = {
   user: ScopedUser;
@@ -54,18 +60,19 @@ type ProviderMessage = {
 };
 
 type AgentDecision =
-  | { type: "tool_calls"; statusMessage?: string; toolCalls: AgentToolCall[] }
-  | { type: "clarification"; message: string }
-  | { type: "final_answer"; answer: string };
+  | { type: "tool_calls"; statusMessage?: string; worklog?: string[]; toolCalls: AgentToolCall[] }
+  | { type: "clarification"; message: string; worklog?: string[] }
+  | { type: "final_answer"; answer: string; worklog?: string[] };
 
 const decisionSchema = z.union([
   z.object({
     type: z.literal("tool_calls"),
     statusMessage: z.string().optional(),
+    worklog: z.array(z.string().min(1)).optional().default([]),
     toolCalls: z.array(z.object({ tool: z.string(), args: z.record(z.unknown()).optional().default({}) })).default([])
   }),
-  z.object({ type: z.literal("clarification"), message: z.string().min(1) }),
-  z.object({ type: z.literal("final_answer"), answer: z.string().min(1) })
+  z.object({ type: z.literal("clarification"), message: z.string().min(1), worklog: z.array(z.string().min(1)).optional().default([]) }),
+  z.object({ type: z.literal("final_answer"), answer: z.string().min(1), worklog: z.array(z.string().min(1)).optional().default([]) })
 ]);
 
 export async function ensureAgentConfig(portalInstanceId: string | null) {
@@ -168,6 +175,7 @@ async function runAgentLoop(input: {
 }) {
   const allToolCalls: AgentToolCall[] = [];
   const allToolResults: AgentToolResult[] = [];
+  const journal: string[] = [];
   const maxToolRounds = 5;
   let state = input.state;
 
@@ -183,6 +191,7 @@ async function runAgentLoop(input: {
       previousToolResults: allToolResults,
       runLogId: input.runLogId
     });
+    emitWorklog(input.onEvent, journal, decision.worklog);
     await updateAgentRunLog(input.runLogId, {
       modelResponses: [{ phase: "decision", round, decision }],
       toolCalls: allToolCalls
@@ -201,56 +210,17 @@ async function runAgentLoop(input: {
           toolResults: allToolResults,
           runLogId: input.runLogId
         });
-        return { ...collectAgentOutput(final, allToolResults), state };
-      }
-      const fallback = fallbackDecision(input.userMessage, allToolResults, state);
-      if (shouldPreferToolLookup(input.userMessage, decision.message, fallback, state)) {
-        if (fallback.type === "tool_calls" && fallback.statusMessage) input.onEvent?.({ type: "status", message: fallback.statusMessage });
-        if (fallback.type === "tool_calls") {
-          const validated = validateAgentToolCalls(fallback.toolCalls);
-          const results = await executeValidatedToolCalls(
-            { user: input.user, channel: input.channel },
-            validated,
-            (event) => input.onEvent?.(event.type === "tool_start"
-              ? { type: "tool_start", tool: event.tool, message: event.message || `Ich fuehre ${event.tool} aus.` }
-              : { type: "tool_result", tool: event.tool, summary: event.summary || "Erledigt." })
-          );
-          allToolCalls.push(...fallback.toolCalls);
-          allToolResults.push(...results);
-          state = updateStateFromToolResults(state, results);
-          await saveAgentState(input.conversationId, state);
-          await updateAgentRunLog(input.runLogId, { toolCalls: allToolCalls, toolResults: publicToolResults(allToolResults) });
-          continue;
-        }
+        return { ...collectAgentOutput(final, allToolResults, journal), state };
       }
       state.status = "waiting_for_user";
       state.pendingQuestion = decision.message;
       await saveAgentState(input.conversationId, state);
       input.onEvent?.({ type: "clarification", message: decision.message });
-      return { ...collectAgentOutput(decision.message, allToolResults), state };
+      journal.push("Rueckfrage erforderlich.");
+      return { ...collectAgentOutput(decision.message, allToolResults, journal), state };
     }
 
     if (decision.type === "final_answer") {
-      if (!allToolResults.length && !canAnswerWithoutTools(input.userMessage)) {
-        const fallback = fallbackDecision(input.userMessage, allToolResults, state);
-        if (fallback.type === "tool_calls" && fallback.toolCalls.length) {
-          if (fallback.statusMessage) input.onEvent?.({ type: "status", message: fallback.statusMessage });
-          const validated = validateAgentToolCalls(fallback.toolCalls);
-          const results = await executeValidatedToolCalls(
-            { user: input.user, channel: input.channel },
-            validated,
-            (event) => input.onEvent?.(event.type === "tool_start"
-              ? { type: "tool_start", tool: event.tool, message: event.message || `Ich fuehre ${event.tool} aus.` }
-              : { type: "tool_result", tool: event.tool, summary: event.summary || "Erledigt." })
-          );
-          allToolCalls.push(...fallback.toolCalls);
-          allToolResults.push(...results);
-          state = updateStateFromToolResults(state, results);
-          await saveAgentState(input.conversationId, state);
-          await updateAgentRunLog(input.runLogId, { toolCalls: allToolCalls, toolResults: publicToolResults(allToolResults) });
-          continue;
-        }
-      }
       const final = await finalAnswer({
         config: input.config,
         user: input.user,
@@ -263,7 +233,7 @@ async function runAgentLoop(input: {
         forcedAnswer: decision.answer,
         runLogId: input.runLogId
       });
-      return { ...collectAgentOutput(final, allToolResults), state };
+      return { ...collectAgentOutput(final, allToolResults, journal), state };
     }
 
     if (!decision.toolCalls.length) {
@@ -278,17 +248,26 @@ async function runAgentLoop(input: {
         toolResults: allToolResults,
         runLogId: input.runLogId
       });
-      return { ...collectAgentOutput(final, allToolResults), state };
+      return { ...collectAgentOutput(final, allToolResults, journal), state };
     }
 
-    if (decision.statusMessage) input.onEvent?.({ type: "status", message: decision.statusMessage });
+    if (decision.statusMessage) {
+      journal.push(decision.statusMessage);
+      input.onEvent?.({ type: "status", message: decision.statusMessage });
+    }
     const validated = validateAgentToolCalls(decision.toolCalls);
     const results = await executeValidatedToolCalls(
       { user: input.user, channel: input.channel },
       validated,
-      (event) => input.onEvent?.(event.type === "tool_start"
-        ? { type: "tool_start", tool: event.tool, message: event.message || `Ich fuehre ${event.tool} aus.` }
-        : { type: "tool_result", tool: event.tool, summary: event.summary || "Erledigt." })
+      (event) => {
+        const text = event.type === "tool_start"
+          ? event.message || `Ich fuehre ${event.tool} aus.`
+          : event.summary || "Erledigt.";
+        journal.push(text);
+        input.onEvent?.(event.type === "tool_start"
+          ? { type: "tool_start", tool: event.tool, message: text }
+          : { type: "tool_result", tool: event.tool, summary: text });
+      }
     );
     allToolCalls.push(...decision.toolCalls);
     allToolResults.push(...results);
@@ -303,7 +282,8 @@ async function runAgentLoop(input: {
       state.status = "waiting_for_user";
       state.pendingQuestion = answer;
       await saveAgentState(input.conversationId, state);
-      return { ...collectAgentOutput(answer, allToolResults), state };
+      journal.push("Ich brauche eine Auswahl oder Bestaetigung, bevor ich weiterarbeite.");
+      return { ...collectAgentOutput(answer, allToolResults, journal), state };
     }
   }
 
@@ -318,7 +298,17 @@ async function runAgentLoop(input: {
     toolResults: allToolResults,
     runLogId: input.runLogId
   });
-  return { ...collectAgentOutput(answer, allToolResults), state };
+  return { ...collectAgentOutput(answer, allToolResults, journal), state };
+}
+
+function emitWorklog(onEvent: ((event: AgentStreamEvent) => void) | undefined, journal: string[], worklog?: string[]) {
+  for (const line of worklog || []) {
+    const message = line.trim();
+    if (message) {
+      journal.push(message);
+      onEvent?.({ type: "status", message });
+    }
+  }
 }
 
 async function getOrCreateConversation(input: AgentMessageInput) {
@@ -357,23 +347,26 @@ async function planNextAgentStep(input: {
   const system = [
     input.config.systemPrompt,
     "",
-    "Du bist der interne Agent eines Immobilienportals. Deine Aufgabe ist, die naechsten Schritte zu planen.",
-    "Du kennst ausschliesslich die bereitgestellten Tools. Du darfst keine Daten, IDs, Links oder Aktionen erfinden.",
+    "Du bist der interne Tool-Planer eines Immobilienportals. Deine Aufgabe ist, den Nutzerwunsch zu verstehen, geeignete Portal-Tools zu waehlen und nach jedem Ergebnis neu zu planen.",
+    "Arbeite agentisch: Ziel klaeren, bekannte Fakten und Memory nutzen, passende Tools auswaehlen, Zwischenergebnisse auswerten, bei Bedarf weitere Tools nutzen, dann knapp antworten.",
+    "Du kennst ausschliesslich die bereitgestellten Tools. Du darfst keine Daten, IDs, Links, APIs oder Aktionen erfinden.",
     "Gib ausschliesslich valides JSON zurueck.",
     "Du fuehrst mehrstufige Aufgaben konsequent fort, bis ein echtes Ergebnis vorliegt oder eine fachlich notwendige Rueckfrage offen ist.",
     "Bereits bekannte Fakten aus dem Conversation-State sind verbindlich weiterzuverwenden.",
     "Beispiele Antworten wie Ja, Genau, Korrekt, Mach das oder Weiter beziehen sich auf die offene Frage bzw. den laufenden Prozess.",
     "Frage eine Information nicht erneut ab, wenn sie im State, in der Historie, im Memory oder ueber Tools ermittelbar ist.",
+    "Schreibe in worklog kurze, sichtbare Arbeitsjournal-Zeilen: keine geheimen Gedankengaenge, sondern beobachtbare Schritte wie 'Ich pruefe die bekannte Immobilie im State.' oder 'Ich brauche zuerst Mieterdaten, bevor ich einen Vertrag erzeugen kann.'",
     "",
     "Antwortformat:",
-    '{"type":"tool_calls","statusMessage":"...","toolCalls":[{"tool":"search_tenants","args":{"query":"Mueller"}}]}',
-    '{"type":"clarification","message":"..."}',
-    '{"type":"final_answer","answer":"..."}',
+    '{"type":"tool_calls","statusMessage":"...","worklog":["..."],"toolCalls":[{"tool":"search_tenants","args":{"query":"Mueller"}}]}',
+    '{"type":"clarification","worklog":["..."],"message":"..."}',
+    '{"type":"final_answer","worklog":["..."],"answer":"..."}',
     "",
     "Regeln:",
     "- Pruefe zuerst, ob die Nutzeranfrage mit den vorhandenen Tools beantwortbar ist. Wenn ja, plane Tool Calls. Wenn nein, sage klar, welches Tool fehlt.",
     "- Bei Fragen nach deinen Faehigkeiten, Grenzen oder moeglichen Aktionen nutze agent_capabilities.",
-    "- Wenn Daten fehlen, nutze Suchtools.",
+    "- Wenn Daten fehlen, nutze Suchtools, statt sofort nachzufragen.",
+    "- Nutze mehrere Tool-Runden, wenn ein Ergebnis erst durch Suche plus Detailabfrage belastbar wird.",
     "- Strassennamen koennen ausgeschrieben, abgekuerzt oder leicht falsch geschrieben sein. Nutze naheliegende Varianten fuer Tool-Argumente, z.B. Kulturstrasse/Kulturstr./Kulturstraße oder Beispielweg/Beispielweg",
     "- Umgangssprache beachten: Immos meint Immobilien. Vermietet, frei, leer und ohne Mieter sind fachliche Immobilien- oder Einheitenabfragen und keine reine Volltextsuche.",
     "- Wenn ein Mieter auf laufend oder nicht mehr laufend gesetzt werden soll, nutze update_tenant_status. Erzeuge dabei keine Wohnungsgeberbestaetigung.",
@@ -408,7 +401,6 @@ async function planNextAgentStep(input: {
   const parsed = parseJsonDecision(raw);
   const fallback = fallbackDecision(input.userMessage, input.previousToolResults, input.state);
   if (parsed) {
-    if (shouldForceFallbackDecision(input.userMessage, fallback)) return fallback;
     return parsed;
   }
   return fallback;
@@ -694,42 +686,23 @@ function fallbackDecision(message: string, previousResults: AgentToolResult[], s
   return { type: "tool_calls", statusMessage: "Ich suche im Portal.", toolCalls: [{ tool: "global_search", args: { query: message } }] };
 }
 
-function shouldPreferToolLookup(message: string, clarification: string, fallback: AgentDecision, state: AgentConversationStateValue) {
-  if (fallback.type !== "tool_calls" || !fallback.toolCalls.length) return false;
-  const firstTool = fallback.toolCalls[0]?.tool;
-  const normalizedMessage = normalize(message);
-  const normalizedClarification = normalize(clarification);
-  const contextLookupTools = new Set(["agent_capabilities", "get_tenant", "search_tenants", "get_property", "search_properties", "search_units", "create_landlord_confirmation"]);
-  if (!contextLookupTools.has(firstTool)) return false;
-  if (/(was kannst du|was.*moeglich|was.*möglich|funktionen|faehigkeiten|fähigkeiten|tools|hilfe|help)/i.test(normalizedMessage)) return true;
-  if (isAffirmation(message) && state.pendingQuestion) return true;
-  if (/(ab wann|seit wann|einzug|eingezogen|mietbeginn|wohnt.*seit|seit.*wohnt|wer.*mieter|mieter.*wer|wer.*wohnt|bewohner)/i.test(normalizedMessage)) return true;
-  return /(moechten sie|möchten sie|soll ich|benoetige weitere informationen|benötige weitere informationen).*(mieterdaten|mieter|immobilie|einheit)/i.test(normalizedClarification);
-}
-
-function shouldForceFallbackDecision(message: string, fallback: AgentDecision) {
-  if (fallback.type !== "tool_calls" || !fallback.toolCalls.length) return false;
-  const normalized = normalize(message);
-  const firstTool = fallback.toolCalls[0]?.tool;
-  if (firstTool === "update_tenant_status" && /(nicht mehr laufend|nicht laufend|laufend.*beenden|ausgezogen|auszug|ehemalig|auf nicht.*laufend)/i.test(normalized)) return true;
-  if (firstTool === "agent_capabilities" && /(was kannst du|was.*moeglich|was.*möglich|funktionen|faehigkeiten|fähigkeiten|tools|hilfe|help)/i.test(normalized)) return true;
-  if (firstTool === "search_properties" && (/(welche|alle|gib|zeige|liste|auflisten|gibt es|was sind).*(immobilien|immobilie|immos|immo|objekte|objekt|haeuser|hauser|haus|adressen)/i.test(normalized) || /(vermietet|teilvermietet|vollvermietet|voll vermietet|mietstatus|vermietungsstatus)/i.test(normalized))) return true;
-  if (firstTool === "search_tenants" && /(wer.*mieter|mieter.*wer|wer.*wohnt|bewohner|welche.*mieter|wohnt|mieter)/i.test(normalized) && extractLikelyPropertyQuery(message)) return true;
-  if (firstTool === "create_landlord_confirmation" && (/wohn|geber|bestaetigung|bestätigung|melde/i.test(normalized) || extractLikelyPropertyQuery(message))) return true;
-  return false;
-}
-
-function canAnswerWithoutTools(message: string) {
-  return /^(wer bist du|erklaer|erklär|wie funktioniert)/i.test(message.trim());
-}
-
-function collectAgentOutput(answer: string, tools: AgentToolResult[]) {
+function collectAgentOutput(answer: string, tools: AgentToolResult[], steps: string[] = []) {
   return {
     answer,
+    steps: dedupeSteps(steps),
     tools,
     artifacts: tools.flatMap((tool) => tool.artifacts || []),
     attachments: tools.flatMap((tool) => tool.attachments || [])
   };
+}
+
+function dedupeSteps(steps: string[]) {
+  const result: string[] = [];
+  for (const raw of steps) {
+    const step = raw.trim();
+    if (step && result[result.length - 1] !== step) result.push(step);
+  }
+  return result.slice(-30);
 }
 
 function publicToolResults(results: AgentToolResult[]) {
