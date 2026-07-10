@@ -797,17 +797,58 @@ function publicToolResults(results: AgentToolResult[]) {
 }
 
 function fallbackAnswer(message: string, tools: AgentToolResult[]) {
+  const propertyAnalysis = fallbackPropertyAnalysis(message, tools);
+  if (propertyAnalysis) return propertyAnalysis;
   if (tools.length) {
     return [
-      "Ich habe dazu im Portal nachgesehen.",
+      "Ich habe Portal-Daten gefunden, kann sie aber gerade nicht sauber mit dem KI-Modell auswerten.",
       "",
-      ...tools.map((tool) => tool.summary)
+      "Bitte prüfe in den Agent-/AI-Einstellungen, ob der AI-Key neu gespeichert werden muss. Danach kann ich die Ergebnisse wieder als strukturierte Antwort zusammenfassen."
     ].join("\n");
   }
   if (/was kannst du|hilfe|funktionen/i.test(message)) {
     return "Ich kann Immobilien, Einheiten, Dokumente, Mieter und Verträge durchsuchen, Vertragsgenerierung anstoßen, Portal-Kontext merken und Fragen zur Bedienung beantworten. Für Aktionen nutze ich die vorhandenen Portal-Tools mit Rechteprüfung.";
   }
   return "Ich kann dazu im Portal suchen oder eine konkrete Aktion ausführen. Formuliere zum Beispiel: `Suche Grundbuch Musterstraße`, `Wer wohnt aktuell in meinen Objekten?` oder `Erstelle Mietvertrag für Müller in der Mainzer Straße`.";
+}
+
+function fallbackPropertyAnalysis(message: string, tools: AgentToolResult[]) {
+  const normalized = normalize(message);
+  if (!/(gesamtwert|wert|kaufpreis|darlehen|eigenkapital|summe|zusammen|gesamt|portfolio|bestand)/i.test(normalized)) return null;
+  const properties = tools
+    .filter((tool) => tool.name === "search_properties" && Array.isArray(tool.data))
+    .flatMap((tool) => tool.data as Array<Record<string, unknown>>);
+  if (!properties.length) return null;
+
+  const prices = properties.map((property) => numericValue(property.expectedPurchasePrice)).filter((value): value is number => value !== null);
+  const loans = properties.map((property) => numericValue(property.outstandingLoan)).filter((value): value is number => value !== null);
+  const missingPrices = properties.length - prices.length;
+  const totalPrice = prices.reduce((sum, value) => sum + value, 0);
+  const totalLoan = loans.reduce((sum, value) => sum + value, 0);
+  const equity = totalPrice - totalLoan;
+  const lines = [
+    prices.length
+      ? `**Gesamtwert:** ${formatEuro(totalPrice)} auf Basis von ${prices.length} Immobilien mit hinterlegtem Kaufpreis/Wert.`
+      : "**Gesamtwert:** In den gefundenen Immobilien ist kein Kaufpreis/Wert hinterlegt.",
+    loans.length ? `**Darlehen:** ${formatEuro(totalLoan)} hinterlegt; rechnerisches Eigenkapital: ${formatEuro(equity)}.` : null,
+    missingPrices ? `**Einschränkung:** Bei ${missingPrices} von ${properties.length} Immobilien fehlt ein verwertbarer Wert.` : null,
+    "",
+    "Hinweis: Das ist die Notfallauswertung ohne aktive KI-Antwort. Sobald der AI-Key neu gespeichert ist, formuliere ich solche Ergebnisse wieder frei und kontextbezogen."
+  ].filter(Boolean);
+  return lines.join("\n");
+}
+
+function numericValue(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value.replace(/\./g, "").replace(",", "."));
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function formatEuro(value: number) {
+  return new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(value);
 }
 
 function extractLikelyTenantName(message: string) {
