@@ -60,6 +60,7 @@ export type AgentToolDefinition = {
 
 const querySchema = z.object({ query: z.string().trim().min(1).max(300) });
 const optionalQuerySchema = z.object({ query: z.string().trim().max(300).optional().default("") });
+const emptySchema = z.object({}).default({});
 const documentSearchSchema = z.object({
   query: z.string().trim().max(300).optional().default(""),
   propertyQuery: z.string().trim().max(300).optional().default("")
@@ -120,6 +121,64 @@ export const agentToolRegistry = {
           ...capabilities.limits.map((item) => `- ${item}`)
         ].join("\n"),
         data: capabilities
+      };
+    }
+  }),
+  portfolio_summary: tool({
+    name: "portfolio_summary",
+    description: "Liefert aggregierte Kennzahlen ueber den Immobilienbestand: Gesamtwert/Kaufpreise, Darlehen, Eigenkapital, Einheiten, Vermietung und fehlende Werte.",
+    parameters: "{}",
+    schema: emptySchema,
+    kind: "read",
+    getStatusMessage: () => "Ich berechne die Portfolio-Kennzahlen.",
+    run: async (ctx) => {
+      const properties = await prisma.property.findMany({
+        where: propertyAccessWhere(ctx.user),
+        orderBy: { updatedAt: "desc" },
+        include: {
+          units: { include: { tenants: { where: { isCurrent: true }, select: { id: true } } } }
+        }
+      });
+      const values = properties.map((property) => decimalNumber(property.expectedPurchasePrice)).filter((value): value is number => value !== null);
+      const loans = properties.map((property) => decimalNumber(property.outstandingLoan)).filter((value): value is number => value !== null);
+      const totalValue = values.reduce((sum, value) => sum + value, 0);
+      const totalLoans = loans.reduce((sum, value) => sum + value, 0);
+      const totalUnits = properties.reduce((sum, property) => sum + property.units.length, 0);
+      const rentedUnits = properties.reduce((sum, property) => sum + property.units.filter((unit) => unit.tenants.length > 0).length, 0);
+      const vacantUnits = totalUnits - rentedUnits;
+      const missingValues = properties.length - values.length;
+      return {
+        name: "portfolio_summary",
+        ok: true,
+        summary: [
+          `Portfolio: ${properties.length} Immobilien, ${totalUnits} Einheiten.`,
+          values.length ? `Gesamtwert/Kaufpreise: ${formatEuro(totalValue)}.` : "Kein verwertbarer Kaufpreis/Wert hinterlegt.",
+          loans.length ? `Darlehen: ${formatEuro(totalLoans)}. Rechnerisches Eigenkapital: ${formatEuro(totalValue - totalLoans)}.` : "Keine Darlehenssumme hinterlegt.",
+          `Vermietete Einheiten: ${rentedUnits}; freie Einheiten: ${vacantUnits}.`,
+          missingValues ? `Bei ${missingValues} Immobilien fehlt ein verwertbarer Wert.` : "Alle Immobilien haben einen verwertbaren Wert."
+        ].join("\n"),
+        data: {
+          propertyCount: properties.length,
+          totalUnits,
+          rentedUnits,
+          vacantUnits,
+          valueCount: values.length,
+          missingValueCount: missingValues,
+          loanCount: loans.length,
+          totalValue,
+          totalLoans,
+          equity: totalValue - totalLoans,
+          properties: properties.map((property) => ({
+            id: property.id,
+            name: property.name,
+            address: property.address,
+            expectedPurchasePrice: decimalNumber(property.expectedPurchasePrice),
+            outstandingLoan: decimalNumber(property.outstandingLoan),
+            units: property.units.length,
+            rentedUnits: property.units.filter((unit) => unit.tenants.length > 0).length,
+            href: publicPortalUrl(`/properties/${property.id}`)
+          }))
+        }
       };
     }
   }),
@@ -667,6 +726,7 @@ function capabilityList(role: Role, topic = "") {
   ];
   const available = [
     "Portalweit suchen: Immobilien, Einheiten, Dokumente, Mieter, Benutzer und Vertraege.",
+    "Portfolio-Kennzahlen berechnen: Gesamtwert, Darlehen, Eigenkapital, Einheiten und Leerstand.",
     "Immobilien suchen, auflisten und Details direkt verlinken.",
     "Einheiten suchen, inklusive Einheiten ohne aktuellen Mieter.",
     "Aktuelle oder ehemalige Mieter suchen und Mietdaten wie Einzug, Mietbeginn und Auszug anzeigen.",
@@ -1179,6 +1239,7 @@ function isToolAvailableForRole(toolName: string, role?: Role) {
 function toolExamples(toolName: string) {
   const examples: Record<string, string[]> = {
     agent_capabilities: ["Was kannst du?", "Welche Portal-Funktionen kannst du ausfuehren?"],
+    portfolio_summary: ["Wie viel sind alle Immobilien wert?", "Wie hoch sind Darlehen und Eigenkapital im Portfolio?"],
     global_search: ["Suche Grundbuch Musterstraße", "Finde Dokumente zu Nebenkosten 2023"],
     search_properties: ["Welche Immobilien gibt es?", "Zeige Beispielweg 7"],
     get_property: ["Oeffne diese Immobilie", "Details zur ausgewaehlten Immobilie"],
@@ -1204,4 +1265,21 @@ function toolExamples(toolName: string) {
 function publicPortalUrl(pathname: string) {
   if (/^https?:\/\//i.test(pathname)) return pathname;
   return `${env.appUrl.replace(/\/$/, "")}${pathname.startsWith("/") ? pathname : `/${pathname}`}`;
+}
+
+function decimalNumber(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value.replace(/\./g, "").replace(",", "."));
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  if (value && typeof value === "object" && "toString" in value) {
+    const parsed = Number(String(value));
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function formatEuro(value: number) {
+  return new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(value);
 }

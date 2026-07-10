@@ -133,6 +133,20 @@ export async function processAgentMessage(input: AgentMessageInput, options: Pro
   let state = updateStateFromUserMessage(await loadAgentState(conversation.id), input.message);
   await saveAgentState(conversation.id, state);
 
+  if (isConversationalOnly(input.message, state)) {
+    const answer = conversationalAnswer(input.message);
+    await prisma.agentMessage.create({ data: { conversationId: conversation.id, role: "assistant", content: answer } });
+    await prisma.agentConversation.update({ where: { id: conversation.id }, data: { updatedAt: new Date() } });
+    return {
+      conversationId: conversation.id,
+      answer,
+      steps: ["Normale Chat-Nachricht erkannt; keine Portalsuche gestartet."],
+      tools: [],
+      artifacts: [],
+      attachments: []
+    };
+  }
+
   const [historyRows, memory] = await Promise.all([
     prisma.agentMessage.findMany({ where: { conversationId: conversation.id }, orderBy: { createdAt: "asc" }, take: 40 }),
     searchAgentMemory(input.user, input.message, 8)
@@ -385,7 +399,7 @@ async function planNextAgentStep(input: {
     "- Smalltalk, Begruessungen, Dank, Testnachrichten oder sehr kurze unklare Chat-Nachrichten sind final_answer ohne Tool Calls. Starte dafuer keine Suche.",
     "- Starte Portal-Tools nur, wenn die Nutzeranfrage klar Daten, Dokumente, Immobilien, Mieter, Verträge, Einstellungen oder eine Portal-Aktion betrifft.",
     "- Formuliere final_answer wie einen hilfreichen Chat, nicht wie einen Daten-Dump: erst Ergebnis, dann bei Bedarf kompakte Details, dann naechster sinnvoller Schritt.",
-    "- Wenn nach Summe, Gesamtwert, Kaufpreis, Darlehen, Eigenkapital, Anzahl, Durchschnitt, Leerstand oder Vermietungsquote gefragt wird: lade die passenden Datensaetze und lasse die Antwortphase daraus rechnen. Antworte nicht mit einer reinen Liste.",
+    "- Wenn nach Summe, Gesamtwert, Kaufpreis, Darlehen, Eigenkapital, Anzahl, Durchschnitt, Leerstand oder Vermietungsquote des Bestands gefragt wird: nutze portfolio_summary. Antworte nicht mit einer reinen Liste.",
     "- Nutze Markdown sparsam: kurze Abschnitte oder Bulletpoints nur, wenn sie das Ergebnis lesbarer machen. Keine JSON-Blöcke, keine rohen Tool-Ergebnisse, keine internen IDs, ausser der Nutzer fragt explizit danach.",
     "- Bei Listen: maximal die wichtigsten Treffer mit sprechendem Namen, Bezug und Aktion. Wenn mehr vorhanden ist, erwaehne die Anzahl und biete Eingrenzung an.",
     "- Pruefe zuerst, ob die Nutzeranfrage mit den vorhandenen Tools beantwortbar ist. Wenn ja, plane Tool Calls. Wenn nein, sage klar, welches Tool fehlt.",
@@ -694,9 +708,9 @@ function fallbackDecision(message: string, previousResults: AgentToolResult[], s
   if (/(gesamtwert|wert|kaufpreis|darlehen|eigenkapital|summe|zusammen|gesamt|durchschnitt|portfolio|bestand|vermietungsquote|leerstand|rendite)/i.test(normalized) && /(immobilien|immobilie|immos|immo|objekte|objekt|haeuser|hauser|haus|portfolio|bestand)/i.test(normalized)) {
     return {
       type: "tool_calls",
-      statusMessage: "Ich lade die Immobilien als Grundlage fuer die Auswertung.",
-      worklog: ["Ich erkenne eine Auswertungsfrage und hole dafuer strukturierte Immobiliendaten."],
-      toolCalls: [{ tool: "search_properties", args: { query: "" } }]
+      statusMessage: "Ich berechne die Portfolio-Kennzahlen.",
+      worklog: ["Ich erkenne eine Auswertungsfrage und hole aggregierte Portfolio-Daten."],
+      toolCalls: [{ tool: "portfolio_summary", args: {} }]
     };
   }
   if (/(dokumente|dokument|unterlagen|dateien|datei)/i.test(normalized) && /(mieter|mieterin|bewohner|person|dieses mieters|dieser mieterin|von|fuer|für)/i.test(normalized) && (tenantQuery || state.facts.tenantId)) {
@@ -818,6 +832,25 @@ function fallbackAnswer(message: string, tools: AgentToolResult[]) {
 function fallbackPropertyAnalysis(message: string, tools: AgentToolResult[]) {
   const normalized = normalize(message);
   if (!/(gesamtwert|wert|kaufpreis|darlehen|eigenkapital|summe|zusammen|gesamt|portfolio|bestand)/i.test(normalized)) return null;
+  const portfolio = tools.find((tool) => tool.name === "portfolio_summary" && tool.data && typeof tool.data === "object")?.data as Record<string, unknown> | undefined;
+  if (portfolio) {
+    const totalValue = numericValue(portfolio.totalValue);
+    const totalLoans = numericValue(portfolio.totalLoans);
+    const equity = numericValue(portfolio.equity);
+    const valueCount = numericValue(portfolio.valueCount) ?? 0;
+    const propertyCount = numericValue(portfolio.propertyCount) ?? 0;
+    const missingValueCount = numericValue(portfolio.missingValueCount) ?? Math.max(0, propertyCount - valueCount);
+    const lines = [
+      totalValue !== null
+        ? `**Gesamtwert:** ${formatEuro(totalValue)} auf Basis von ${valueCount} Immobilien mit hinterlegtem Kaufpreis/Wert.`
+        : "**Gesamtwert:** In den gefundenen Immobilien ist kein Kaufpreis/Wert hinterlegt.",
+      totalLoans !== null && equity !== null ? `**Darlehen:** ${formatEuro(totalLoans)} hinterlegt; rechnerisches Eigenkapital: ${formatEuro(equity)}.` : null,
+      missingValueCount ? `**Einschränkung:** Bei ${missingValueCount} von ${propertyCount} Immobilien fehlt ein verwertbarer Wert.` : null,
+      "",
+      "Hinweis: Das ist die Notfallauswertung ohne aktive KI-Antwort. Sobald der AI-Key neu gespeichert ist, formuliere ich solche Ergebnisse wieder frei und kontextbezogen."
+    ].filter(Boolean);
+    return lines.join("\n");
+  }
   const properties = tools
     .filter((tool) => tool.name === "search_properties" && Array.isArray(tool.data))
     .flatMap((tool) => tool.data as Array<Record<string, unknown>>);
