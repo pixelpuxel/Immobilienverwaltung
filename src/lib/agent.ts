@@ -413,6 +413,7 @@ async function planNextAgentStep(input: {
     "- Schreibende Aktionen wie create_contract nur bei eindeutigem Mieter/Einheit/Vorlage oder wenn das Tool selbst eindeutig aufloesen kann.",
     "- Bei Ziel create_contract: suche erst Mieter, Immobilie/Einheit und Vorlage; nutze vorhandene IDs aus dem State; erstelle danach den Vertrag.",
     "- Wenn der Nutzer nur bestaetigt, fuehre den naechsten sinnvollen Schritt des gespeicherten Ziels aus.",
+    "- Wenn der Nutzer 'Testmodus', 'testweise', 'nur testen', 'Probelauf' oder aehnlich sagt, setze bei create_contract und create_landlord_confirmation testMode=true.",
     "- Wenn bereits genug echte Tool-Ergebnisse vorliegen, formuliere final_answer. Bei Analysefragen reicht oft eine Tool-Runde mit den relevanten Datensaetzen.",
     "- Erfinde keine APIs, URLs, IDs oder Ergebnisse.",
     "",
@@ -601,6 +602,7 @@ function fallbackDecision(message: string, previousResults: AgentToolResult[], s
     };
   }
   const normalized = normalize(message);
+  const testMode = isTestModeRequest(message);
   const propertyQuery = extractLikelyPropertyQuery(message) || state.facts.propertyQuery || state.facts.propertyName;
   const tenantQuery = state.facts.tenantQuery || state.facts.tenantName || extractLikelyTenantName(message);
   const asksTenantDate = /(ab wann|seit wann|einzug|eingezogen|mietbeginn|wohnt.*seit|seit.*wohnt)/i.test(normalized);
@@ -615,7 +617,8 @@ function fallbackDecision(message: string, previousResults: AgentToolResult[], s
         args: {
           tenantId: state.facts.tenantId,
           tenantQuery: tenantQuery || "",
-          propertyQuery: propertyQuery || state.facts.propertyQuery || state.facts.propertyName || ""
+          propertyQuery: propertyQuery || state.facts.propertyQuery || state.facts.propertyName || "",
+          testMode
         }
       }]
     };
@@ -672,7 +675,8 @@ function fallbackDecision(message: string, previousResults: AgentToolResult[], s
           propertyQuery: state.facts.propertyQuery || state.facts.propertyName,
           unitId: state.facts.unitId,
           templateId: state.facts.templateId,
-          templateQuery: state.facts.templateName
+          templateQuery: state.facts.templateName,
+          testMode
         }
       }]
     };
@@ -690,7 +694,8 @@ function fallbackDecision(message: string, previousResults: AgentToolResult[], s
           propertyQuery: state.facts.propertyQuery || message,
           unitId: state.facts.unitId,
           templateId: state.facts.templateId,
-          templateQuery: state.facts.templateName || message
+          templateQuery: state.facts.templateName || message,
+          testMode
         }
       }]
     };
@@ -699,7 +704,7 @@ function fallbackDecision(message: string, previousResults: AgentToolResult[], s
     return {
       type: "tool_calls",
       statusMessage: "Ich suche den Mieter fuer die Wohnungsgeberbestaetigung.",
-      toolCalls: [{ tool: "create_landlord_confirmation", args: { tenantQuery: tenantQuery || "", propertyQuery: propertyQuery || message } }]
+      toolCalls: [{ tool: "create_landlord_confirmation", args: { tenantQuery: tenantQuery || "", propertyQuery: propertyQuery || message, testMode } }]
     };
   }
   if (/(was kannst du|was.*moeglich|was.*möglich|funktionen|faehigkeiten|fähigkeiten|tools|hilfe|help)/i.test(normalized)) {
@@ -777,6 +782,10 @@ function isConversationalOnly(message: string, state?: AgentConversationStateVal
   }
   const words = normalized.split(/\s+/).filter(Boolean);
   return words.length <= 3 && !/[0-9]/.test(normalized);
+}
+
+function isTestModeRequest(message: string) {
+  return /(testmodus|testweise|nur\s+testen|probelauf|probeweise|zum\s+testen|nicht\s+speichern|wieder\s+loeschen|wieder\s+löschen)/i.test(normalize(message));
 }
 
 function conversationalAnswer(message: string) {
