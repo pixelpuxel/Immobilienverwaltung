@@ -5,6 +5,7 @@ import { requireIntegrationUser } from "@/lib/integration-auth";
 import { serializeDocument } from "@/lib/integration-data";
 import { buildDocumentMetadata } from "@/lib/document-metadata";
 import { saveUpload } from "@/lib/files";
+import { brokerPropertyIds } from "@/lib/permissions";
 import { assertPropertyInPortal, assertUnitInPortal } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 
@@ -59,15 +60,14 @@ export async function POST(request: NextRequest) {
   if (!user) return response;
   const canWriteAllDocuments = user.tokenScopes.includes("write:documents");
   const canWriteOwnTenantDocuments = user.role === Role.TENANT && user.tokenScopes.includes("write:tenant-documents");
-  if (!canWriteAllDocuments && !canWriteOwnTenantDocuments) {
-    return NextResponse.json({ error: { code: "FORBIDDEN", message: "Token braucht Scope: write:documents oder write:tenant-documents" } }, { status: 403 });
-  }
   const form = await request.formData();
   const file = form.get("file");
   if (!(file instanceof File)) return NextResponse.json({ error: { code: "BAD_REQUEST", message: "Datei fehlt." } }, { status: 400 });
   let propertyId = String(form.get("propertyId") || "") || null;
   let unitId = String(form.get("unitId") || "") || null;
   let tenantProfileId = String(form.get("tenantProfileId") || "") || null;
+  const isPropertyImage = String(form.get("isPropertyImage") || "") === "true";
+  const isPrimaryImage = String(form.get("isPrimaryImage") || "") === "true";
   if (canWriteOwnTenantDocuments && !canWriteAllDocuments) {
     const tenant = await prisma.tenantProfile.findFirst({
       where: { userId: user.id, ...(tenantProfileId ? { id: tenantProfileId } : {}) },
@@ -90,10 +90,15 @@ export async function POST(request: NextRequest) {
   if (!(await assertPropertyInPortal(propertyId, user)) || !(await assertUnitInPortal(unitId, user))) {
     return NextResponse.json({ error: { code: "FORBIDDEN", message: "Zuordnung gehoert nicht zu dieser Instanz." } }, { status: 403 });
   }
-  const isPropertyImage = String(form.get("isPropertyImage") || "") === "true";
-  const isPrimaryImage = String(form.get("isPrimaryImage") || "") === "true";
-  if (canWriteOwnTenantDocuments && !canWriteAllDocuments && isPropertyImage) {
-    return NextResponse.json({ error: { code: "FORBIDDEN", message: "Mieter-Uploads können nicht als Immobilienbild gespeichert werden." } }, { status: 403 });
+
+  const brokerImagePropertyIds = user.role === Role.BROKER && isPropertyImage ? await brokerPropertyIds(user.id) : [];
+  const canWriteBrokerPropertyImage = user.role === Role.BROKER && isPropertyImage && Boolean(propertyId && brokerImagePropertyIds.includes(propertyId));
+  const canWriteTenantPropertyImage = user.role === Role.TENANT && canWriteOwnTenantDocuments && isPropertyImage && Boolean(propertyId);
+  if (!canWriteAllDocuments && !canWriteOwnTenantDocuments && !canWriteBrokerPropertyImage) {
+    return NextResponse.json({ error: { code: "FORBIDDEN", message: "Token braucht Scope: write:documents oder write:tenant-documents" } }, { status: 403 });
+  }
+  if (isPropertyImage && !canWriteAllDocuments && !canWriteBrokerPropertyImage && !canWriteTenantPropertyImage) {
+    return NextResponse.json({ error: { code: "FORBIDDEN", message: "Immobilienbilder duerfen nur zur eigenen oder freigegebenen Immobilie hochgeladen werden." } }, { status: 403 });
   }
   if (isPropertyImage && (!savedImageMimeType(file).startsWith("image/") || !propertyId)) {
     return NextResponse.json({ error: { code: "BAD_REQUEST", message: "Immobilienbilder brauchen eine Immobilie und einen Bilddateityp." } }, { status: 400 });
@@ -115,7 +120,7 @@ export async function POST(request: NextRequest) {
       size: saved.size,
       storagePath: saved.storagePath,
       status: String(form.get("status") || "AVAILABLE") as DocumentStatus,
-      scope: tenantProfileId ? DocumentScope.TENANT : (String(form.get("scope") || "PROPERTY") as DocumentScope),
+      scope: isPropertyImage ? DocumentScope.PROPERTY : tenantProfileId ? DocumentScope.TENANT : (String(form.get("scope") || "PROPERTY") as DocumentScope),
       propertyId,
       unitId,
       tenantProfileId,
