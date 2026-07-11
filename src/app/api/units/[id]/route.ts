@@ -14,7 +14,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   const existing = await prisma.unit.findFirst({ where: { id: params.id, property: { portalInstanceId: user.portalInstanceId } } });
   if (!existing) return NextResponse.json({ error: "Nicht gefunden." }, { status: 404 });
   const data: Prisma.UnitUpdateInput = { ...body.data };
-  if (body.data.rentAmount !== undefined || body.data.garageRent !== undefined || body.data.serviceCharges !== undefined) {
+  if (body.data.rentAmount !== undefined || body.data.garageRent !== undefined || body.data.serviceCharges !== undefined || body.data.warmRent !== undefined) {
     data.warmRent = calculateWarmRent({ ...existing, ...body.data });
   }
   return NextResponse.json(await prisma.unit.update({ where: { id: params.id }, data }));

@@ -16,6 +16,9 @@ export function calculateColdRent(source: RentSource) {
 }
 
 export function calculateWarmRent(source: RentSource) {
+  if (source.warmRent !== null && source.warmRent !== undefined && source.warmRent !== "") {
+    return asMoneyNumber(source.warmRent);
+  }
   return calculateColdRent(source) + asMoneyNumber(source.serviceCharges);
 }
 
