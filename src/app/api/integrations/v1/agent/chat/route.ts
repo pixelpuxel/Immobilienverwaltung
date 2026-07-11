@@ -14,6 +14,7 @@ export async function GET(request: NextRequest) {
   if (!user) return response;
 
   const requestedId = request.nextUrl.searchParams.get("conversationId");
+  const includeDebug = request.nextUrl.searchParams.get("includeDebug") === "1";
   const conversation = requestedId
     ? await prisma.agentConversation.findFirst({
       where: { id: requestedId, portalInstanceId: user.portalInstanceId, userId: user.id },
@@ -26,6 +27,9 @@ export async function GET(request: NextRequest) {
     });
 
   if (!conversation) return NextResponse.json({ conversationId: null, messages: [] });
+  const state = includeDebug
+    ? await prisma.agentConversationState.findUnique({ where: { conversationId: conversation.id } }).catch(() => null)
+    : null;
   return NextResponse.json({
     conversationId: conversation.id,
     title: conversation.title,
@@ -34,7 +38,8 @@ export async function GET(request: NextRequest) {
       role: message.role,
       content: message.content,
       createdAt: message.createdAt
-    }))
+    })),
+    ...(includeDebug ? { state } : {})
   });
 }
 
