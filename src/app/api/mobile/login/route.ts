@@ -114,6 +114,7 @@ function mobileScopesForRole(role: Role) {
 
   return [
     "read:documents",
+    "write:tenant-documents",
     "download:documents",
     "read:tenants",
     "read:contracts"

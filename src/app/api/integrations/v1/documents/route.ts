@@ -1,4 +1,4 @@
-import { DocumentScope, DocumentStatus, Prisma } from "@prisma/client";
+import { DocumentScope, DocumentStatus, Prisma, Role } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { integrationDocumentInclude, integrationDocumentVisibilityWhere, integrationTenantAccessWhere, tenantPersonalDocumentWhere } from "@/lib/integration-document-access";
 import { requireIntegrationUser } from "@/lib/integration-auth";
@@ -55,14 +55,29 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const { user, response } = await requireIntegrationUser(request, ["write:documents"]);
+  const { user, response } = await requireIntegrationUser(request);
   if (!user) return response;
+  const canWriteAllDocuments = user.tokenScopes.includes("write:documents");
+  const canWriteOwnTenantDocuments = user.role === Role.TENANT && user.tokenScopes.includes("write:tenant-documents");
+  if (!canWriteAllDocuments && !canWriteOwnTenantDocuments) {
+    return NextResponse.json({ error: { code: "FORBIDDEN", message: "Token braucht Scope: write:documents oder write:tenant-documents" } }, { status: 403 });
+  }
   const form = await request.formData();
   const file = form.get("file");
   if (!(file instanceof File)) return NextResponse.json({ error: { code: "BAD_REQUEST", message: "Datei fehlt." } }, { status: 400 });
   let propertyId = String(form.get("propertyId") || "") || null;
   let unitId = String(form.get("unitId") || "") || null;
-  const tenantProfileId = String(form.get("tenantProfileId") || "") || null;
+  let tenantProfileId = String(form.get("tenantProfileId") || "") || null;
+  if (canWriteOwnTenantDocuments && !canWriteAllDocuments) {
+    const tenant = await prisma.tenantProfile.findFirst({
+      where: { userId: user.id, ...(tenantProfileId ? { id: tenantProfileId } : {}) },
+      include: { unit: true }
+    });
+    if (!tenant) return NextResponse.json({ error: { code: "FORBIDDEN", message: "Mieter dürfen nur Dokumente zum eigenen Mietverhältnis hochladen." } }, { status: 403 });
+    tenantProfileId = tenant.id;
+    unitId = tenant.unitId;
+    propertyId = tenant.unit?.propertyId || null;
+  }
   if (tenantProfileId) {
     const tenant = await prisma.tenantProfile.findFirst({
       where: { AND: [{ id: tenantProfileId }, await integrationTenantAccessWhere(user)] },
@@ -77,6 +92,9 @@ export async function POST(request: NextRequest) {
   }
   const isPropertyImage = String(form.get("isPropertyImage") || "") === "true";
   const isPrimaryImage = String(form.get("isPrimaryImage") || "") === "true";
+  if (canWriteOwnTenantDocuments && !canWriteAllDocuments && isPropertyImage) {
+    return NextResponse.json({ error: { code: "FORBIDDEN", message: "Mieter-Uploads können nicht als Immobilienbild gespeichert werden." } }, { status: 403 });
+  }
   if (isPropertyImage && (!savedImageMimeType(file).startsWith("image/") || !propertyId)) {
     return NextResponse.json({ error: { code: "BAD_REQUEST", message: "Immobilienbilder brauchen eine Immobilie und einen Bilddateityp." } }, { status: 400 });
   }
