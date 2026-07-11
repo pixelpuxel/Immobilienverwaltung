@@ -70,13 +70,22 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     const unit = await prisma.unit.findFirst({ where: { id: body.data.unitId, property: portalWhere(user) } });
     if (!unit) return NextResponse.json({ error: { code: "FORBIDDEN", message: "Einheit gehoert nicht zu dieser Instanz." } }, { status: 403 });
   }
+  const nextIsCurrent = body.data.isCurrent ?? existing.isCurrent;
+  const nextMoveOutDate = nextIsCurrent
+    ? null
+    : body.data.moveOutDate === undefined
+      ? undefined
+      : body.data.moveOutDate
+        ? new Date(body.data.moveOutDate)
+        : null;
+
   const tenant = await prisma.tenantProfile.update({
     where: { id: params.id },
     data: {
       ...body.data,
       birthdate: body.data.birthdate === undefined ? undefined : body.data.birthdate ? new Date(body.data.birthdate) : null,
       moveInDate: body.data.moveInDate === undefined ? undefined : body.data.moveInDate ? new Date(body.data.moveInDate) : null,
-      moveOutDate: body.data.moveOutDate === undefined ? undefined : body.data.moveOutDate ? new Date(body.data.moveOutDate) : null,
+      moveOutDate: nextMoveOutDate,
       leaseStartDate: body.data.leaseStartDate === undefined ? undefined : body.data.leaseStartDate ? new Date(body.data.leaseStartDate) : null,
       depositPaidAt: body.data.depositPaidAt === undefined ? undefined : body.data.depositPaidAt ? new Date(body.data.depositPaidAt) : null,
       depositReturnedAt: body.data.depositReturnedAt === undefined ? undefined : body.data.depositReturnedAt ? new Date(body.data.depositReturnedAt) : null
@@ -86,7 +95,18 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       user: { select: { id: true, email: true, username: true, active: true } }
     }
   });
+  await closeOtherCurrentTenantsIfNeeded(tenant);
   return NextResponse.json(serializeTenant(tenant));
+}
+
+async function closeOtherCurrentTenantsIfNeeded(tenant: { id: string; unitId: string | null; isCurrent: boolean; moveInDate: Date | null }) {
+  if (!tenant.unitId || !tenant.isCurrent) return;
+  const unit = await prisma.unit.findUnique({ where: { id: tenant.unitId }, select: { isSharedHousing: true } });
+  if (unit?.isSharedHousing) return;
+  await prisma.tenantProfile.updateMany({
+    where: { unitId: tenant.unitId, id: { not: tenant.id }, isCurrent: true },
+    data: { isCurrent: false, moveOutDate: tenant.moveInDate || new Date() }
+  });
 }
 
 async function tenantAccessWhere(user: { id: string; role: Role; portalInstanceId: string | null }): Promise<Prisma.TenantProfileWhereInput> {

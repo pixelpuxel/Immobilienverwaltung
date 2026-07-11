@@ -129,7 +129,7 @@ export async function POST(request: NextRequest) {
       email: identity.email,
       currentAddress: body.data.currentAddress || null,
       moveInDate: body.data.moveInDate ? new Date(body.data.moveInDate) : null,
-      moveOutDate: body.data.moveOutDate ? new Date(body.data.moveOutDate) : null,
+      moveOutDate: body.data.isCurrent ? null : body.data.moveOutDate ? new Date(body.data.moveOutDate) : null,
       isCurrent: body.data.isCurrent,
       leaseStartDate: body.data.leaseStartDate ? new Date(body.data.leaseStartDate) : null,
       rentAmount: body.data.rentAmount ?? null,
@@ -159,8 +159,19 @@ export async function POST(request: NextRequest) {
     create: tenantData,
     include: { unit: { include: { property: { select: { id: true, name: true } } } }, user: { select: { id: true, email: true, username: true, active: true } } }
   });
+  await closeOtherCurrentTenantsIfNeeded(tenant);
   await auditLog({ userId: user.id, action: AuditAction.USER_INVITED, entity: "TenantProfile", entityId: tenant.id, ipAddress: clientIp(request) });
   return NextResponse.json(serializeTenant(tenant), { status: 201 });
+}
+
+async function closeOtherCurrentTenantsIfNeeded(tenant: { id: string; unitId: string | null; isCurrent: boolean; moveInDate: Date | null }) {
+  if (!tenant.unitId || !tenant.isCurrent) return;
+  const unit = await prisma.unit.findUnique({ where: { id: tenant.unitId }, select: { isSharedHousing: true } });
+  if (unit?.isSharedHousing) return;
+  await prisma.tenantProfile.updateMany({
+    where: { unitId: tenant.unitId, id: { not: tenant.id }, isCurrent: true },
+    data: { isCurrent: false, moveOutDate: tenant.moveInDate || new Date() }
+  });
 }
 
 async function tenantAccessWhere(user: { id: string; role: Role; portalInstanceId: string | null }) {
