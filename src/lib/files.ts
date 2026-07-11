@@ -71,3 +71,17 @@ export async function deletePrivateFile(storagePath: string) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
 }
+
+export async function renamePrivateFile(storagePath: string, storageName: string) {
+  const resolved = path.resolve(storagePath);
+  const roots = [path.resolve(env.uploadPath), path.resolve(env.contractsPath)];
+  if (!roots.some((root) => resolved === root || resolved.startsWith(`${root}${path.sep}`))) {
+    throw new Error("Ungueltiger Dateipfad.");
+  }
+  const nextPath = path.resolve(path.dirname(resolved), safeFilename(storageName));
+  if (!roots.some((root) => nextPath === root || nextPath.startsWith(`${root}${path.sep}`))) {
+    throw new Error("Ungueltiger Zielpfad.");
+  }
+  await fs.rename(resolved, nextPath);
+  return nextPath;
+}

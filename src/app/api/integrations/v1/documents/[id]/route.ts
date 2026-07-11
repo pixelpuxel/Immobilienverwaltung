@@ -6,7 +6,7 @@ import { z } from "zod";
 import { auditLog } from "@/lib/audit";
 import { clientIp } from "@/lib/auth";
 import { buildDocumentMetadata } from "@/lib/document-metadata";
-import { safeFilename } from "@/lib/files";
+import { renamePrivateFile, safeFilename } from "@/lib/files";
 import { integrationDocumentInclude, integrationDocumentVisibilityWhere } from "@/lib/integration-document-access";
 import { integrationError, requireIntegrationUser } from "@/lib/integration-auth";
 import { serializeDocument } from "@/lib/integration-data";
@@ -46,11 +46,6 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   }
 
   const data = normalizeEmptyStrings(body.data);
-  const rename = data.filename ? await renameStoredFile(existing.storagePath, existing.filename, data.filename) : null;
-  if (rename) {
-    data.filename = rename.filename;
-    Object.assign(data, { storagePath: rename.storagePath });
-  }
   if (data.tenantProfileId) {
     const tenant = await prisma.tenantProfile.findFirst({
       where: { id: data.tenantProfileId, user: portalWhere(user) },
@@ -82,10 +77,21 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     data.isPropertyImage = true;
   }
 
+  const rename = data.filename ? await renameStoredFile(existing.storagePath, existing.filename, data.filename) : null;
+  if (rename) {
+    data.filename = rename.filename;
+    Object.assign(data, { storagePath: rename.storagePath });
+  }
+
   const document = await prisma.document.update({
     where: { id: params.id },
     data,
     include: integrationDocumentInclude()
+  }).catch(async (error) => {
+    if (rename) {
+      await fs.rename(rename.storagePath, existing.storagePath).catch(() => undefined);
+    }
+    throw error;
   });
   const shouldRegenerate = !data.summary && !data.tags && (data.title !== undefined || data.propertyId !== undefined || data.unitId !== undefined || data.categoryId !== undefined || data.documentYear !== undefined);
   const enrichedDocument = shouldRegenerate
@@ -147,9 +153,7 @@ function normalizeEmptyStrings(data: z.infer<typeof documentUpdateSchema>) {
 async function renameStoredFile(storagePath: string, currentFilename: string, requestedFilename: string) {
   const safeRequested = safeDocumentFilename(requestedFilename, currentFilename);
   if (safeRequested === currentFilename) return null;
-  const directory = path.dirname(storagePath);
-  const nextStoragePath = path.join(directory, `${Date.now()}-${safeFilename(safeRequested)}`);
-  await fs.rename(storagePath, nextStoragePath);
+  const nextStoragePath = await renamePrivateFile(storagePath, `${Date.now()}-${safeFilename(safeRequested)}`);
   return { filename: safeRequested, storagePath: nextStoragePath };
 }
 
