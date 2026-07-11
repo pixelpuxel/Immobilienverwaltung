@@ -194,6 +194,101 @@ export async function selectContractTemplate(input: { portalInstanceId: string |
     || null;
 }
 
+export async function deriveContractTemplateFromContract(input: {
+  contractId: string;
+  name: string;
+  propertyId?: string | null;
+  unitId?: string | null;
+  defaultUnitIds?: string[];
+  isGlobalTemplate?: boolean;
+  portalInstanceId: string | null;
+}) {
+  const contract = await prisma.leaseContract.findFirst({
+    where: {
+      id: input.contractId,
+      unit: { property: { portalInstanceId: input.portalInstanceId } }
+    },
+    include: {
+      tenantProfile: true,
+      unit: { include: { property: true } }
+    }
+  });
+  if (!contract) return null;
+
+  const owner = await prisma.user.findFirst({
+    where: { role: "ADMIN", active: true, portalInstanceId: input.portalInstanceId },
+    orderBy: { createdAt: "asc" }
+  });
+  const source = await fs.readFile(contract.docxPath);
+  const zip = new PizZip(source);
+  const values = contractData(contract.tenantProfile, contract.unit, owner);
+  const replacements = Object.entries(values)
+    .map(([key, value]) => [String(value || "").trim(), `{{${key}}}`] as const)
+    .filter(([value]) => value.length >= 3)
+    .sort((left, right) => right[0].length - left[0].length);
+
+  for (const [filename, file] of Object.entries(zip.files)) {
+    if (!filename.startsWith("word/") || !filename.endsWith(".xml") || file.dir) continue;
+    let xml = file.asText();
+    for (const [value, placeholder] of replacements) {
+      xml = replaceAll(xml, escapeXml(value), placeholder);
+      xml = replaceAll(xml, value, placeholder);
+    }
+    zip.file(filename, xml);
+  }
+
+  await fs.mkdir(env.contractsPath, { recursive: true });
+  const filename = safeFilename(`${input.name || "Abgeleitete Mietvertragsvorlage"}.docx`);
+  const storagePath = path.join(env.contractsPath, `${Date.now()}-${filename}`);
+  const buffer = zip.generate({ type: "nodebuffer" });
+  await fs.writeFile(storagePath, buffer);
+
+  const template = await prisma.contractTemplate.create({
+    data: {
+      portalInstanceId: input.portalInstanceId,
+      name: input.name || `Vorlage aus ${path.basename(contract.docxPath, ".docx")}`,
+      propertyId: input.isGlobalTemplate ? null : input.propertyId ?? contract.unit.propertyId,
+      unitId: input.isGlobalTemplate ? null : input.unitId ?? null,
+      isGlobalTemplate: input.isGlobalTemplate ?? false,
+      filename,
+      storagePath,
+      mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      size: buffer.byteLength
+    },
+    select: {
+      id: true,
+      name: true,
+      filename: true,
+      mimeType: true,
+      size: true,
+      propertyId: true,
+      unitId: true,
+      isGlobalTemplate: true,
+      property: { select: { id: true, name: true } },
+      unit: { select: { id: true, unitNumber: true, property: { select: { id: true, name: true } } } },
+      defaultForUnits: { select: { id: true, unitNumber: true, property: { select: { id: true, name: true } } } },
+      createdAt: true
+    }
+  });
+  const defaultUnitIds = Array.from(new Set(input.defaultUnitIds || []));
+  if (defaultUnitIds.length) {
+    await prisma.unit.updateMany({
+      where: { id: { in: defaultUnitIds }, property: { portalInstanceId: input.portalInstanceId } },
+      data: { defaultContractTemplateId: template.id }
+    });
+  }
+  return template;
+}
+
+function replaceAll(value: string, needle: string, replacement: string) {
+  if (!needle) return value;
+  return value.split(needle).join(replacement);
+}
+
+function escapeXml(value: string) {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 function contractBaseName(tenant: ContractTenant, unit: ContractUnit) {
   const stamp = new Intl.DateTimeFormat("de-DE", {
     day: "2-digit",
