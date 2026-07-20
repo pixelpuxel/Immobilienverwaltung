@@ -85,6 +85,7 @@ Services:
 - `postgres`: PostgreSQL 16
 - `deploy-hook`: lokaler Deploy-Webhook, intern Port `8099`
 - `qdrant`: lokale Open-Source-Vektordatenbank fuer semantische Dokumentensuche
+- `mcp`: Remote-MCP-Server fuer ChatGPT, Codex, Claude und andere MCP-Clients
 - `redis`: optionales Profil `redis`
 
 Persistente Volumes:
@@ -93,6 +94,37 @@ Persistente Volumes:
 - `uploads_data`
 - `contracts_data`
 - `qdrant_data`
+
+## MCP-Server fuer ChatGPT
+
+Der Stack enthaelt einen separaten MCP-Server unter [`mcp-server`](./mcp-server). Dieser Container stellt die Portal-Funktionen als Model-Context-Protocol-Werkzeuge bereit und greift selbst nur auf die geschuetzte Integrations-API zu.
+
+Start:
+
+```bash
+docker compose up -d --build mcp
+```
+
+Wichtige ENV-Werte:
+
+```env
+MCP_BIND=127.0.0.1
+MCP_PORT=8090
+MCP_PUBLIC_BASE_URL=https://portal.example.com
+MCP_PORTAL_BASE_URL=http://app:8088
+MCP_PORTAL_TOKEN=ip_live_...
+MCP_SERVER_TOKEN=sehr_langer_geheimer_token
+```
+
+MCP-Endpunkt:
+
+```text
+POST https://portal.example.com/mcp
+Authorization: Bearer <MCP_SERVER_TOKEN>
+Accept: application/json, text/event-stream
+```
+
+Der MCP-Server kann Immobilien, Einheiten, Mieter, Dokumente, Vertraege, Mieteinnahmen, To-dos, Audit-Logs, Portalinstanzen und den bestehenden Portal-Agenten steuern. Details stehen in [`mcp-server/README.md`](./mcp-server/README.md).
 
 Port-Mapping:
 

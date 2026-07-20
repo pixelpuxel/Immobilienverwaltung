@@ -85,6 +85,24 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
 
+  mcp:
+    build: ./mcp-server
+    container_name: immobilienportal_mcp
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_started
+    ports:
+      - "${MCP_BIND:-127.0.0.1}:${MCP_PORT:-8090}:8090"
+    environment:
+      MCP_PORT: 8090
+      MCP_SERVER_NAME: ${MCP_SERVER_NAME:-Immobilienportal MCP}
+      MCP_SERVER_VERSION: ${MCP_SERVER_VERSION:-0.1.0}
+      MCP_PUBLIC_BASE_URL: ${MCP_PUBLIC_BASE_URL:-http://localhost:8088}
+      MCP_PORTAL_BASE_URL: ${MCP_PORTAL_BASE_URL:-http://app:8088}
+      MCP_PORTAL_TOKEN: ${MCP_PORTAL_TOKEN:-}
+      MCP_SERVER_TOKEN: ${MCP_SERVER_TOKEN:-bitte_aendern_langer_geheimer_mcp_token}
+
   deploy-hook:
     build: ./deploy-hook
     container_name: immobilienportal_deploy_hook
@@ -95,7 +113,7 @@ services:
       DEPLOY_TOKEN: ${DEPLOY_TOKEN:-bitte_aendern_langer_geheimer_token}
       DEPLOY_PORT: 8099
       DEPLOY_WORKDIR: /workspace
-      DEPLOY_COMMAND: "docker compose -p immobilienverwaltung up -d --build app"
+      DEPLOY_COMMAND: "docker compose -p immobilienverwaltung up -d --build app mcp"
     volumes:
       - .:/workspace
       - /var/run/docker.sock:/var/run/docker.sock
