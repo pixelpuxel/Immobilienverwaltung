@@ -9,6 +9,22 @@ import { brokerPropertyIds } from "@/lib/permissions";
 import { assertPropertyInPortal, assertUnitInPortal } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 
+type IntegrationDocumentUploadInput = {
+  file: File;
+  title: string;
+  propertyId: string | null;
+  unitId: string | null;
+  tenantProfileId: string | null;
+  isPropertyImage: boolean;
+  isPrimaryImage: boolean;
+  status: DocumentStatus;
+  scope: DocumentScope;
+  categoryId: string | null;
+  summary: string | null;
+  tags: string[];
+  documentYear: number | null;
+};
+
 export async function GET(request: NextRequest) {
   const { user, response } = await requireIntegrationUser(request, ["read:documents"]);
   if (!user) return response;
@@ -56,18 +72,13 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const { user, response } = await requireIntegrationUser(request);
-  if (!user) return response;
-  const canWriteAllDocuments = user.tokenScopes.includes("write:documents");
-  const canWriteOwnTenantDocuments = user.role === Role.TENANT && user.tokenScopes.includes("write:tenant-documents");
-  const form = await request.formData();
-  const file = form.get("file");
-  if (!(file instanceof File)) return NextResponse.json({ error: { code: "BAD_REQUEST", message: "Datei fehlt." } }, { status: 400 });
-  let propertyId = String(form.get("propertyId") || "") || null;
-  let unitId = String(form.get("unitId") || "") || null;
-  let tenantProfileId = String(form.get("tenantProfileId") || "") || null;
-  const isPropertyImage = String(form.get("isPropertyImage") || "") === "true";
-  const isPrimaryImage = String(form.get("isPrimaryImage") || "") === "true";
+  try {
+    const { user, response } = await requireIntegrationUser(request);
+    if (!user) return response;
+    const canWriteAllDocuments = user.tokenScopes.includes("write:documents");
+    const canWriteOwnTenantDocuments = user.role === Role.TENANT && user.tokenScopes.includes("write:tenant-documents");
+    const input = await parseIntegrationDocumentUpload(request);
+    let { propertyId, unitId, tenantProfileId } = input;
   if (canWriteOwnTenantDocuments && !canWriteAllDocuments) {
     const tenant = await prisma.tenantProfile.findFirst({
       where: { userId: user.id, ...(tenantProfileId ? { id: tenantProfileId } : {}) },
@@ -91,44 +102,51 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: { code: "FORBIDDEN", message: "Zuordnung gehoert nicht zu dieser Instanz." } }, { status: 403 });
   }
 
-  const brokerImagePropertyIds = user.role === Role.BROKER && isPropertyImage ? await brokerPropertyIds(user.id) : [];
-  const canWriteBrokerPropertyImage = user.role === Role.BROKER && isPropertyImage && Boolean(propertyId && brokerImagePropertyIds.includes(propertyId));
-  const canWriteTenantPropertyImage = user.role === Role.TENANT && canWriteOwnTenantDocuments && isPropertyImage && Boolean(propertyId);
+  const brokerImagePropertyIds = user.role === Role.BROKER && input.isPropertyImage ? await brokerPropertyIds(user.id) : [];
+  const canWriteBrokerPropertyImage = user.role === Role.BROKER && input.isPropertyImage && Boolean(propertyId && brokerImagePropertyIds.includes(propertyId));
+  const canWriteTenantPropertyImage = user.role === Role.TENANT && canWriteOwnTenantDocuments && input.isPropertyImage && Boolean(propertyId);
   if (!canWriteAllDocuments && !canWriteOwnTenantDocuments && !canWriteBrokerPropertyImage) {
     return NextResponse.json({ error: { code: "FORBIDDEN", message: "Token braucht Scope: write:documents oder write:tenant-documents" } }, { status: 403 });
   }
-  if (isPropertyImage && !canWriteAllDocuments && !canWriteBrokerPropertyImage && !canWriteTenantPropertyImage) {
+  if (input.isPropertyImage && !canWriteAllDocuments && !canWriteBrokerPropertyImage && !canWriteTenantPropertyImage) {
     return NextResponse.json({ error: { code: "FORBIDDEN", message: "Immobilienbilder duerfen nur zur eigenen oder freigegebenen Immobilie hochgeladen werden." } }, { status: 403 });
   }
-  if (isPropertyImage && (!savedImageMimeType(file).startsWith("image/") || !propertyId)) {
+  if (input.categoryId) {
+    const category = await prisma.documentCategory.findFirst({
+      where: { id: input.categoryId, portalInstanceId: user.portalInstanceId },
+      select: { id: true }
+    });
+    if (!category) return NextResponse.json({ error: { code: "BAD_REQUEST", message: "Kategorie gehoert nicht zu dieser Instanz." } }, { status: 400 });
+  }
+  if (input.isPropertyImage && (!savedImageMimeType(input.file).startsWith("image/") || !propertyId)) {
     return NextResponse.json({ error: { code: "BAD_REQUEST", message: "Immobilienbilder brauchen eine Immobilie und einen Bilddateityp." } }, { status: 400 });
   }
-  if (isPropertyImage && isPrimaryImage && propertyId) {
+  if (input.isPropertyImage && input.isPrimaryImage && propertyId) {
     await prisma.document.updateMany({
       where: { portalInstanceId: user.portalInstanceId, propertyId, isPropertyImage: true },
       data: { isPrimaryImage: false }
     });
   }
-  const saved = await saveUpload(file);
-  const tags = String(form.get("tags") || "").split(",").map((tag) => tag.trim()).filter(Boolean);
+  const saved = await saveUpload(input.file);
   const document = await prisma.document.create({
     data: {
       portalInstanceId: user.portalInstanceId,
-      title: String(form.get("title") || file.name),
+      title: input.title,
       filename: saved.filename,
       mimeType: saved.mimeType,
       size: saved.size,
       storagePath: saved.storagePath,
-      status: String(form.get("status") || "AVAILABLE") as DocumentStatus,
-      scope: isPropertyImage ? DocumentScope.PROPERTY : tenantProfileId ? DocumentScope.TENANT : (String(form.get("scope") || "PROPERTY") as DocumentScope),
+      status: input.status,
+      scope: input.isPropertyImage ? DocumentScope.PROPERTY : tenantProfileId ? DocumentScope.TENANT : input.scope,
       propertyId,
       unitId,
       tenantProfileId,
-      categoryId: String(form.get("categoryId") || "") || null,
-      summary: String(form.get("summary") || "") || null,
-      tags,
-      isPropertyImage,
-      isPrimaryImage,
+      categoryId: input.categoryId,
+      summary: input.summary,
+      tags: input.tags,
+      documentYear: input.documentYear,
+      isPropertyImage: input.isPropertyImage,
+      isPrimaryImage: input.isPrimaryImage,
       uploadedById: user.id
     },
     include: integrationDocumentInclude()
@@ -139,8 +157,156 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(serializeDocument(enriched), { status: 201 });
   }
   return NextResponse.json(serializeDocument(document), { status: 201 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Dokument konnte nicht hochgeladen werden.";
+    return NextResponse.json({
+      error: {
+        code: "DOCUMENT_UPLOAD_FAILED",
+        message,
+        details: uploadErrorDetails(message)
+      }
+    }, { status: uploadErrorStatus(message) });
+  }
 }
 
 function savedImageMimeType(file: File) {
   return file.type || "application/octet-stream";
+}
+
+async function parseIntegrationDocumentUpload(request: NextRequest): Promise<IntegrationDocumentUploadInput> {
+  const contentType = request.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    const body = await request.json();
+    if (!body || typeof body !== "object") throw new Error("Ungueltiger JSON-Body.");
+    const data = body as Record<string, unknown>;
+    const filename = textValue(data.filename) || textValue(data.fileName) || "dokument.pdf";
+    const mimeType = textValue(data.mimeType) || "application/octet-stream";
+    const base64 = textValue(data.fileBase64) || textValue(data.base64) || textValue(data.contentBase64);
+    if (!base64) throw new Error("Datei fehlt: fileBase64 ist erforderlich.");
+    const cleanBase64 = base64.includes(",") ? base64.split(",").pop() || "" : base64;
+    if (!/^[A-Za-z0-9+/=\s_-]+$/.test(cleanBase64)) throw new Error("fileBase64 ist ungueltig.");
+    const buffer = Buffer.from(cleanBase64.replace(/\s/g, ""), cleanBase64.includes("-") || cleanBase64.includes("_") ? "base64url" : "base64");
+    if (!buffer.length) throw new Error("fileBase64 ist leer.");
+    return normalizeUploadInput({
+      file: new File([new Uint8Array(buffer)], filename, { type: mimeType }),
+      title: textValue(data.title) || filename,
+      propertyId: textValue(data.propertyId),
+      unitId: textValue(data.unitId),
+      tenantProfileId: textValue(data.tenantProfileId) || textValue(data.tenantId),
+      isPropertyImage: booleanValue(data.isPropertyImage),
+      isPrimaryImage: booleanValue(data.isPrimaryImage),
+      status: textValue(data.status),
+      scope: textValue(data.scope),
+      categoryId: textValue(data.categoryId),
+      summary: textValue(data.summary) || textValue(data.description),
+      tags: arrayValue(data.tags),
+      documentYear: numberValue(data.documentYear)
+    });
+  }
+
+  const form = await request.formData();
+  const file = form.get("file");
+  if (!(file instanceof File)) throw new Error("Datei fehlt.");
+  return normalizeUploadInput({
+    file,
+    title: String(form.get("title") || file.name),
+    propertyId: String(form.get("propertyId") || "") || null,
+    unitId: String(form.get("unitId") || "") || null,
+    tenantProfileId: String(form.get("tenantProfileId") || "") || null,
+    isPropertyImage: String(form.get("isPropertyImage") || "") === "true",
+    isPrimaryImage: String(form.get("isPrimaryImage") || "") === "true",
+    status: String(form.get("status") || ""),
+    scope: String(form.get("scope") || ""),
+    categoryId: String(form.get("categoryId") || "") || null,
+    summary: String(form.get("summary") || "") || null,
+    tags: String(form.get("tags") || "").split(",").map((tag) => tag.trim()).filter(Boolean),
+    documentYear: numberValue(form.get("documentYear"))
+  });
+}
+
+function normalizeUploadInput(input: {
+  file: File;
+  title: string;
+  propertyId?: string | null;
+  unitId?: string | null;
+  tenantProfileId?: string | null;
+  isPropertyImage?: boolean;
+  isPrimaryImage?: boolean;
+  status?: string | null;
+  scope?: string | null;
+  categoryId?: string | null;
+  summary?: string | null;
+  tags?: string[];
+  documentYear?: number | null;
+}): IntegrationDocumentUploadInput {
+  return {
+    file: input.file,
+    title: input.title || input.file.name,
+    propertyId: input.propertyId || null,
+    unitId: input.unitId || null,
+    tenantProfileId: input.tenantProfileId || null,
+    isPropertyImage: Boolean(input.isPropertyImage),
+    isPrimaryImage: Boolean(input.isPrimaryImage),
+    status: documentStatus(input.status),
+    scope: documentScope(input.scope),
+    categoryId: input.categoryId || null,
+    summary: input.summary || null,
+    tags: input.tags || [],
+    documentYear: input.documentYear || null
+  };
+}
+
+function textValue(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function booleanValue(value: unknown) {
+  return value === true || value === "true";
+}
+
+function numberValue(value: unknown) {
+  if (value === undefined || value === null || value === "") return null;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1900 || parsed > 2049) throw new Error("documentYear ist ungueltig.");
+  return parsed;
+}
+
+function arrayValue(value: unknown) {
+  if (Array.isArray(value)) return value.map((entry) => String(entry).trim()).filter(Boolean);
+  if (typeof value === "string") return value.split(",").map((entry) => entry.trim()).filter(Boolean);
+  return [];
+}
+
+function documentStatus(value?: string | null) {
+  return Object.values(DocumentStatus).includes(value as DocumentStatus) ? value as DocumentStatus : DocumentStatus.AVAILABLE;
+}
+
+function documentScope(value?: string | null) {
+  return Object.values(DocumentScope).includes(value as DocumentScope) ? value as DocumentScope : DocumentScope.PROPERTY;
+}
+
+function uploadErrorDetails(message: string) {
+  if (message.includes("fileBase64")) {
+    return { field: "fileBase64", reason: message };
+  }
+  if (message.includes("Dateityp")) {
+    return { field: "filename", reason: message };
+  }
+  if (message.includes("Datei ist zu gross")) {
+    return { field: "fileBase64", reason: message };
+  }
+  return undefined;
+}
+
+function uploadErrorStatus(message: string) {
+  return [
+    "Datei fehlt",
+    "Dateityp",
+    "Datei ist zu gross",
+    "Ungueltig",
+    "ungueltig",
+    "ungueltiger",
+    "fileBase64",
+    "documentYear"
+  ].some((marker) => message.includes(marker)) ? 400 : 500;
 }

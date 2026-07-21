@@ -338,6 +338,36 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
   );
 
   server.registerTool(
+    "upload_document",
+    {
+      title: "Dokument hochladen",
+      description: "Laedt ein PDF, DOCX, Bild oder anderes erlaubtes Dokument als Base64 in das Portal hoch und ordnet es optional einer Immobilie, Einheit, Kategorie oder einem Mieter zu.",
+      inputSchema: {
+        fileBase64: z.string().trim().min(1).describe("Dateiinhalt als Base64. Data-URLs sind erlaubt."),
+        filename: z.string().trim().min(1).describe("Dateiname inklusive Erweiterung, z. B. Mietvertrag.pdf."),
+        mimeType: z.string().trim().min(1).optional().describe("MIME-Type, z. B. application/pdf."),
+        title: optionalString.describe("Anzeigetitel im Portal. Wenn leer, wird filename verwendet."),
+        propertyId: optionalId.describe("Optionale Immobilien-ID."),
+        unitId: optionalId.describe("Optionale Einheiten-ID."),
+        tenantProfileId: optionalId.describe("Optionale TenantProfile-ID."),
+        categoryId: optionalId.describe("Optionale Dokumentkategorie-ID."),
+        status: z.enum(["MISSING", "REQUESTED", "AVAILABLE", "SHARED", "NOT_RELEVANT"]).optional(),
+        scope: z.enum(["PROPERTY", "UNIT", "TENANT", "CONTRACT"]).optional(),
+        summary: optionalString.describe("Optionale Kurzbeschreibung."),
+        tags: z.array(z.string()).optional(),
+        documentYear: z.number().int().min(1900).max(2049).optional(),
+        isPropertyImage: z.boolean().optional(),
+        isPrimaryImage: z.boolean().optional()
+      }
+    },
+    async (args) => jsonContent(await portal.json({
+      method: "POST",
+      path: "/api/integrations/v1/documents",
+      body: args
+    }))
+  );
+
+  server.registerTool(
     "update_document",
     {
       title: "Dokument aktualisieren",

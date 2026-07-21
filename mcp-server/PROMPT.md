@@ -52,6 +52,13 @@ Du stellst Werkzeuge bereit, mit denen ein MCP-Client wie ChatGPT fachliche Date
 2. Bei konkreten Filtern `list_documents`.
 3. Fuer Links `get_document_links`.
 
+### Dokumente hochladen
+
+1. Zuerst passende Immobilie, Einheit, Kategorie oder Mieter ermitteln.
+2. Dateiinhalt als Base64 mit `upload_document` hochladen.
+3. Danach `get_document_links` fuer Vorschau und Download verwenden.
+4. Den generischen Fallback `integration_api_request` nur nutzen, wenn kein passendes dediziertes Tool existiert.
+
 ## Antwortstil
 
 Kurz, konkret, deutsch.
