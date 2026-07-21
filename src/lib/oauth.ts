@@ -75,7 +75,7 @@ export function redirectWithOAuthError(redirectUri: string, state: string | null
   target.searchParams.set("error", error);
   target.searchParams.set("error_description", description);
   if (state) target.searchParams.set("state", state);
-  return NextResponse.redirect(target);
+  return NextResponse.redirect(target, 303);
 }
 
 export function safeInternalNextPath(value?: string | string[] | null) {

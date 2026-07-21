@@ -59,5 +59,5 @@ export async function POST(request: NextRequest) {
   const target = new URL(redirectUri);
   target.searchParams.set("code", code);
   if (state) target.searchParams.set("state", state);
-  return NextResponse.redirect(target);
+  return NextResponse.redirect(target, 303);
 }
