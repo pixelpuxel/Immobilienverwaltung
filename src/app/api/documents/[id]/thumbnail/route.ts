@@ -6,6 +6,7 @@ import path from "path";
 import { promisify } from "util";
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/auth";
+import { verifyDocumentFileToken } from "@/lib/document-downloads";
 import { readPrivateFile } from "@/lib/files";
 import { canAccessDocument } from "@/lib/permissions";
 import { portalWhere } from "@/lib/portal-instance";
@@ -16,6 +17,15 @@ export const runtime = "nodejs";
 const execFileAsync = promisify(execFile);
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+  const signed = verifyDocumentFileToken(params.id, "thumbnail", request.nextUrl.searchParams.get("expires"), request.nextUrl.searchParams.get("token"));
+  if (signed) {
+    const document = await prisma.document.findUnique({ where: { id: params.id } });
+    if (!document?.storagePath) {
+      return svgResponse("Keine Datei", "Noch nicht hochgeladen", 404);
+    }
+    return thumbnailResponse(document);
+  }
+
   const user = await requireApiUser(request);
   if (!user) return svgResponse("Login", "Nicht angemeldet", 401);
 
@@ -27,6 +37,10 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     return svgResponse("Keine Datei", "Noch nicht hochgeladen", 404);
   }
 
+  return thumbnailResponse(document);
+}
+
+async function thumbnailResponse(document: { storagePath: string; mimeType: string | null; filename: string }) {
   const body = await readPrivateFile(document.storagePath);
   const mimeType = document.mimeType || "";
   if (mimeType.startsWith("image/")) {

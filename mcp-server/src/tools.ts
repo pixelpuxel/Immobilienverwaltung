@@ -373,16 +373,23 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
     "get_document_links",
     {
       title: "Dokument-Links erzeugen",
-      description: "Erzeugt autorisierte Integrations-Links fuer Vorschau und Download eines Dokuments.",
+      description: "Erzeugt zeitlich signierte Portal-Links fuer Vorschau, Thumbnail und Download eines Dokuments.",
       inputSchema: {
         id: z.string().trim().min(1)
       }
     },
-    async ({ id }) => textContent([
-      "Autorisierte Dokumentlinks:",
-      `Vorschau: ${portal.integrationUrl(`/api/integrations/v1/documents/${encodeURIComponent(id)}/preview`)}`,
-      `Download: ${portal.integrationUrl(`/api/integrations/v1/documents/${encodeURIComponent(id)}/download`)}`
-    ].join("\n"))
+    async ({ id }) => {
+      const result = await portal.json<{ links: { preview: string; thumbnail: string; download: string | null }; expiresAt: string }>({
+        path: `/api/integrations/v1/documents/${encodeURIComponent(id)}/links`
+      });
+      return textContent([
+        "Signierte Dokumentlinks:",
+        `Vorschau: ${result.links.preview}`,
+        `Thumbnail: ${result.links.thumbnail}`,
+        result.links.download ? `Download: ${result.links.download}` : "Download: nicht erlaubt",
+        `Gueltig bis: ${result.expiresAt}`
+      ].join("\n"));
+    }
   );
 
   server.registerTool(
