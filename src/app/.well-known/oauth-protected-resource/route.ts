@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { oauthIssuer, oauthResource, OAUTH_SUPPORTED_SCOPES } from "@/lib/oauth";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   return NextResponse.json({
     resource: oauthResource(),
