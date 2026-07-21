@@ -6,20 +6,19 @@ import { prisma } from "@/lib/prisma";
 const ACCESS_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30;
 
 export async function POST(request: NextRequest) {
-  const form = await request.formData().catch(() => null);
-  if (!form) return oauthError("invalid_request", "Form-encoded Body ist erforderlich.");
+  const body = await readTokenRequestBody(request);
 
-  const grantType = String(form.get("grant_type") || "");
+  const grantType = String(body.grant_type || "");
   if (grantType !== "authorization_code") return oauthError("unsupported_grant_type", "Nur authorization_code wird unterstuetzt.");
 
-  const code = String(form.get("code") || "");
-  const redirectUri = String(form.get("redirect_uri") || "");
-  const clientId = String(form.get("client_id") || "");
-  const codeVerifier = String(form.get("code_verifier") || "");
-  const resource = String(form.get("resource") || oauthResource());
+  const code = String(body.code || "");
+  const redirectUri = String(body.redirect_uri || "");
+  const requestedClientId = String(body.client_id || "");
+  const codeVerifier = String(body.code_verifier || "");
+  const requestedResource = String(body.resource || "");
 
-  if (!code || !redirectUri || !clientId || !codeVerifier) {
-    return oauthError("invalid_request", "code, redirect_uri, client_id und code_verifier sind erforderlich.");
+  if (!code || !codeVerifier) {
+    return logAndReturnTokenError("invalid_request", "code und code_verifier sind erforderlich.");
   }
 
   const authorizationCode = await prisma.oAuthAuthorizationCode.findUnique({
@@ -27,19 +26,25 @@ export async function POST(request: NextRequest) {
     include: { user: true }
   });
   if (!authorizationCode || authorizationCode.consumedAt || authorizationCode.expiresAt < new Date()) {
-    return oauthError("invalid_grant", "Authorization Code ist ungueltig oder abgelaufen.", 400);
+    return logAndReturnTokenError("invalid_grant", "Authorization Code ist ungueltig oder abgelaufen.");
   }
-  if (authorizationCode.clientId !== clientId || authorizationCode.redirectUri !== redirectUri) {
-    return oauthError("invalid_grant", "Authorization Code passt nicht zu Client oder Redirect-URI.", 400);
+
+  const clientId = requestedClientId || authorizationCode.clientId;
+  const resource = requestedResource || authorizationCode.resource;
+  if (authorizationCode.clientId !== clientId) {
+    return logAndReturnTokenError("invalid_grant", "Authorization Code passt nicht zum Client.");
+  }
+  if (redirectUri && authorizationCode.redirectUri !== redirectUri) {
+    return logAndReturnTokenError("invalid_grant", "Authorization Code passt nicht zur Redirect-URI.");
   }
   if (authorizationCode.resource !== resource || resource !== oauthResource()) {
-    return oauthError("invalid_target", "resource passt nicht zu diesem MCP-Server.", 400);
+    return logAndReturnTokenError("invalid_target", "resource passt nicht zu diesem MCP-Server.");
   }
   if (!verifyPkce(codeVerifier, authorizationCode.codeChallenge, authorizationCode.codeChallengeMethod)) {
-    return oauthError("invalid_grant", "PKCE-Verifizierung fehlgeschlagen.", 400);
+    return logAndReturnTokenError("invalid_grant", "PKCE-Verifizierung fehlgeschlagen.");
   }
   if (!authorizationCode.user.active) {
-    return oauthError("invalid_grant", "Benutzer ist deaktiviert.", 400);
+    return logAndReturnTokenError("invalid_grant", "Benutzer ist deaktiviert.");
   }
 
   const plainToken = createPlainApiToken();
@@ -65,4 +70,19 @@ export async function POST(request: NextRequest) {
     scope: authorizationCode.scopes.join(" "),
     resource
   });
+}
+
+async function readTokenRequestBody(request: NextRequest) {
+  const contentType = request.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    return (await request.json().catch(() => ({}))) as Record<string, unknown>;
+  }
+  const form = await request.formData().catch(() => null);
+  if (!form) return {};
+  return Object.fromEntries(Array.from(form.entries()).map(([key, value]) => [key, String(value)]));
+}
+
+function logAndReturnTokenError(error: string, description: string) {
+  console.warn(`[oauth/token] ${error}: ${description}`);
+  return oauthError(error, description, 400);
 }
