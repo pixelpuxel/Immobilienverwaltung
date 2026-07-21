@@ -33,6 +33,7 @@ const categories = {
   ],
   Vermietung: [
     "Mietverträge",
+    "Mieterhöhung",
     "Mieterliste",
     "Nebenkostenabrechnungen",
     "Kautionsnachweise",
@@ -44,6 +45,7 @@ const categories = {
 
 const tenantVisibleCategories = new Set([
   "Mietverträge",
+  "Mieterhöhung",
   "Nebenkostenabrechnungen",
   "Kautionsnachweise",
   "Übergabeprotokolle",

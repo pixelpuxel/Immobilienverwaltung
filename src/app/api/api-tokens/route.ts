@@ -44,3 +44,20 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({ token, apiToken }, { status: 201 });
 }
 
+export async function DELETE(request: NextRequest) {
+  if (!assertSameOrigin(request)) return NextResponse.json({ error: "CSRF-Schutz hat die Anfrage blockiert." }, { status: 403 });
+  const user = await requireApiUser(request, [Role.ADMIN]);
+  if (!user) return NextResponse.json({ error: "Nicht erlaubt." }, { status: 403 });
+
+  const result = await prisma.apiToken.deleteMany({
+    where: {
+      user: portalWhere(user),
+      OR: [
+        { revokedAt: { not: null } },
+        { expiresAt: { lte: new Date() } }
+      ]
+    }
+  });
+
+  return NextResponse.json({ ok: true, deleted: result.count });
+}
