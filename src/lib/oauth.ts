@@ -4,25 +4,40 @@ import { env } from "@/lib/env";
 
 export const OAUTH_SUPPORTED_SCOPES = [
   "read:properties",
+  "write:properties",
   "read:units",
+  "write:units",
   "read:documents",
+  "write:documents",
   "download:documents",
   "read:tenants",
+  "write:tenants",
   "read:contracts",
   "write:contracts",
   "write:landlord-confirmations",
+  "write:settings",
+  "backup:export",
+  "backup:import",
   "read:audit"
 ];
 
 export const DEFAULT_MCP_SCOPES = [
   "read:properties",
+  "write:properties",
   "read:units",
+  "write:units",
   "read:documents",
+  "write:documents",
   "download:documents",
   "read:tenants",
+  "write:tenants",
   "read:contracts",
   "write:contracts",
-  "write:landlord-confirmations"
+  "write:landlord-confirmations",
+  "write:settings",
+  "backup:export",
+  "backup:import",
+  "read:audit"
 ];
 
 export function oauthIssuer() {

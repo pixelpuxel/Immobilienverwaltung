@@ -117,13 +117,20 @@ function single(value: string | string[] | undefined) {
 function scopeLabel(scope: string) {
   const labels: Record<string, string> = {
     "read:properties": "Immobilien lesen",
+    "write:properties": "Immobilien bearbeiten",
     "read:units": "Einheiten lesen",
+    "write:units": "Einheiten bearbeiten",
     "read:documents": "Dokumente lesen",
+    "write:documents": "Dokumente bearbeiten",
     "download:documents": "Dokumente herunterladen",
     "read:tenants": "Mieter lesen",
+    "write:tenants": "Mieter bearbeiten",
     "read:contracts": "Vertraege lesen",
     "write:contracts": "Vertraege erzeugen",
     "write:landlord-confirmations": "Wohnungsgeberbestaetigungen erzeugen",
+    "write:settings": "Einstellungen bearbeiten",
+    "backup:export": "Backup exportieren",
+    "backup:import": "Backup importieren",
     "read:audit": "Aktivitaeten lesen"
   };
   return labels[scope] || scope;
