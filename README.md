@@ -112,15 +112,15 @@ MCP_BIND=127.0.0.1
 MCP_PORT=8090
 MCP_PUBLIC_BASE_URL=https://portal.example.com
 MCP_PORTAL_BASE_URL=http://app:8088
-MCP_PORTAL_TOKEN=ip_live_...
-MCP_SERVER_TOKEN=sehr_langer_geheimer_token
 ```
+
+Zugriffstokens gehoeren nicht in `.env`. Der MCP-Server nutzt dieselben API-Tokens wie N8N, iPhone-App und andere Integrationen. Tokens werden im Portal unter **Einstellungen -> API-Zugaenge** erzeugt, widerrufen und mit Scopes versehen.
 
 MCP-Endpunkt:
 
 ```text
 POST https://portal.example.com/mcp
-Authorization: Bearer <MCP_SERVER_TOKEN>
+Authorization: Bearer <Portal-API-Token>
 Accept: application/json, text/event-stream
 ```
 

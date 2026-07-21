@@ -10,7 +10,10 @@ export type PortalRequest = {
 };
 
 export class PortalClient {
-  constructor(private readonly config: McpConfig) {}
+  constructor(
+    private readonly config: McpConfig,
+    private readonly portalToken = ""
+  ) {}
 
   buildPortalUrl(path: string, query?: PortalRequest["query"]) {
     const normalizedPath = path.startsWith("/") ? path : `/${path}`;
@@ -29,17 +32,10 @@ export class PortalClient {
   }
 
   async json<T = unknown>(request: PortalRequest): Promise<T> {
-    if (!this.config.portalToken) {
-      throw new PortalApiError(
-        500,
-        "MCP_PORTAL_TOKEN fehlt. Bitte im Portal einen API-Token mit passenden Scopes erzeugen und in .env setzen.",
-        { code: "MISSING_PORTAL_TOKEN" }
-      );
-    }
     const response = await fetch(this.buildPortalUrl(request.path, request.query), {
       method: request.method || "GET",
       headers: {
-        Authorization: `Bearer ${this.config.portalToken}`,
+        ...(this.portalToken ? { Authorization: `Bearer ${this.portalToken}` } : {}),
         Accept: "application/json",
         ...(request.body === undefined ? {} : { "Content-Type": "application/json" })
       },

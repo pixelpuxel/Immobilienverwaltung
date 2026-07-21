@@ -4,22 +4,16 @@ export type McpConfig = {
   port: number;
   publicBaseUrl: string;
   portalBaseUrl: string;
-  portalToken: string;
-  serverToken: string;
 };
 
 export function readConfig(): McpConfig {
   const portalBaseUrl = requiredEnv("MCP_PORTAL_BASE_URL").replace(/\/+$/, "");
-  const portalToken = process.env.MCP_PORTAL_TOKEN?.trim() || "";
-  const serverToken = requiredEnv("MCP_SERVER_TOKEN");
   return {
     name: process.env.MCP_SERVER_NAME || "Immobilienportal MCP",
     version: process.env.MCP_SERVER_VERSION || "0.1.0",
     port: Number(process.env.MCP_PORT || "8090"),
     publicBaseUrl: (process.env.MCP_PUBLIC_BASE_URL || "http://localhost:8090").replace(/\/+$/, ""),
-    portalBaseUrl,
-    portalToken,
-    serverToken
+    portalBaseUrl
   };
 }
 

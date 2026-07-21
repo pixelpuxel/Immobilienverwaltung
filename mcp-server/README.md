@@ -46,7 +46,7 @@ MCP-Endpunkt:
 
 ```text
 POST /mcp
-Authorization: Bearer <MCP_SERVER_TOKEN>
+Authorization: Bearer <Portal-API-Token>
 Accept: application/json, text/event-stream
 ```
 
@@ -59,13 +59,9 @@ MCP_SERVER_NAME=Immobilienportal MCP
 MCP_SERVER_VERSION=0.1.0
 MCP_PUBLIC_BASE_URL=https://portal.example.com
 MCP_PORTAL_BASE_URL=http://app:8088
-MCP_PORTAL_TOKEN=ip_live_...
-MCP_SERVER_TOKEN=sehr_langer_geheimer_token
 ```
 
-`MCP_PORTAL_TOKEN` ist ein Token aus dem Immobilienportal. Er sollte nur die Scopes bekommen, die der MCP-Server wirklich braucht.
-
-`MCP_SERVER_TOKEN` schuetzt den MCP-Endpunkt selbst gegen fremden Zugriff.
+Zugriffstokens werden nicht in `.env` gespeichert. Der MCP-Server akzeptiert normale Portal-API-Tokens im Authorization-Header und verwendet denselben Token fuer die interne Integrations-API. Tokens werden im Portal unter **Einstellungen -> API-Zugaenge** administriert.
 
 ## Empfohlene Portal-Token-Scopes
 
@@ -127,7 +123,7 @@ location /mcp {
 Im ChatGPT-Connector dann als Authorization Header:
 
 ```text
-Authorization: Bearer <MCP_SERVER_TOKEN>
+Authorization: Bearer <Portal-API-Token>
 Accept: application/json, text/event-stream
 ```
 

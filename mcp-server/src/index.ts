@@ -7,7 +7,6 @@ import { PortalClient } from "./portal-client.js";
 import { registerPortalTools } from "./tools.js";
 
 const config = readConfig();
-const portal = new PortalClient(config);
 const app = express();
 
 app.disable("x-powered-by");
@@ -15,6 +14,7 @@ app.use(express.json({ limit: "8mb" }));
 
 app.get("/health", async (_request, response) => {
   try {
+    const portal = new PortalClient(config);
     const portalHealth = await portal.json({ path: "/api/integrations/v1/health" });
     response.json({
       ok: true,
@@ -35,7 +35,7 @@ app.post("/mcp", requireMcpClientToken, async (request, response) => {
   const requestId = request.headers["x-request-id"]?.toString() || randomUUID();
   response.setHeader("X-Request-Id", requestId);
 
-  const server = createMcpServer();
+  const server = createMcpServer(new PortalClient(config, bearerToken(request)!));
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined
   });
@@ -83,7 +83,7 @@ app.listen(config.port, "0.0.0.0", () => {
   console.log(`Immobilienportal MCP server listening on port ${config.port}`);
 });
 
-function createMcpServer() {
+function createMcpServer(portal: PortalClient) {
   const server = new McpServer({
     name: config.name,
     version: config.version
@@ -93,15 +93,28 @@ function createMcpServer() {
   return server;
 }
 
-function requireMcpClientToken(request: Request, response: Response, next: NextFunction) {
-  const auth = request.headers.authorization || "";
-  const expected = `Bearer ${config.serverToken}`;
-  if (auth !== expected) {
+async function requireMcpClientToken(request: Request, response: Response, next: NextFunction) {
+  const token = bearerToken(request);
+  if (!token) {
     response.status(401).json({
       error: "UNAUTHORIZED",
-      message: "Bearer token missing or invalid."
+      message: "Bearer token missing. Use a Portal API token created in the backend."
     });
     return;
   }
-  next();
+  try {
+    await new PortalClient(config, token).json({ path: "/api/integrations/v1/me" });
+    next();
+  } catch (error) {
+    response.status(401).json({
+      error: "UNAUTHORIZED",
+      message: error instanceof Error ? error.message : "Portal API token is invalid."
+    });
+  }
+}
+
+function bearerToken(request: Request) {
+  const auth = request.headers.authorization || "";
+  const match = auth.match(/^Bearer\s+(.+)$/i);
+  return match?.[1]?.trim() || null;
 }

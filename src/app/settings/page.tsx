@@ -186,7 +186,7 @@ export default async function SettingsPage() {
               lastUsedAt: token.lastUsedAt?.toISOString() || null,
               expiresAt: token.expiresAt?.toISOString() || null,
               revokedAt: token.revokedAt?.toISOString() || null
-            }))} />
+            }))} mcpEndpoint={`${env.appUrl.replace(/\/+$/, "")}/mcp`} />
           </SettingsFold>
           {user.platformAdmin ? (
             <SettingsFold title="Portal-Instanzen" description="Instanzen für weitere Nutzer verwalten.">

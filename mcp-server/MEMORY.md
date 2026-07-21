@@ -6,8 +6,9 @@
 - Der Server ist bewusst vom Next.js-Portal getrennt.
 - Er nutzt ausschliesslich die bestehende Integrations-API unter `/api/integrations/v1`.
 - Kein direkter Zugriff auf PostgreSQL, Qdrant, Uploads oder Vertragsdateien.
-- Der Portalzugriff erfolgt ueber `MCP_PORTAL_TOKEN`.
-- Der MCP-Endpunkt selbst wird ueber `MCP_SERVER_TOKEN` geschuetzt.
+- Der MCP-Server akzeptiert normale Portal-API-Tokens im Authorization-Header.
+- Derselbe Portal-API-Token wird fuer die interne Integrations-API verwendet.
+- Tokens werden im Portal unter Einstellungen -> API-Zugaenge administriert, nicht in `.env`.
 - Der Container bindet standardmaessig nur an `127.0.0.1`, damit die Veroeffentlichung bewusst ueber Reverse Proxy erfolgt.
 
 ## Aktueller Funktionsumfang

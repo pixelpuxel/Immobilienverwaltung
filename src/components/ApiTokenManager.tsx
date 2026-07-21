@@ -3,10 +3,10 @@
 import { useState } from "react";
 
 const scopeGroups = [
-  ["Lesen", ["read:properties", "read:units", "read:documents", "download:documents", "read:tenants", "read:contracts"]],
+  ["Lesen", ["read:properties", "read:units", "read:documents", "download:documents", "read:tenants", "read:contracts", "read:audit"]],
   ["Schreiben", ["write:properties", "write:units", "write:documents", "write:tenants"]],
-  ["Vertraege", ["write:contracts"]],
-  ["Einstellungen", ["write:settings"]],
+  ["Vertraege und Formulare", ["write:contracts"]],
+  ["Einstellungen", ["read:settings", "write:settings"]],
   ["Backup", ["backup:export", "backup:import"]]
 ];
 
@@ -20,7 +20,7 @@ type ApiTokenRow = {
   createdAt: string;
 };
 
-export function ApiTokenManager({ initialTokens }: { initialTokens: ApiTokenRow[] }) {
+export function ApiTokenManager({ initialTokens, mcpEndpoint }: { initialTokens: ApiTokenRow[]; mcpEndpoint: string }) {
   const [tokens, setTokens] = useState(initialTokens);
   const [plainToken, setPlainToken] = useState("");
   const [message, setMessage] = useState("");
@@ -62,8 +62,16 @@ export function ApiTokenManager({ initialTokens }: { initialTokens: ApiTokenRow[
   return (
     <section className="rounded-lg border border-line bg-white">
       <div className="border-b border-line p-4">
-        <div className="font-bold">N8N API-Tokens</div>
-        <p className="mt-1 text-sm text-muted">Erstelle API-Token fuer N8N und andere Automationen. Technisch werden sie im Header als Bearer-Token gesendet, der Klartext wird nur einmal angezeigt.</p>
+        <div className="font-bold">API- und MCP-Zugänge</div>
+        <p className="mt-1 text-sm text-muted">Erstelle Tokens fuer ChatGPT/MCP, N8N und andere Integrationen. Tokens werden im Backend verwaltet und als Bearer-Token gesendet. Der Klartext wird aus Sicherheitsgruenden nur einmal angezeigt.</p>
+      </div>
+      <div className="grid gap-3 border-b border-line bg-emerald-50 p-4 text-sm">
+        <div className="font-bold text-emerald-950">ChatGPT / MCP verbinden</div>
+        <div className="grid gap-1">
+          <span className="font-semibold text-emerald-950">MCP-Server-URL</span>
+          <code className="block overflow-auto rounded-md bg-white p-3 text-xs">{mcpEndpoint}</code>
+        </div>
+        <p className="text-emerald-900">Der MCP-Server nutzt dieselben API-Tokens wie N8N, iPhone-App und andere Integrationen. Erzeuge unten einen normalen API-Token mit den benoetigten Scopes und trage ihn im MCP-Client als Authorization Bearer Token ein.</p>
       </div>
       <form action={createToken} className="grid gap-4 p-4">
         <label className="grid gap-1 text-sm font-semibold">
