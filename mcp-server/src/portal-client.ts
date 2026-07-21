@@ -26,9 +26,15 @@ export class PortalClient {
     return url;
   }
 
-  buildPublicUrl(path: string) {
+  buildPublicUrl(path: string, query?: PortalRequest["query"]) {
     const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-    return new URL(normalizedPath, this.config.publicBaseUrl).toString();
+    const url = new URL(normalizedPath, this.config.publicBaseUrl);
+    for (const [key, value] of Object.entries(query || {})) {
+      if (value !== undefined && value !== null && value !== "") {
+        url.searchParams.set(key, String(value));
+      }
+    }
+    return url.toString();
   }
 
   async json<T = unknown>(request: PortalRequest): Promise<T> {
@@ -52,7 +58,7 @@ export class PortalClient {
   }
 
   integrationUrl(path: string, query?: PortalRequest["query"]) {
-    return this.buildPortalUrl(path, query).toString();
+    return this.buildPublicUrl(path, query);
   }
 }
 
