@@ -31,6 +31,26 @@ app.get("/health", async (_request, response) => {
   }
 });
 
+app.get("/.well-known/oauth-protected-resource", (_request, response) => {
+  response.json({
+    resource: `${config.publicBaseUrl}/mcp`,
+    authorization_servers: [config.publicBaseUrl],
+    scopes_supported: [
+      "read:properties",
+      "read:units",
+      "read:documents",
+      "download:documents",
+      "read:tenants",
+      "read:contracts",
+      "write:contracts",
+      "write:landlord-confirmations",
+      "read:audit"
+    ],
+    bearer_methods_supported: ["header"],
+    resource_documentation: `${config.publicBaseUrl}/settings`
+  });
+});
+
 app.post("/mcp", requireMcpClientToken, async (request, response) => {
   const requestId = request.headers["x-request-id"]?.toString() || randomUUID();
   response.setHeader("X-Request-Id", requestId);
@@ -96,9 +116,10 @@ function createMcpServer(portal: PortalClient) {
 async function requireMcpClientToken(request: Request, response: Response, next: NextFunction) {
   const token = bearerToken(request);
   if (!token) {
+    setOAuthChallenge(response);
     response.status(401).json({
       error: "UNAUTHORIZED",
-      message: "Bearer token missing. Use a Portal API token created in the backend."
+      message: "Bearer token missing. Start the OAuth flow or use a Portal API token created in the backend."
     });
     return;
   }
@@ -106,6 +127,7 @@ async function requireMcpClientToken(request: Request, response: Response, next:
     await new PortalClient(config, token).json({ path: "/api/integrations/v1/me" });
     next();
   } catch (error) {
+    setOAuthChallenge(response);
     response.status(401).json({
       error: "UNAUTHORIZED",
       message: error instanceof Error ? error.message : "Portal API token is invalid."
@@ -117,4 +139,9 @@ function bearerToken(request: Request) {
   const auth = request.headers.authorization || "";
   const match = auth.match(/^Bearer\s+(.+)$/i);
   return match?.[1]?.trim() || null;
+}
+
+function setOAuthChallenge(response: Response) {
+  const resourceMetadata = `${config.publicBaseUrl}/.well-known/oauth-protected-resource`;
+  response.setHeader("WWW-Authenticate", `Bearer resource_metadata="${resourceMetadata}"`);
 }

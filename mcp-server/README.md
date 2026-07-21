@@ -46,9 +46,30 @@ MCP-Endpunkt:
 
 ```text
 POST /mcp
-Authorization: Bearer <Portal-API-Token>
 Accept: application/json, text/event-stream
 ```
+
+## OAuth fuer ChatGPT
+
+ChatGPT-Apps/Plugins koennen den MCP-Server ueber OAuth verbinden. Der OAuth-Server ist das Immobilienportal selbst; der MCP-Container bleibt ein schlanker Tool-Proxy.
+
+Discovery:
+
+```text
+GET https://portal.example.com/.well-known/oauth-protected-resource
+GET https://portal.example.com/.well-known/oauth-authorization-server
+```
+
+Flow:
+
+1. ChatGPT ruft `/mcp` ohne gueltigen Token auf.
+2. Der MCP-Server antwortet `401` mit `WWW-Authenticate` und verweist auf die Protected-Resource-Metadata.
+3. ChatGPT startet Authorization Code + PKCE gegen `/oauth/authorize`.
+4. Der Benutzer loggt sich im Portal ein und bestaetigt die Rechte.
+5. `/oauth/token` erzeugt einen normalen Portal-API-Token.
+6. ChatGPT nutzt diesen Token als `Authorization: Bearer ...` fuer `/mcp`.
+
+Die erzeugten OAuth-Tokens erscheinen im Portal unter **Einstellungen -> API-Zugaenge** und koennen dort widerrufen werden.
 
 ## ENV
 
@@ -120,7 +141,7 @@ location /mcp {
 }
 ```
 
-Im ChatGPT-Connector dann als Authorization Header:
+Fuer Clients ohne OAuth kann weiterhin ein manuell erzeugter Portal-API-Token genutzt werden:
 
 ```text
 Authorization: Bearer <Portal-API-Token>

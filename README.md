@@ -116,11 +116,19 @@ MCP_PORTAL_BASE_URL=http://app:8088
 
 Zugriffstokens gehoeren nicht in `.env`. Der MCP-Server nutzt dieselben API-Tokens wie N8N, iPhone-App und andere Integrationen. Tokens werden im Portal unter **Einstellungen -> API-Zugaenge** erzeugt, widerrufen und mit Scopes versehen.
 
+ChatGPT kann den MCP-Server ueber OAuth verbinden. Das Portal stellt dafuer die OAuth-Discovery-Endpunkte bereit:
+
+```text
+https://portal.example.com/.well-known/oauth-protected-resource
+https://portal.example.com/.well-known/oauth-authorization-server
+```
+
+Beim OAuth-Flow meldet sich der Benutzer im Portal an, bestaetigt die angefragten Rechte und das Portal erstellt automatisch einen widerrufbaren API-Token fuer ChatGPT. Manuelle API-Tokens bleiben fuer N8N, eigene Skripte und andere MCP-Clients weiterhin moeglich.
+
 MCP-Endpunkt:
 
 ```text
 POST https://portal.example.com/mcp
-Authorization: Bearer <Portal-API-Token>
 Accept: application/json, text/event-stream
 ```
 

@@ -9,6 +9,8 @@
 - Der MCP-Server akzeptiert normale Portal-API-Tokens im Authorization-Header.
 - Derselbe Portal-API-Token wird fuer die interne Integrations-API verwendet.
 - Tokens werden im Portal unter Einstellungen -> API-Zugaenge administriert, nicht in `.env`.
+- ChatGPT-OAuth wird vom Portal bereitgestellt. Der OAuth-Code-Flow erzeugt am Ende ebenfalls normale Portal-API-Tokens.
+- Der MCP-Server sendet bei fehlendem/ungueltigem Token eine `WWW-Authenticate`-Challenge mit Protected-Resource-Metadata.
 - Der Container bindet standardmaessig nur an `127.0.0.1`, damit die Veroeffentlichung bewusst ueber Reverse Proxy erfolgt.
 
 ## Aktueller Funktionsumfang
@@ -34,7 +36,6 @@
 ## Noch bewusst offen
 
 - Direkter Datei-Upload ueber MCP ist noch nicht implementiert, weil Multipart/Binary je nach MCP-Client unterschiedlich behandelt wird.
-- Oauth/OIDC fuer oeffentliche ChatGPT-Connectoren ist noch nicht implementiert. Aktuell wird Bearer-Token-Schutz verwendet.
 - Separate GitHub-Repository-Auslagerung ist vorbereitet, aber noch nicht vollzogen.
 - Tool-Audit im MCP-Server selbst ist minimal; Audit erfolgt primaer im Portal.
 
@@ -43,5 +44,4 @@
 - OpenAPI- oder Tool-Manifest automatisch aus `/api/integrations/v1` generieren.
 - MCP-Ressourcen fuer `portal://properties`, `portal://documents`, `portal://contracts`.
 - MCP-Prompts fuer Standardprozesse im SDK registrieren.
-- Optional OAuth vor den MCP-Endpunkt setzen, falls ChatGPT-Workspace das verlangt.
 - End-to-End-Test mit einem echten ChatGPT-MCP-Connector gegen `https://portal.schreiber.info/mcp`.

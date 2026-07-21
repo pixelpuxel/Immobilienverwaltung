@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import Image from "next/image";
 import { currentUser } from "@/lib/auth";
 import { LoginForm } from "@/components/LoginForm";
+import { safeInternalNextPath } from "@/lib/oauth";
 
 const features = [
   {
@@ -24,9 +25,10 @@ const roles = [
   { label: "Mieter", text: "Eigene Dokumente, Mietvertrag und persoenliche Stammdaten." }
 ];
 
-export default async function LoginPage() {
+export default async function LoginPage({ searchParams }: { searchParams?: Record<string, string | string[] | undefined> }) {
+  const nextPath = safeInternalNextPath(searchParams?.next);
   const user = await currentUser();
-  if (user) redirect("/dashboard");
+  if (user) redirect(nextPath);
   return (
     <main className="min-h-screen bg-[#f4f8f5] text-ink">
       <header className="border-b border-white/70 bg-white/85 backdrop-blur">
@@ -85,7 +87,7 @@ export default async function LoginPage() {
               Melde dich mit Benutzername oder E-Mail an. Danach siehst du nur die Bereiche und Dokumente, die fuer deine Rolle freigeschaltet sind.
             </p>
             <div className="mt-5">
-              <LoginForm />
+              <LoginForm nextPath={nextPath} />
             </div>
           </section>
 

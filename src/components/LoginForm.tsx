@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 
 const rememberedLoginKey = "immobilienportal:last-login";
 
-export function LoginForm() {
+export function LoginForm({ nextPath = "/dashboard" }: { nextPath?: string }) {
   const router = useRouter();
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -42,7 +42,7 @@ export function LoginForm() {
     } else {
       window.localStorage.removeItem(rememberedLoginKey);
     }
-    router.push("/dashboard");
+    router.push(nextPath);
     router.refresh();
   }
 

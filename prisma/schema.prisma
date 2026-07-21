@@ -63,6 +63,7 @@ model PortalInstance {
   agentConversations AgentConversation[]
   auditLogs   AuditLog[]
   apiTokens   ApiToken[]
+  oauthAuthorizationCodes OAuthAuthorizationCode[]
   deviceInstallations DeviceInstallation[]
 }
 
@@ -97,8 +98,38 @@ model User {
   tenantProfile TenantProfile?
   auditLogs    AuditLog[]
   apiTokens    ApiToken[]
+  oauthAuthorizationCodes OAuthAuthorizationCode[]
   deviceInstallations DeviceInstallation[]
   portalInstance PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
+}
+
+model OAuthClient {
+  id              String          @id @default(cuid())
+  clientId        String          @unique
+  clientName      String?
+  redirectUris    String[]        @default([])
+  clientUri       String?
+  logoUri         String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+}
+
+model OAuthAuthorizationCode {
+  id              String          @id @default(cuid())
+  codeHash        String          @unique
+  userId          String
+  portalInstanceId String?
+  clientId        String
+  redirectUri     String
+  scopes          String[]        @default([])
+  codeChallenge   String
+  codeChallengeMethod String      @default("S256")
+  resource        String
+  expiresAt       DateTime
+  consumedAt      DateTime?
+  createdAt       DateTime        @default(now())
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  portalInstance  PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
 }
 
 model ApiToken {
