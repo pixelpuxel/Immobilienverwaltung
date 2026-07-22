@@ -5,8 +5,9 @@ import { timelineEventCreateSchema } from "@/lib/timeline-schema";
 import { listTimelineItems } from "@/lib/timeline";
 
 export async function GET(request: NextRequest) {
-  const { user, response } = await requireIntegrationUser(request, ["read:timeline"]);
+  const { user, response } = await requireIntegrationUser(request);
   if (!user) return response;
+  if (!hasAnyScope(user.tokenScopes, ["read:timeline", "read:properties"])) return integrationError("FORBIDDEN", "Token braucht Scope: read:timeline oder read:properties", 403);
   const items = await listTimelineItems(user, {
     propertyId: request.nextUrl.searchParams.get("propertyId"),
     unitId: request.nextUrl.searchParams.get("unitId"),
@@ -19,8 +20,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const { user, response } = await requireIntegrationUser(request, ["write:timeline"]);
+  const { user, response } = await requireIntegrationUser(request);
   if (!user) return response;
+  if (!hasAnyScope(user.tokenScopes, ["write:timeline", "write:properties"])) return integrationError("FORBIDDEN", "Token braucht Scope: write:timeline oder write:properties", 403);
   const forbidden = requireAdminIntegration(user);
   if (forbidden) return forbidden;
   const body = timelineEventCreateSchema.safeParse(await request.json().catch(() => ({})));
@@ -30,6 +32,10 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     return integrationError("BAD_REQUEST", timelineActionError(error), 400);
   }
+}
+
+function hasAnyScope(tokenScopes: string[], scopes: string[]) {
+  return scopes.some((scope) => tokenScopes.includes(scope));
 }
 
 function timelineActionError(error: unknown) {

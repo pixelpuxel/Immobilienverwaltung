@@ -6,8 +6,9 @@ import { serializeTimelineEvent, timelineAccessWhere, timelineInclude } from "@/
 import { timelineEventUpdateSchema } from "@/lib/timeline-schema";
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
-  const { user, response } = await requireIntegrationUser(request, ["read:timeline"]);
+  const { user, response } = await requireIntegrationUser(request);
   if (!user) return response;
+  if (!hasAnyScope(user.tokenScopes, ["read:timeline", "read:properties"])) return integrationError("FORBIDDEN", "Token braucht Scope: read:timeline oder read:properties", 403);
   const event = await prisma.timelineEvent.findFirst({
     where: { AND: [{ id: params.id }, await timelineAccessWhere(user, { includeInternal: request.nextUrl.searchParams.get("internal") === "1" })] },
     include: timelineInclude()
@@ -16,8 +17,9 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
-  const { user, response } = await requireIntegrationUser(request, ["write:timeline"]);
+  const { user, response } = await requireIntegrationUser(request);
   if (!user) return response;
+  if (!hasAnyScope(user.tokenScopes, ["write:timeline", "write:properties"])) return integrationError("FORBIDDEN", "Token braucht Scope: write:timeline oder write:properties", 403);
   const forbidden = requireAdminIntegration(user);
   if (forbidden) return forbidden;
   const body = timelineEventUpdateSchema.safeParse(await request.json().catch(() => ({})));
@@ -31,12 +33,17 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
-  const { user, response } = await requireIntegrationUser(request, ["write:timeline"]);
+  const { user, response } = await requireIntegrationUser(request);
   if (!user) return response;
+  if (!hasAnyScope(user.tokenScopes, ["write:timeline", "write:properties"])) return integrationError("FORBIDDEN", "Token braucht Scope: write:timeline oder write:properties", 403);
   const forbidden = requireAdminIntegration(user);
   if (forbidden) return forbidden;
   const ok = await deleteTimelineEvent(user, params.id, request);
   return ok ? NextResponse.json({ ok: true }) : integrationError("NOT_FOUND", "Timeline-Ereignis wurde nicht gefunden.", 404);
+}
+
+function hasAnyScope(tokenScopes: string[], scopes: string[]) {
+  return scopes.some((scope) => tokenScopes.includes(scope));
 }
 
 function timelineActionError(error: unknown) {
