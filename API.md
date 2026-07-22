@@ -345,6 +345,37 @@ GET  /api/templates/:id/thumbnail
 
 Vertragsvorlagen koennen global, einer Immobilie oder einer konkreten Einheit zugeordnet werden. Bei der Vertragserzeugung gilt die Prioritaet: Einheit vor Immobilie vor globaler Vorlage vor internem Standardvertrag.
 
+Timeline:
+
+```text
+GET    /api/timeline?propertyId=&unitId=&tenantProfileId=&internal=1&derived=1
+POST   /api/timeline
+PATCH  /api/timeline/:id
+DELETE /api/timeline/:id
+```
+
+Die Timeline zeigt manuelle Ereignisse und automatisch abgeleitete Ereignisse wie Einzug, Auszug, Kaution, Mietzahlung und erzeugte Vertraege. Manuelle Ereignisse koennen Dokumente verknuepfen und Kosten enthalten.
+
+Beispiel:
+
+```bash
+curl -b portal-cookie.txt \
+  -X POST "$BASE_URL/api/timeline" \
+  -H "Content-Type: application/json" \
+  -H "Origin: $BASE_URL" \
+  --data '{
+    "propertyId":"PROPERTY_ID",
+    "unitId":"UNIT_ID",
+    "tenantProfileId":"TENANT_ID",
+    "eventType":"MAINTENANCE_REPORTED",
+    "title":"Heizungsausfall gemeldet",
+    "description":"Mieter hat den Ausfall per E-Mail gemeldet.",
+    "eventDate":"2026-07-22",
+    "status":"OPEN",
+    "documentIds":["DOCUMENT_ID"]
+  }'
+```
+
 Aktivitaeten:
 
 ```text

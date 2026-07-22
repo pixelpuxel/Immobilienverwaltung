@@ -100,6 +100,8 @@ read:tenants
 write:tenants
 read:contracts
 write:contracts
+read:timeline
+write:timeline
 read:audit
 write:settings
 backup:export
@@ -115,6 +117,7 @@ read:documents
 download:documents
 read:tenants
 read:contracts
+read:timeline
 read:audit
 ```
 
@@ -186,6 +189,10 @@ Der Server stellt fachliche Tools bereit, z. B.:
 - `get_contract_links`
 - `list_rent_payments`
 - `upsert_rent_payment`
+- `list_timeline_events`
+- `create_timeline_event`
+- `update_timeline_event`
+- `delete_timeline_event`
 - `list_todos`
 - `list_audit_logs`
 - `list_users`

@@ -11,12 +11,14 @@ import { PropertyImageUpload } from "@/components/PropertyImageUpload";
 import { PropertyTodoList } from "@/components/PropertyTodoList";
 import { TenantCreateForm } from "@/components/TenantCreateForm";
 import { TenancyCalendar } from "@/components/TenancyCalendar";
+import { TimelinePanel } from "@/components/TimelinePanel";
 import { UploadForm } from "@/components/UploadForm";
 import { requireUser } from "@/lib/auth";
 import { brokerPropertyIds, canAccessDocument, tenantUnitId } from "@/lib/permissions";
 import { portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 import { formatPropertyAddress } from "@/lib/property-address";
+import { listTimelineItems } from "@/lib/timeline";
 
 export const dynamic = "force-dynamic";
 
@@ -71,6 +73,18 @@ export default async function PropertyDetailPage({ params }: { params: { id: str
   const visibleRegularDocuments = visibleDocuments.filter((document) => !document.isPropertyImage);
   const documentsByCategory = groupDocumentsByCategory(visibleRegularDocuments);
   const displayAddress = formatPropertyAddress(property);
+  const timelineItems = await listTimelineItems(user, { propertyId: property.id, includeInternal: canEdit, limit: 120 });
+  const timelineUnits = property.units.map((unit) => ({ id: unit.id, label: unit.unitNumber }));
+  const timelineTenants = property.units.flatMap((unit) => unit.tenants.map((tenant) => ({
+    id: tenant.id,
+    unitId: unit.id,
+    label: `${tenant.firstName} ${tenant.lastName} (${unit.unitNumber}${tenant.isCurrent ? ", laufend" : ""})`
+  })));
+  const timelineDocuments = visibleRegularDocuments.map((document) => ({
+    id: document.id,
+    unitId: document.unitId,
+    label: `${document.title} (${document.category?.name || "ohne Kategorie"})`
+  }));
 
   return (
     <AppShell role={user.role} userId={user.id} email={user.email} canSwitchView={user.role === Role.ADMIN || Boolean(user.impersonatedByAdminId)}>
@@ -181,6 +195,15 @@ export default async function PropertyDetailPage({ params }: { params: { id: str
               </div>
             </section>
           ) : null}
+
+          <TimelinePanel
+            propertyId={property.id}
+            canEdit={canEdit}
+            initialItems={timelineItems}
+            units={timelineUnits}
+            tenants={timelineTenants}
+            documents={timelineDocuments}
+          />
 
           <section className="rounded-lg border border-line">
             <div className="border-b border-line p-4 font-bold">Einheiten</div>

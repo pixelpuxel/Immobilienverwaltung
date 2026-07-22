@@ -65,6 +65,7 @@ model PortalInstance {
   apiTokens   ApiToken[]
   oauthAuthorizationCodes OAuthAuthorizationCode[]
   deviceInstallations DeviceInstallation[]
+  timelineEvents TimelineEvent[]
 }
 
 model User {
@@ -100,6 +101,8 @@ model User {
   apiTokens    ApiToken[]
   oauthAuthorizationCodes OAuthAuthorizationCode[]
   deviceInstallations DeviceInstallation[]
+  createdTimelineEvents TimelineEvent[] @relation("TimelineEventActor")
+  brokerTimelineEvents  TimelineEvent[] @relation("TimelineEventBroker")
   portalInstance PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
 }
 
@@ -207,6 +210,7 @@ model Property {
   brokerValuations      BrokerValuation[]
   templates             ContractTemplate[]
   todos                 PropertyTodo[]
+  timelineEvents        TimelineEvent[]
   portalInstance        PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
 }
 
@@ -247,6 +251,57 @@ model Unit {
   contracts   LeaseContract[]
   templates   ContractTemplate[] @relation("TemplateAssignedUnit")
   rentPayments RentPayment[]
+  timelineEvents TimelineEvent[]
+}
+
+model TimelineEvent {
+  id              String      @id @default(cuid())
+  portalInstanceId String?
+  propertyId      String?
+  unitId          String?
+  tenantProfileId String?
+  brokerUserId    String?
+  actorUserId     String?
+  eventType       String
+  title           String
+  description     String?     @db.Text
+  status          String      @default("INFO")
+  eventDate       DateTime
+  endDate         DateTime?
+  dueDate         DateTime?
+  costAmount      Decimal?    @db.Decimal(14, 2)
+  costCurrency    String      @default("EUR")
+  costCategory    String?
+  isInternal      Boolean     @default(false)
+  metadata        Json?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  portalInstance  PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
+  property        Property?   @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  unit            Unit?       @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  tenantProfile   TenantProfile? @relation(fields: [tenantProfileId], references: [id], onDelete: SetNull)
+  brokerUser      User?       @relation("TimelineEventBroker", fields: [brokerUserId], references: [id], onDelete: SetNull)
+  actorUser       User?       @relation("TimelineEventActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  documents       TimelineEventDocument[]
+
+  @@index([portalInstanceId, eventDate])
+  @@index([propertyId, eventDate])
+  @@index([unitId, eventDate])
+  @@index([tenantProfileId, eventDate])
+  @@index([eventType])
+  @@index([status])
+}
+
+model TimelineEventDocument {
+  id              String        @id @default(cuid())
+  timelineEventId String
+  documentId      String
+  createdAt       DateTime      @default(now())
+  timelineEvent   TimelineEvent @relation(fields: [timelineEventId], references: [id], onDelete: Cascade)
+  document        Document      @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([timelineEventId, documentId])
+  @@index([documentId])
 }
 
 model RentPayment {
@@ -317,6 +372,7 @@ model Document {
   uploadedBy      User            @relation("UploadedDocuments", fields: [uploadedById], references: [id])
   permissions     AccessPermission[]
   exportItems     DocumentExportItem[]
+  timelineEvents  TimelineEventDocument[]
   portalInstance  PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
 }
 
@@ -465,6 +521,7 @@ model TenantProfile {
   contracts             LeaseContract[]
   documents             Document[]
   rentPayments          RentPayment[]
+  timelineEvents        TimelineEvent[]
 }
 
 model ContractTemplate {

@@ -78,6 +78,8 @@ read:tenants
 write:tenants
 read:contracts
 write:contracts
+read:timeline
+write:timeline
 read:audit
 backup:export
 backup:import
@@ -93,6 +95,7 @@ read:units
 read:documents
 read:tenants
 read:contracts
+read:timeline
 ```
 
 ### Dokumentenautomation
@@ -115,6 +118,7 @@ read:units
 read:documents
 read:tenants
 read:contracts
+read:timeline
 ```
 
 ## HTTP-Konventionen
@@ -695,6 +699,11 @@ GET  /api/integrations/v1/tenants/:id/documents
 PATCH /api/integrations/v1/tenants/:id
 GET  /api/integrations/v1/contracts
 POST /api/integrations/v1/contracts
+GET  /api/integrations/v1/timeline
+POST /api/integrations/v1/timeline
+GET  /api/integrations/v1/timeline/:id
+PATCH /api/integrations/v1/timeline/:id
+DELETE /api/integrations/v1/timeline/:id
 GET  /api/integrations/v1/templates
 GET  /api/integrations/v1/search
 GET  /api/integrations/v1/backup/export

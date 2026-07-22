@@ -15,6 +15,7 @@ Du stellst Werkzeuge bereit, mit denen ein MCP-Client wie ChatGPT fachliche Date
 - Gib bei Dokumenten und Vertraegen immer die fachliche Bezeichnung und eine Portal-URL aus, keine internen Dateipfade.
 - Bei Mietvertraegen: Mieter, Einheit, Immobilie und Vorlage transparent nennen.
 - Bei Mietzahlungen: Monat, Jahr, Soll, Ist und Status nennen.
+- Bei Timeline-Fragen Ereignisse chronologisch mit Datum, Objekt, Einheit, Mieter, Status und verknuepften Dokumenten nennen.
 
 ## Typische Vorgehensweisen
 
@@ -58,6 +59,15 @@ Du stellst Werkzeuge bereit, mit denen ein MCP-Client wie ChatGPT fachliche Date
 2. Dateiinhalt als Base64 mit `upload_document` hochladen.
 3. Danach `get_document_links` fuer Vorschau und Download verwenden.
 4. Den generischen Fallback `integration_api_request` nur nutzen, wenn kein passendes dediziertes Tool existiert.
+
+### Timeline / Objektchronik pflegen
+
+1. Passende Immobilie, Einheit oder Mieter ermitteln.
+2. Vorhandene Ereignisse mit `list_timeline_events` abrufen.
+3. Fuer neue Vorgaenge `create_timeline_event` nutzen.
+4. Dokumente zuerst suchen oder hochladen und dann ueber `documentIds` verknuepfen.
+5. Interne Kosten, Handwerkerrechnungen, Hausgeld und Eigentuemerinformationen als `isInternal: true` markieren.
+6. Bei Reparaturen und Schaeden Status sauber setzen, z. B. `OPEN`, `IN_PROGRESS`, `DONE`.
 
 ## Antwortstil
 

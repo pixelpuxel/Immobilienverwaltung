@@ -27,6 +27,8 @@
 - Vertragsvorlagen lesen und ableiten.
 - Mietvertraege erzeugen, suchen, loeschen und Links erzeugen.
 - Mieteinnahmen lesen und Zahlungen setzen/korrigieren.
+- Timeline-Ereignisse zu Immobilien, Einheiten und Mietern lesen/anlegen/aendern/loeschen.
+- Timeline kombiniert manuelle Vorgangsereignisse mit automatisch abgeleiteten Ereignissen wie Einzug, Auszug, Kaution, Mietzahlung und Vertragsanlage.
 - To-dos lesen.
 - Audit-Logs lesen.
 - Benutzer lesen/aendern.
@@ -35,7 +37,7 @@
 
 ## Noch bewusst offen
 
-- Direkter Datei-Upload ueber MCP ist noch nicht implementiert, weil Multipart/Binary je nach MCP-Client unterschiedlich behandelt wird.
+- Direkter Datei-Upload ueber MCP ist per Base64-Tool vorhanden; grosse Dateien koennen je nach MCP-Client trotzdem begrenzt sein.
 - Separate GitHub-Repository-Auslagerung ist vorbereitet, aber noch nicht vollzogen.
 - Tool-Audit im MCP-Server selbst ist minimal; Audit erfolgt primaer im Portal.
 

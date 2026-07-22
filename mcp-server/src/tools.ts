@@ -581,6 +581,79 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
   );
 
   server.registerTool(
+    "list_timeline_events",
+    {
+      title: "Timeline-Ereignisse listen",
+      description: "Listet chronologische Ereignisse zu Immobilien, Einheiten oder Mietern inklusive automatisch abgeleiteter Miet-, Kautions- und Vertragsereignisse.",
+      inputSchema: {
+        propertyId: optionalId,
+        unitId: optionalId,
+        tenantProfileId: optionalId,
+        includeDerived: z.boolean().optional(),
+        includeInternal: z.boolean().optional(),
+        limit: z.number().int().min(1).max(200).optional()
+      }
+    },
+    async ({ propertyId, unitId, tenantProfileId, includeDerived, includeInternal, limit }) => jsonContent(await portal.json({
+      path: "/api/integrations/v1/timeline",
+      query: {
+        propertyId,
+        unitId,
+        tenantProfileId,
+        derived: includeDerived === false ? "0" : undefined,
+        internal: includeInternal ? "1" : undefined,
+        limit
+      }
+    }))
+  );
+
+  server.registerTool(
+    "create_timeline_event",
+    {
+      title: "Timeline-Ereignis anlegen",
+      description: "Legt ein fachliches Timeline-Ereignis mit optionaler Dokumentverknuepfung, Mieter-/Einheitenbezug und Kosten an.",
+      inputSchema: timelineEventInputShape()
+    },
+    async (args) => jsonContent(await portal.json({
+      method: "POST",
+      path: "/api/integrations/v1/timeline",
+      body: args
+    }))
+  );
+
+  server.registerTool(
+    "update_timeline_event",
+    {
+      title: "Timeline-Ereignis aktualisieren",
+      description: "Aktualisiert ein manuell angelegtes Timeline-Ereignis.",
+      inputSchema: {
+        id: z.string().trim().min(1),
+        data: z.object(timelineEventInputShape()).partial()
+      }
+    },
+    async ({ id, data }) => jsonContent(await portal.json({
+      method: "PATCH",
+      path: `/api/integrations/v1/timeline/${encodeURIComponent(id)}`,
+      body: data
+    }))
+  );
+
+  server.registerTool(
+    "delete_timeline_event",
+    {
+      title: "Timeline-Ereignis loeschen",
+      description: "Loescht ein manuell angelegtes Timeline-Ereignis. Vorsicht: schreibende Aktion.",
+      inputSchema: {
+        id: z.string().trim().min(1)
+      }
+    },
+    async ({ id }) => jsonContent(await portal.json({
+      method: "DELETE",
+      path: `/api/integrations/v1/timeline/${encodeURIComponent(id)}`
+    }))
+  );
+
+  server.registerTool(
     "list_todos",
     {
       title: "Offene To-dos listen",
@@ -790,5 +863,45 @@ function documentUpdateShape() {
     isPropertyImage: z.boolean().optional(),
     isPrimaryImage: z.boolean().optional(),
     documentYear: z.number().int().min(1900).max(2049).optional().nullable()
+  };
+}
+
+function timelineEventInputShape() {
+  return {
+    propertyId: optionalString.nullable(),
+    unitId: optionalString.nullable(),
+    tenantProfileId: optionalString.nullable(),
+    brokerUserId: optionalString.nullable(),
+    eventType: z.enum([
+      "NOTE",
+      "MAINTENANCE_REPORTED",
+      "MAINTENANCE_REPAIRED",
+      "RENOVATION",
+      "PURCHASE",
+      "TENANT_MOVE_IN",
+      "TENANT_MOVE_OUT",
+      "DEPOSIT_PAID",
+      "DEPOSIT_RETURNED",
+      "RENT_PAID",
+      "RENT_PARTIAL",
+      "DUNNING",
+      "CONTRACT_CREATED",
+      "COST",
+      "HOA_FEE",
+      "HOA_RECONCILIATION",
+      "BROKER"
+    ]).optional(),
+    title: z.string().trim().min(1).optional(),
+    description: optionalString.nullable(),
+    status: z.enum(["INFO", "OPEN", "IN_PROGRESS", "DONE", "PAID", "PARTIAL", "OVERDUE"]).optional(),
+    eventDate: z.string().trim().min(1).optional(),
+    endDate: optionalString.nullable(),
+    dueDate: optionalString.nullable(),
+    costAmount: money,
+    costCurrency: optionalString,
+    costCategory: optionalString.nullable(),
+    isInternal: z.boolean().optional(),
+    documentIds: z.array(z.string().trim().min(1)).optional(),
+    metadata: z.unknown().optional()
   };
 }

@@ -47,6 +47,8 @@ app.get("/.well-known/oauth-protected-resource", (_request, response) => {
       "write:tenants",
       "read:contracts",
       "write:contracts",
+      "read:timeline",
+      "write:timeline",
       "write:landlord-confirmations",
       "write:settings",
       "backup:export",
