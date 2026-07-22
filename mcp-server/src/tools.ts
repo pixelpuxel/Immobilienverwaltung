@@ -884,6 +884,7 @@ function timelineEventInputShape() {
       "DEPOSIT_RETURNED",
       "RENT_PAID",
       "RENT_PARTIAL",
+      "RENT_OPEN",
       "DUNNING",
       "CONTRACT_CREATED",
       "COST",

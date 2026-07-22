@@ -15,6 +15,7 @@ export const TIMELINE_EVENT_TYPES = [
   { value: "DEPOSIT_RETURNED", label: "Kaution zurueckgezahlt", tone: "bg-orange-100 text-orange-800" },
   { value: "RENT_PAID", label: "Miete bezahlt", tone: "bg-emerald-100 text-emerald-800" },
   { value: "RENT_PARTIAL", label: "Teilzahlung Miete", tone: "bg-yellow-100 text-yellow-800" },
+  { value: "RENT_OPEN", label: "Miete offen", tone: "bg-rose-100 text-rose-800" },
   { value: "DUNNING", label: "Mahnung", tone: "bg-rose-100 text-rose-800" },
   { value: "CONTRACT_CREATED", label: "Mietvertrag", tone: "bg-indigo-100 text-indigo-800" },
   { value: "COST", label: "Kosten", tone: "bg-stone-100 text-stone-800" },
@@ -185,7 +186,7 @@ async function derivedTimelineItems(user: TimelineUser, filters: TimelineFilters
         unit: { include: { property: { select: { id: true, name: true, address: true } } } },
         tenantProfile: { select: { id: true, firstName: true, lastName: true, email: true } }
       },
-      orderBy: { paidAt: "desc" },
+      orderBy: [{ year: "desc" }, { month: "desc" }],
       take: 100
     }) : []
   ]);
@@ -271,15 +272,16 @@ async function derivedTimelineItems(user: TimelineUser, filters: TimelineFilters
   }
 
   for (const payment of rentPayments) {
-    if (!payment.paidAt) continue;
+    const isPartial = payment.status === "PARTIAL";
+    const isPaid = payment.status === "PAID";
     items.push(derivedItem({
       id: `rent-${payment.id}`,
       source: "rentPayment",
-      eventType: payment.status === "PARTIAL" ? "RENT_PARTIAL" : "RENT_PAID",
+      eventType: isPaid ? "RENT_PAID" : isPartial ? "RENT_PARTIAL" : "RENT_OPEN",
       status: payment.status,
-      title: `${payment.status === "PARTIAL" ? "Miete teilweise bezahlt" : "Miete bezahlt"}: ${payment.month}.${payment.year}`,
+      title: `${isPaid ? "Miete bezahlt" : isPartial ? "Miete teilweise bezahlt" : "Miete offen"}: ${payment.month}.${payment.year}`,
       description: `${moneyLabel(payment.paidTotalRent)} von ${moneyLabel(payment.expectedTotalRent)}`,
-      eventDate: payment.paidAt,
+      eventDate: payment.paidAt || new Date(payment.year, payment.month - 1, 1),
       costAmount: payment.paidTotalRent?.toString() || null,
       property: payment.unit.property,
       unit: { id: payment.unit.id, unitNumber: payment.unit.unitNumber },

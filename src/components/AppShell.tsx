@@ -12,6 +12,7 @@ const adminLinks = [
   ["Suche", "/search"],
   ["Immobilien", "/properties"],
   ["Karte", "/map"],
+  ["Timeline", "/timeline"],
   ["Mieteinnahmen", "/rent-income"],
   ["Aktuelle Mieterliste", "/current-tenants"],
   ["Offene To-dos", "/todos"],
@@ -28,6 +29,7 @@ const brokerLinks = [
   ["Suche", "/search"],
   ["Immobilien", "/broker"],
   ["Karte", "/map"],
+  ["Timeline", "/timeline"],
   ["Dokumente", "/documents"]
 ];
 
@@ -35,6 +37,7 @@ const tenantLinks = [
   ["Dashboard", "/dashboard"],
   ["Suche", "/search"],
   ["Mieterbereich", "/tenant"],
+  ["Timeline", "/timeline"],
   ["Vertraege", "/contracts"]
 ];
 
