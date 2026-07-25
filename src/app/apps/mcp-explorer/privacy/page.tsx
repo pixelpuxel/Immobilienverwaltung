@@ -69,7 +69,7 @@ export default function MCPExplorerPrivacyPage() {
         </div>
 
         <div className="mt-10 border-t border-slate-800 pt-6">
-          <Link className="font-bold text-sky-400 underline" href="/mcp-explorer/support">
+          <Link className="font-bold text-sky-400 underline" href="/apps/mcp-explorer/support">
             MCP Explorer Support
           </Link>
         </div>
