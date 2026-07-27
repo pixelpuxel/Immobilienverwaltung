@@ -24,6 +24,9 @@
 - Mieterdokumente lesen.
 - Wohnungsgeberbestaetigung erzeugen.
 - Dokumente lesen/aendern/loeschen und Links erzeugen.
+- Dokumentkategorien lesen.
+- Angehaengte Dateien als Base64 hochladen.
+- Mieterdokumente gezielt mit Kategorie-Name hochladen, z. B. Kuendigungen.
 - Vertragsvorlagen lesen und ableiten.
 - Mietvertraege erzeugen, suchen, loeschen und Links erzeugen.
 - Mieteinnahmen lesen und Zahlungen setzen/korrigieren.

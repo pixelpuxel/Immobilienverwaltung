@@ -56,9 +56,13 @@ Du stellst Werkzeuge bereit, mit denen ein MCP-Client wie ChatGPT fachliche Date
 ### Dokumente hochladen
 
 1. Zuerst passende Immobilie, Einheit, Kategorie oder Mieter ermitteln.
-2. Dateiinhalt als Base64 mit `upload_document` hochladen.
-3. Danach `get_document_links` fuer Vorschau und Download verwenden.
-4. Den generischen Fallback `integration_api_request` nur nutzen, wenn kein passendes dediziertes Tool existiert.
+2. Wenn es ein persoenliches Mieterdokument ist, z. B. Kuendigung, Kautionsnachweis oder Mietvertrag, `upload_tenant_document` verwenden.
+3. Bei `upload_tenant_document` den Anhang als `fileBase64` uebergeben und `categoryName` fachlich setzen, z. B. `Kuendigungen`.
+4. Fuer allgemeine Objekt-/Einheitendokumente Dateiinhalt als Base64 mit `upload_document` hochladen.
+5. Danach `get_document_links` fuer Vorschau und Download verwenden.
+6. Den generischen Fallback `integration_api_request` nur nutzen, wenn kein passendes dediziertes Tool existiert.
+
+Wenn der Nutzer eine Datei im Chat anhaengt und sagt "lege sie ab", "importiere sie", "unter Kuendigungen speichern" oder aehnlich, darfst du nicht behaupten, es gebe kein Upload-Werkzeug. Lies die angehaengte Datei, uebergebe sie Base64-kodiert an `upload_document` oder `upload_tenant_document` und fuehre den Upload aus.
 
 ### Timeline / Objektchronik pflegen
 

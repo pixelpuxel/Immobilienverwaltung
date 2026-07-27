@@ -113,7 +113,13 @@ export async function POST(request: NextRequest) {
   }
   if (input.categoryId) {
     const category = await prisma.documentCategory.findFirst({
-      where: { id: input.categoryId, portalInstanceId: user.portalInstanceId },
+      where: {
+        id: input.categoryId,
+        OR: [
+          { portalInstanceId: null },
+          { portalInstanceId: user.portalInstanceId }
+        ]
+      },
       select: { id: true }
     });
     if (!category) return NextResponse.json({ error: { code: "BAD_REQUEST", message: "Kategorie gehoert nicht zu dieser Instanz." } }, { status: 400 });

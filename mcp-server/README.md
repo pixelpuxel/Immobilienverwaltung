@@ -176,7 +176,9 @@ Der Server stellt fachliche Tools bereit, z. B.:
 - `list_tenant_documents`
 - `create_landlord_confirmation`
 - `list_documents`
+- `list_document_categories`
 - `upload_document`
+- `upload_tenant_document`
 - `update_document`
 - `delete_document`
 - `get_document_links`
@@ -204,6 +206,8 @@ Der Server stellt fachliche Tools bereit, z. B.:
 `integration_api_request` ist ein kontrollierter Fallback fuer neue Portal-Endpunkte. Er erlaubt nur relative Pfade unter `/api/integrations/v1/...` und keine externen URLs.
 
 Dokument-Uploads sollen bevorzugt ueber `upload_document` erfolgen. Das Tool erwartet `fileBase64`, `filename`, optional `mimeType`, `title`, `propertyId`, `unitId`, `tenantProfileId`, `categoryId`, `summary`, `tags` und `documentYear`.
+
+Mieterdokumente wie Kuendigungen, Kautionsnachweise oder persoenliche Mietvertraege sollen bevorzugt ueber `upload_tenant_document` hochgeladen werden. Das Tool akzeptiert `tenantProfileId`, `fileBase64`, `filename`, optional `categoryName` wie `Kuendigungen` und loest die Dokumentkategorie intern auf.
 
 ## Sicherheitsmodell
 

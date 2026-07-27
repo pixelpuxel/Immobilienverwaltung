@@ -338,12 +338,22 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
   );
 
   server.registerTool(
+    "list_document_categories",
+    {
+      title: "Dokumentkategorien listen",
+      description: "Listet alle Dokumentkategorien der aktuellen Portalinstanz. Nutze dies vor Uploads, wenn der Nutzer eine Kategorie wie Kuendigungen, Mietvertrag, Grundbuchauszug oder Fotos nennt.",
+      inputSchema: {}
+    },
+    async () => jsonContent(await portal.json({ path: "/api/integrations/v1/document-categories" }))
+  );
+
+  server.registerTool(
     "upload_document",
     {
       title: "Dokument hochladen",
-      description: "Laedt ein PDF, DOCX, Bild oder anderes erlaubtes Dokument als Base64 in das Portal hoch und ordnet es optional einer Immobilie, Einheit, Kategorie oder einem Mieter zu.",
+      description: "Laedt eine vom Nutzer bereitgestellte oder im Chat angehaengte Datei als Base64 in das Portal hoch. Verwende dieses Tool fuer PDF/DOCX/Bild-Uploads in das Dokumentenarchiv. Wenn der Nutzer sagt, dass eine Datei abgelegt, importiert, hochgeladen oder unter einer Kategorie gespeichert werden soll, muss die Datei als fileBase64 uebergeben werden. Ordne Mieterdokumente mit tenantProfileId zu; fuer reine Mieterdokumente ist upload_tenant_document bequemer.",
       inputSchema: {
-        fileBase64: z.string().trim().min(1).describe("Dateiinhalt als Base64. Data-URLs sind erlaubt."),
+        fileBase64: z.string().trim().min(1).describe("Dateiinhalt als Base64. Data-URLs sind erlaubt. Bei Chat-Anhaengen die Datei lesen und Base64-kodiert uebergeben."),
         filename: z.string().trim().min(1).describe("Dateiname inklusive Erweiterung, z. B. Mietvertrag.pdf."),
         mimeType: z.string().trim().min(1).optional().describe("MIME-Type, z. B. application/pdf."),
         title: optionalString.describe("Anzeigetitel im Portal. Wenn leer, wird filename verwendet."),
@@ -365,6 +375,63 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
       path: "/api/integrations/v1/documents",
       body: args
     }))
+  );
+
+  server.registerTool(
+    "upload_tenant_document",
+    {
+      title: "Mieterdokument hochladen",
+      description: "Laedt eine vom Nutzer angehaengte Datei gezielt bei einem Mieter ab. Geeignet fuer Kuendigungen, Mietvertraege, Wohnungsgeberbestaetigungen, Kautionsnachweise oder andere persoenliche Mieterdokumente. Die Kategorie kann per categoryName wie 'Kuendigungen' angegeben werden; der MCP sucht die passende Kategorie-ID und legt die Kategorie bei Bedarf mit write:settings an.",
+      inputSchema: {
+        tenantProfileId: z.string().trim().min(1).describe("TenantProfile-ID des Mieters, z. B. nach list_tenants/get_tenant."),
+        fileBase64: z.string().trim().min(1).describe("Dateiinhalt als Base64. Data-URLs sind erlaubt. Bei Chat-Anhaengen die Datei lesen und Base64-kodiert uebergeben."),
+        filename: z.string().trim().min(1).describe("Sinnvoller Dateiname inklusive Erweiterung, z. B. 2026-06-26_Kuendigung_Alina_Waser.pdf."),
+        mimeType: z.string().trim().min(1).optional().describe("MIME-Type, z. B. application/pdf."),
+        title: optionalString.describe("Anzeigetitel im Portal."),
+        categoryName: optionalString.describe("Kategorie-Name, z. B. Kuendigungen. Wenn keine Kategorie passt, wird sie optional erstellt."),
+        categoryGroup: optionalString.describe("Kategorie-Gruppe fuer neu anzulegende Kategorien. Default: Vermietung."),
+        createCategoryIfMissing: z.boolean().optional().describe("Default true. Legt die Kategorie an, falls sie fehlt und der Token write:settings hat."),
+        status: z.enum(["MISSING", "REQUESTED", "AVAILABLE", "SHARED", "NOT_RELEVANT"]).optional(),
+        summary: optionalString.describe("Kurze Inhaltsbeschreibung."),
+        tags: z.array(z.string()).optional(),
+        documentYear: z.number().int().min(1900).max(2049).optional()
+      }
+    },
+    async ({ tenantProfileId, fileBase64, filename, mimeType, title, categoryName, categoryGroup, createCategoryIfMissing, status, summary, tags, documentYear }) => {
+      const tenant = await portal.json<{ id: string; unitId?: string | null; unit?: { id: string; propertyId?: string | null } | null }>({
+        path: `/api/integrations/v1/tenants/${encodeURIComponent(tenantProfileId)}`
+      });
+      const categoryId = categoryName
+        ? await resolveDocumentCategoryId(portal, categoryName, categoryGroup || "Vermietung", createCategoryIfMissing !== false)
+        : null;
+      const document = await portal.json({
+        method: "POST",
+        path: "/api/integrations/v1/documents",
+        body: {
+          fileBase64,
+          filename,
+          mimeType: mimeType || "application/octet-stream",
+          title: title || filename,
+          tenantProfileId,
+          unitId: tenant.unitId || tenant.unit?.id || null,
+          propertyId: tenant.unit?.propertyId || null,
+          categoryId,
+          status: status || "AVAILABLE",
+          scope: "TENANT",
+          summary,
+          tags,
+          documentYear
+        }
+      });
+      return jsonContent({
+        document,
+        categoryName: categoryName || null,
+        categoryId,
+        message: categoryName
+          ? `Dokument wurde beim Mieter abgelegt und der Kategorie '${categoryName}' zugeordnet.`
+          : "Dokument wurde beim Mieter abgelegt."
+      });
+    }
   );
 
   server.registerTool(
@@ -761,6 +828,59 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
     },
     async ({ method, path, query, body }) => jsonContent(await portal.json({ method, path, query, body }))
   );
+}
+
+async function resolveDocumentCategoryId(portal: PortalClient, categoryName: string, categoryGroup: string, createIfMissing: boolean) {
+  const categories = await portal.json<{ items?: Array<{ id: string; name: string; group?: string | null }> }>({
+    path: "/api/integrations/v1/document-categories"
+  });
+  const wanted = normalizeLookup(categoryName);
+  const group = normalizeLookup(categoryGroup);
+  const exact = categories.items?.find((category) =>
+    normalizeLookup(category.name) === wanted && (!category.group || normalizeLookup(category.group) === group)
+  );
+  if (exact) return exact.id;
+
+  const loose = categories.items?.find((category) => normalizeLookup(category.name) === wanted);
+  if (loose) return loose.id;
+
+  const stem = categories.items?.find((category) => {
+    const normalizedName = normalizeLookup(category.name);
+    return normalizedName.startsWith(wanted) || wanted.startsWith(normalizedName);
+  });
+  if (stem) return stem.id;
+
+  if (!createIfMissing) {
+    throw new Error(`Dokumentkategorie '${categoryName}' wurde nicht gefunden.`);
+  }
+
+  const created = await portal.json<{ id: string }>({
+    method: "POST",
+    path: "/api/integrations/v1/document-categories",
+    body: {
+      group: categoryGroup,
+      name: categoryName,
+      description: `Automatisch fuer MCP-Uploads angelegt: ${categoryName}`,
+      visibleToBroker: false,
+      visibleToTenant: false
+    }
+  });
+  return created.id;
+}
+
+function normalizeLookup(value: string) {
+  return value
+    .replace(/ä/g, "ae")
+    .replace(/ö/g, "oe")
+    .replace(/ü/g, "ue")
+    .replace(/Ä/g, "ae")
+    .replace(/Ö/g, "oe")
+    .replace(/Ü/g, "ue")
+    .replace(/ß/g, "ss")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "")
+    .toLowerCase();
 }
 
 function propertyInputShape() {
