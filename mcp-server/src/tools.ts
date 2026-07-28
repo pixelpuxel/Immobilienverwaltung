@@ -3,13 +3,36 @@ import { readFile } from "node:fs/promises";
 import { isIP } from "node:net";
 import { z } from "zod";
 import { PortalClient } from "./portal-client.js";
-import { jsonContent, textContent } from "./format.js";
+import { jsonContent, structuredJsonContent, textContent } from "./format.js";
 
 const optionalString = z.string().trim().optional();
 const optionalId = z.string().trim().min(1).optional();
 const money = z.union([z.string(), z.number()]).optional().nullable();
 const uploadedFileInput = z.unknown().optional().describe("Bevorzugt: Datei-Referenz des MCP-/Chat-Clients. Unterstuetzt Objekte mit path, filename/name, mimeType/type, data/base64 oder url.");
 const optionalFileBase64 = z.string().trim().min(1).optional().describe("Rueckfall: Dateiinhalt als Base64 oder Data-URL.");
+const documentToolOutputSchema = {
+  success: z.boolean(),
+  documentId: z.string(),
+  filename: z.string(),
+  title: z.string().nullable(),
+  tenantProfileId: z.string().nullable(),
+  propertyId: z.string().nullable(),
+  unitId: z.string().nullable(),
+  categoryId: z.string().nullable(),
+  categoryName: z.string().nullable(),
+  scope: z.string().nullable(),
+  status: z.string().nullable(),
+  previewUrl: z.string().nullable(),
+  downloadUrl: z.string().nullable(),
+  message: z.string(),
+  document: z.unknown()
+};
+const classifyDocumentOutputSchema = {
+  ...documentToolOutputSchema,
+  relatedDocumentIds: z.array(z.string()),
+  timelineEvent: z.unknown().nullable(),
+  timelineWarning: z.string().nullable()
+};
 
 export function registerPortalTools(server: McpServer, portal: PortalClient) {
   server.registerTool(
@@ -373,11 +396,12 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
         documentYear: z.number().int().min(1900).max(2049).optional(),
         isPropertyImage: z.boolean().optional(),
         isPrimaryImage: z.boolean().optional()
-      }
+      },
+      outputSchema: documentToolOutputSchema
     },
     async (args) => {
       const file = await resolveUploadPayload(args.file, args.fileBase64, args.filename, args.mimeType);
-      return jsonContent(await portal.json({
+      const document = await portal.json<IntegrationDocumentLike>({
         method: "POST",
         path: "/api/integrations/v1/documents",
         body: {
@@ -387,6 +411,9 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
           filename: file.filename,
           mimeType: file.mimeType
         }
+      });
+      return structuredJsonContent(documentToolResult(document, {
+        message: "Dokument wurde hochgeladen."
       }));
     }
   );
@@ -405,7 +432,8 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
         summary: optionalString.describe("Kurze vorlaeufige Beschreibung."),
         tags: z.array(z.string()).optional(),
         documentYear: z.number().int().min(1900).max(2049).optional()
-      }
+      },
+      outputSchema: documentToolOutputSchema
     },
     async ({ file, fileBase64, filename, mimeType, title, summary, tags, documentYear }) => {
       const upload = await resolveUploadPayload(file, fileBase64, filename, mimeType);
@@ -424,10 +452,9 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
           documentYear
         }
       });
-      return jsonContent({
-        document,
+      return structuredJsonContent(documentToolResult(document as IntegrationDocumentLike, {
         message: "Dokument wurde neutral in den Eingang hochgeladen. Nutze als naechsten Schritt classify_document zur Einsortierung."
-      });
+      }));
     }
   );
 
@@ -454,7 +481,8 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
         relatedDocumentIds: z.array(z.string().trim().min(1)).optional().describe("Weitere Dokumente, die fachlich damit zusammenhaengen."),
         relationNote: optionalString.describe("Kurzer Hinweis zur Beziehung, z. B. 'Anschreiben gehoert zur Abrechnung'."),
         createTimelineEvent: z.boolean().optional().describe("Default true, wenn relatedDocumentIds oder relationNote gesetzt sind.")
-      }
+      },
+      outputSchema: classifyDocumentOutputSchema
     },
     async ({ documentId, propertyId, unitId, tenantProfileId, categoryName, categoryGroup, createCategoryIfMissing, title, filename, status, scope, summary, tags, documentYear, relatedDocumentIds, relationNote, createTimelineEvent }) => {
       const categoryId = categoryName
@@ -508,16 +536,19 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
         }
       }
 
-      return jsonContent({
-        document,
+      return structuredJsonContent({
+        ...documentToolResult(document as IntegrationDocumentLike, {
+          categoryName: categoryName || null,
+          categoryId: categoryId || null,
+          message: categoryName
+            ? `Dokument wurde einsortiert und der Kategorie '${categoryName}' zugeordnet.`
+            : "Dokument wurde einsortiert."
+        }),
         categoryName: categoryName || null,
         categoryId: categoryId || null,
         relatedDocumentIds: relatedDocumentIds || [],
         timelineEvent,
-        timelineWarning,
-        message: categoryName
-          ? `Dokument wurde einsortiert und der Kategorie '${categoryName}' zugeordnet.`
-          : "Dokument wurde einsortiert."
+        timelineWarning
       });
     }
   );
@@ -541,7 +572,8 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
         summary: optionalString.describe("Kurze Inhaltsbeschreibung."),
         tags: z.array(z.string()).optional(),
         documentYear: z.number().int().min(1900).max(2049).optional()
-      }
+      },
+      outputSchema: documentToolOutputSchema
     },
     async ({ tenantProfileId, file, fileBase64, filename, mimeType, title, categoryName, categoryGroup, createCategoryIfMissing, status, summary, tags, documentYear }) => {
       const upload = await resolveUploadPayload(file, fileBase64, filename, mimeType);
@@ -551,7 +583,7 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
       const categoryId = categoryName
         ? await resolveDocumentCategoryId(portal, categoryName, categoryGroup || "Vermietung", createCategoryIfMissing !== false)
         : null;
-      const document = await portal.json({
+      const document = await portal.json<IntegrationDocumentLike>({
         method: "POST",
         path: "/api/integrations/v1/documents",
         body: {
@@ -570,14 +602,13 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
           documentYear
         }
       });
-      return jsonContent({
-        document,
+      return structuredJsonContent(documentToolResult(document, {
         categoryName: categoryName || null,
         categoryId,
         message: categoryName
           ? `Dokument wurde beim Mieter abgelegt und der Kategorie '${categoryName}' zugeordnet.`
           : "Dokument wurde beim Mieter abgelegt."
-      });
+      }));
     }
   );
 
@@ -975,6 +1006,49 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
     },
     async ({ method, path, query, body }) => jsonContent(await portal.json({ method, path, query, body }))
   );
+}
+
+type IntegrationDocumentLike = {
+  id: string;
+  filename?: string | null;
+  title?: string | null;
+  tenantProfileId?: string | null;
+  propertyId?: string | null;
+  unitId?: string | null;
+  categoryId?: string | null;
+  scope?: string | null;
+  status?: string | null;
+  links?: {
+    preview?: string | null;
+    download?: string | null;
+  } | null;
+};
+
+function documentToolResult(
+  document: IntegrationDocumentLike,
+  options: {
+    categoryName?: string | null;
+    categoryId?: string | null;
+    message: string;
+  }
+) {
+  return {
+    success: true,
+    documentId: document.id,
+    filename: document.filename || "",
+    title: document.title || null,
+    tenantProfileId: document.tenantProfileId || null,
+    propertyId: document.propertyId || null,
+    unitId: document.unitId || null,
+    categoryId: options.categoryId ?? document.categoryId ?? null,
+    categoryName: options.categoryName ?? null,
+    scope: document.scope || null,
+    status: document.status || null,
+    previewUrl: document.links?.preview || null,
+    downloadUrl: document.links?.download || null,
+    message: options.message,
+    document
+  };
 }
 
 type ResolvedUploadPayload = {
