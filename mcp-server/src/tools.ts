@@ -1,4 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { readFile } from "node:fs/promises";
+import { isIP } from "node:net";
 import { z } from "zod";
 import { PortalClient } from "./portal-client.js";
 import { jsonContent, textContent } from "./format.js";
@@ -6,6 +8,8 @@ import { jsonContent, textContent } from "./format.js";
 const optionalString = z.string().trim().optional();
 const optionalId = z.string().trim().min(1).optional();
 const money = z.union([z.string(), z.number()]).optional().nullable();
+const uploadedFileInput = z.unknown().optional().describe("Bevorzugt: Datei-Referenz des MCP-/Chat-Clients. Unterstuetzt Objekte mit path, filename/name, mimeType/type, data/base64 oder url.");
+const optionalFileBase64 = z.string().trim().min(1).optional().describe("Rueckfall: Dateiinhalt als Base64 oder Data-URL.");
 
 export function registerPortalTools(server: McpServer, portal: PortalClient) {
   server.registerTool(
@@ -351,10 +355,11 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
     "upload_document",
     {
       title: "Dokument hochladen",
-      description: "Laedt eine vom Nutzer bereitgestellte oder im Chat angehaengte Datei als Base64 in das Portal hoch. Verwende dieses Tool fuer PDF/DOCX/Bild-Uploads in das Dokumentenarchiv. Wenn der Nutzer sagt, dass eine Datei abgelegt, importiert, hochgeladen oder unter einer Kategorie gespeichert werden soll, muss die Datei als fileBase64 uebergeben werden. Ordne Mieterdokumente mit tenantProfileId zu; fuer reine Mieterdokumente ist upload_tenant_document bequemer.",
+      description: "Laedt eine vom Nutzer bereitgestellte oder im Chat angehaengte Datei in das Portal hoch. Verwende bevorzugt den Datei-Anhang im Feld file; fileBase64 bleibt als Rueckfall erhalten. Ordne Mieterdokumente mit tenantProfileId zu; fuer reine Mieterdokumente ist upload_tenant_document bequemer.",
       inputSchema: {
-        fileBase64: z.string().trim().min(1).describe("Dateiinhalt als Base64. Data-URLs sind erlaubt. Bei Chat-Anhaengen die Datei lesen und Base64-kodiert uebergeben."),
-        filename: z.string().trim().min(1).describe("Dateiname inklusive Erweiterung, z. B. Mietvertrag.pdf."),
+        file: uploadedFileInput,
+        fileBase64: optionalFileBase64,
+        filename: z.string().trim().min(1).optional().describe("Dateiname inklusive Erweiterung, z. B. Mietvertrag.pdf."),
         mimeType: z.string().trim().min(1).optional().describe("MIME-Type, z. B. application/pdf."),
         title: optionalString.describe("Anzeigetitel im Portal. Wenn leer, wird filename verwendet."),
         propertyId: optionalId.describe("Optionale Immobilien-ID."),
@@ -370,22 +375,163 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
         isPrimaryImage: z.boolean().optional()
       }
     },
-    async (args) => jsonContent(await portal.json({
-      method: "POST",
-      path: "/api/integrations/v1/documents",
-      body: args
-    }))
+    async (args) => {
+      const file = await resolveUploadPayload(args.file, args.fileBase64, args.filename, args.mimeType);
+      return jsonContent(await portal.json({
+        method: "POST",
+        path: "/api/integrations/v1/documents",
+        body: {
+          ...args,
+          file: undefined,
+          fileBase64: file.fileBase64,
+          filename: file.filename,
+          mimeType: file.mimeType
+        }
+      }));
+    }
+  );
+
+  server.registerTool(
+    "upload_inbox_document",
+    {
+      title: "Dokument in Eingang hochladen",
+      description: "Laedt eine vom Nutzer bereitgestellte oder im Chat/E-Mail-Kontext angehaengte Datei zuerst neutral in den Dokumenteneingang hoch. Nutze dieses Tool immer, wenn eine Datei erst gesichert werden soll und die fachliche Einsortierung danach erfolgen kann. Danach kann classify_document die Immobilie, Einheit, Mieter, Kategorie und Verknuepfung setzen.",
+      inputSchema: {
+        file: uploadedFileInput,
+        fileBase64: optionalFileBase64,
+        filename: z.string().trim().min(1).optional().describe("Dateiname inklusive Erweiterung."),
+        mimeType: z.string().trim().min(1).optional().describe("MIME-Type, z. B. application/pdf."),
+        title: optionalString.describe("Anzeigetitel im Portal."),
+        summary: optionalString.describe("Kurze vorlaeufige Beschreibung."),
+        tags: z.array(z.string()).optional(),
+        documentYear: z.number().int().min(1900).max(2049).optional()
+      }
+    },
+    async ({ file, fileBase64, filename, mimeType, title, summary, tags, documentYear }) => {
+      const upload = await resolveUploadPayload(file, fileBase64, filename, mimeType);
+      const document = await portal.json({
+        method: "POST",
+        path: "/api/integrations/v1/documents",
+        body: {
+          fileBase64: upload.fileBase64,
+          filename: upload.filename,
+          mimeType: upload.mimeType,
+          title: title || upload.filename,
+          status: "AVAILABLE",
+          scope: "PROPERTY",
+          summary: summary || "Ueber MCP hochgeladen; fachliche Einsortierung steht noch aus.",
+          tags: ["eingang", "mcp-upload", ...(tags || [])],
+          documentYear
+        }
+      });
+      return jsonContent({
+        document,
+        message: "Dokument wurde neutral in den Eingang hochgeladen. Nutze als naechsten Schritt classify_document zur Einsortierung."
+      });
+    }
+  );
+
+  server.registerTool(
+    "classify_document",
+    {
+      title: "Dokument einsortieren",
+      description: "Sortiert ein bereits hochgeladenes Dokument fachlich ein. Standardablauf fuer LLMs: 1. upload_inbox_document, 2. classify_document. Setzt Immobilie, Einheit, Mieter, Kategorie per categoryName, Beschreibung, Tags und Jahr. Optional wird ein Timeline-Ereignis erzeugt, um z. B. ein Anschreiben mit einer Abrechnung zu verknuepfen.",
+      inputSchema: {
+        documentId: z.string().trim().min(1).describe("ID des bereits hochgeladenen Dokuments."),
+        propertyId: optionalId.describe("Optionale Immobilien-ID. Bei Objektunterlagen setzen."),
+        unitId: optionalId.describe("Optionale Einheiten-ID."),
+        tenantProfileId: optionalId.describe("Optionale TenantProfile-ID, wenn das Dokument persoenlich zum Mieter gehoert."),
+        categoryName: optionalString.describe("Kategorie-Name, z. B. Anschreiben, Nebenkostenabrechnungen, Hausgeldabrechnungen, Rechnungen, Kuendigung."),
+        categoryGroup: optionalString.describe("Kategorie-Gruppe fuer neu anzulegende Kategorien. Default: Allgemein."),
+        createCategoryIfMissing: z.boolean().optional().describe("Default true. Legt die Kategorie an, falls sie fehlt und der Token write:settings hat."),
+        title: optionalString.describe("Neuer Dokumenttitel."),
+        filename: optionalString.describe("Optionaler neuer Dateiname."),
+        status: z.enum(["MISSING", "REQUESTED", "AVAILABLE", "SHARED", "NOT_RELEVANT"]).optional(),
+        scope: z.enum(["PROPERTY", "UNIT", "TENANT", "CONTRACT"]).optional(),
+        summary: optionalString.describe("Inhaltliche Kurzbeschreibung."),
+        tags: z.array(z.string()).optional(),
+        documentYear: z.number().int().min(1900).max(2049).nullable().optional(),
+        relatedDocumentIds: z.array(z.string().trim().min(1)).optional().describe("Weitere Dokumente, die fachlich damit zusammenhaengen."),
+        relationNote: optionalString.describe("Kurzer Hinweis zur Beziehung, z. B. 'Anschreiben gehoert zur Abrechnung'."),
+        createTimelineEvent: z.boolean().optional().describe("Default true, wenn relatedDocumentIds oder relationNote gesetzt sind.")
+      }
+    },
+    async ({ documentId, propertyId, unitId, tenantProfileId, categoryName, categoryGroup, createCategoryIfMissing, title, filename, status, scope, summary, tags, documentYear, relatedDocumentIds, relationNote, createTimelineEvent }) => {
+      const categoryId = categoryName
+        ? await resolveDocumentCategoryId(portal, categoryName, categoryGroup || "Allgemein", createCategoryIfMissing !== false)
+        : undefined;
+      const relationTags = relatedDocumentIds?.length ? [`verbunden:${relatedDocumentIds.join(",")}`] : [];
+      const nextTags = tags?.length || relationTags.length ? [...(tags || []), ...relationTags] : undefined;
+      const relationSummary = relationNote
+        ? `${summary || ""}${summary ? "\n\n" : ""}Verknuepfung: ${relationNote}${relatedDocumentIds?.length ? ` (${relatedDocumentIds.join(", ")})` : ""}`
+        : summary;
+      const document = await portal.json<{ id: string; propertyId?: string | null; unitId?: string | null; tenantProfileId?: string | null; title?: string | null }>({
+        method: "PATCH",
+        path: `/api/integrations/v1/documents/${encodeURIComponent(documentId)}`,
+        body: {
+          title,
+          filename,
+          propertyId,
+          unitId,
+          tenantProfileId,
+          categoryId,
+          status,
+          scope: scope || (tenantProfileId ? "TENANT" : unitId ? "UNIT" : propertyId ? "PROPERTY" : undefined),
+          summary: relationSummary,
+          tags: nextTags,
+          documentYear
+        }
+      });
+
+      let timelineEvent: unknown = null;
+      let timelineWarning: string | null = null;
+      const shouldCreateTimelineEvent = createTimelineEvent ?? Boolean(relatedDocumentIds?.length || relationNote);
+      if (shouldCreateTimelineEvent && (relatedDocumentIds?.length || relationNote) && (document.propertyId || propertyId)) {
+        try {
+          timelineEvent = await portal.json({
+            method: "POST",
+            path: "/api/integrations/v1/timeline",
+            body: {
+              propertyId: document.propertyId || propertyId,
+              unitId: document.unitId || unitId || null,
+              tenantProfileId: document.tenantProfileId || tenantProfileId || null,
+              eventType: "NOTE",
+              title: relationNote || `Dokument verknuepft: ${document.title || title || documentId}`,
+              description: relationSummary || "Dokument wurde einsortiert und fachlich verknuepft.",
+              status: "INFO",
+              eventDate: new Date().toISOString(),
+              documentIds: [document.id, ...(relatedDocumentIds || [])]
+            }
+          });
+        } catch (error) {
+          timelineWarning = error instanceof Error ? error.message : "Timeline-Verknuepfung konnte nicht angelegt werden.";
+        }
+      }
+
+      return jsonContent({
+        document,
+        categoryName: categoryName || null,
+        categoryId: categoryId || null,
+        relatedDocumentIds: relatedDocumentIds || [],
+        timelineEvent,
+        timelineWarning,
+        message: categoryName
+          ? `Dokument wurde einsortiert und der Kategorie '${categoryName}' zugeordnet.`
+          : "Dokument wurde einsortiert."
+      });
+    }
   );
 
   server.registerTool(
     "upload_tenant_document",
     {
       title: "Mieterdokument hochladen",
-      description: "Laedt eine vom Nutzer angehaengte Datei gezielt bei einem Mieter ab. Geeignet fuer Kuendigungen, Mietvertraege, Wohnungsgeberbestaetigungen, Kautionsnachweise oder andere persoenliche Mieterdokumente. Die Kategorie kann per categoryName wie 'Kuendigungen' angegeben werden; der MCP sucht die passende Kategorie-ID und legt die Kategorie bei Bedarf mit write:settings an.",
+      description: "Laedt eine vom Nutzer im aktuellen Chat angehaengte Datei gezielt bei einem Mieter ab. Verwende bevorzugt file fuer Chat-Anhaenge; fileBase64 ist nur Rueckfall. Geeignet fuer Kuendigungen, Mietvertraege, Wohnungsgeberbestaetigungen, Kautionsnachweise oder andere persoenliche Mieterdokumente. Die Kategorie kann per categoryName wie 'Kuendigungen' angegeben werden; der MCP sucht die passende Kategorie-ID und legt die Kategorie bei Bedarf mit write:settings an. Automatische Dateinamenszusaetze wie (1), (2) oder Kopie werden bereinigt.",
       inputSchema: {
         tenantProfileId: z.string().trim().min(1).describe("TenantProfile-ID des Mieters, z. B. nach list_tenants/get_tenant."),
-        fileBase64: z.string().trim().min(1).describe("Dateiinhalt als Base64. Data-URLs sind erlaubt. Bei Chat-Anhaengen die Datei lesen und Base64-kodiert uebergeben."),
-        filename: z.string().trim().min(1).describe("Sinnvoller Dateiname inklusive Erweiterung, z. B. 2026-06-26_Kuendigung_Alina_Waser.pdf."),
+        file: uploadedFileInput,
+        fileBase64: optionalFileBase64,
+        filename: z.string().trim().min(1).optional().describe("Sinnvoller Dateiname inklusive Erweiterung, z. B. 2026-06-26_Kuendigung_Mieter.pdf."),
         mimeType: z.string().trim().min(1).optional().describe("MIME-Type, z. B. application/pdf."),
         title: optionalString.describe("Anzeigetitel im Portal."),
         categoryName: optionalString.describe("Kategorie-Name, z. B. Kuendigungen. Wenn keine Kategorie passt, wird sie optional erstellt."),
@@ -397,7 +543,8 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
         documentYear: z.number().int().min(1900).max(2049).optional()
       }
     },
-    async ({ tenantProfileId, fileBase64, filename, mimeType, title, categoryName, categoryGroup, createCategoryIfMissing, status, summary, tags, documentYear }) => {
+    async ({ tenantProfileId, file, fileBase64, filename, mimeType, title, categoryName, categoryGroup, createCategoryIfMissing, status, summary, tags, documentYear }) => {
+      const upload = await resolveUploadPayload(file, fileBase64, filename, mimeType);
       const tenant = await portal.json<{ id: string; unitId?: string | null; unit?: { id: string; propertyId?: string | null } | null }>({
         path: `/api/integrations/v1/tenants/${encodeURIComponent(tenantProfileId)}`
       });
@@ -408,10 +555,10 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
         method: "POST",
         path: "/api/integrations/v1/documents",
         body: {
-          fileBase64,
-          filename,
-          mimeType: mimeType || "application/octet-stream",
-          title: title || filename,
+          fileBase64: upload.fileBase64,
+          filename: upload.filename,
+          mimeType: upload.mimeType,
+          title: title || upload.filename,
           tenantProfileId,
           unitId: tenant.unitId || tenant.unit?.id || null,
           propertyId: tenant.unit?.propertyId || null,
@@ -828,6 +975,147 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
     },
     async ({ method, path, query, body }) => jsonContent(await portal.json({ method, path, query, body }))
   );
+}
+
+type ResolvedUploadPayload = {
+  fileBase64: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+};
+
+type UploadedFileLike = {
+  path?: string;
+  filename?: string;
+  name?: string;
+  mimeType?: string;
+  type?: string;
+  data?: string;
+  base64?: string;
+  url?: string;
+  fileId?: string;
+};
+
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+const ALLOWED_MIME_TYPES = new Set([
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "image/jpeg",
+  "image/png"
+]);
+
+async function resolveUploadPayload(
+  file: unknown,
+  fileBase64?: string,
+  fallbackFilename?: string,
+  fallbackMimeType?: string
+): Promise<ResolvedUploadPayload> {
+  let buffer: Buffer | null = null;
+  let filename = fallbackFilename || "dokument.pdf";
+  let mimeType = fallbackMimeType || "application/octet-stream";
+
+  if (file !== undefined && file !== null) {
+    if (typeof file !== "object") {
+      throw new Error("Keine gueltige Datei uebergeben.");
+    }
+    const uploaded = file as UploadedFileLike;
+    filename = fallbackFilename || uploaded.filename || uploaded.name || filename;
+    mimeType = fallbackMimeType || uploaded.mimeType || uploaded.type || mimeType;
+
+    if (uploaded.path) {
+      buffer = await readFile(uploaded.path);
+    } else if (uploaded.base64 || uploaded.data) {
+      buffer = decodeBase64File(uploaded.base64 || uploaded.data || "");
+    } else if (uploaded.url) {
+      buffer = await downloadAllowedFile(uploaded.url);
+    } else if (uploaded.fileId) {
+      throw new Error("fileId kann von diesem MCP-Server nicht direkt aufgeloest werden. Bitte Dateiinhalt als file.data/base64 oder file.path uebergeben.");
+    } else {
+      throw new Error("Die Datei enthaelt weder Pfad, Base64-Daten, URL noch aufloesbare File-ID.");
+    }
+  } else if (fileBase64) {
+    buffer = decodeBase64File(fileBase64);
+  }
+
+  if (!buffer) throw new Error("Keine Datei uebergeben. Bitte file oder fileBase64 angeben.");
+  if (!buffer.length) throw new Error("Datei ist leer.");
+  if (buffer.length > MAX_UPLOAD_BYTES) throw new Error("Datei ist zu gross. Maximal erlaubt sind 25 MB.");
+
+  filename = sanitizeFilename(filename);
+  mimeType = detectMimeType(buffer, filename, mimeType);
+  validateUploadType(buffer, mimeType);
+
+  return {
+    fileBase64: buffer.toString("base64"),
+    filename,
+    mimeType,
+    size: buffer.length
+  };
+}
+
+function decodeBase64File(value: string): Buffer {
+  const cleanBase64 = value.replace(/^data:[^;]+;base64,/, "").replace(/\s/g, "");
+  if (!cleanBase64) throw new Error("fileBase64 ist leer.");
+  if (!/^[A-Za-z0-9+/=_-]+$/.test(cleanBase64)) throw new Error("fileBase64 ist ungueltig.");
+  return Buffer.from(cleanBase64, cleanBase64.includes("-") || cleanBase64.includes("_") ? "base64url" : "base64");
+}
+
+async function downloadAllowedFile(urlString: string): Promise<Buffer> {
+  const url = new URL(urlString);
+  if (url.protocol !== "https:") throw new Error("Nur HTTPS-Dateien sind erlaubt.");
+  const hostname = url.hostname.toLowerCase();
+  if (hostname === "localhost" || hostname.endsWith(".local") || isPrivateIp(hostname)) {
+    throw new Error("Lokale oder private Hosts sind fuer Datei-Downloads nicht erlaubt.");
+  }
+  const response = await fetch(url, { redirect: "error", signal: AbortSignal.timeout(20_000) });
+  if (!response.ok) throw new Error(`Dateidownload fehlgeschlagen: HTTP ${response.status}`);
+  const declaredLength = Number(response.headers.get("content-length") || "0");
+  if (declaredLength > MAX_UPLOAD_BYTES) throw new Error("Datei ist zu gross. Maximal erlaubt sind 25 MB.");
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (buffer.length > MAX_UPLOAD_BYTES) throw new Error("Datei ist zu gross. Maximal erlaubt sind 25 MB.");
+  return buffer;
+}
+
+function isPrivateIp(hostname: string) {
+  if (!isIP(hostname)) return false;
+  if (hostname === "127.0.0.1" || hostname === "::1" || hostname === "0.0.0.0") return true;
+  if (hostname.startsWith("10.") || hostname.startsWith("192.168.")) return true;
+  const parts = hostname.split(".").map((part) => Number(part));
+  return parts.length === 4 && (
+    (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
+    (parts[0] === 169 && parts[1] === 254)
+  );
+}
+
+function sanitizeFilename(filename: string) {
+  const cleaned = filename
+    .replace(/\s*\(\d+\)(?=\.[^.]+$)/, "")
+    .replace(/\s+-\s+Kopie(?=\.[^.]+$)/i, "")
+    .replace(/\s+Kopie(?=\.[^.]+$)/i, "")
+    .replace(/[\/\\:*?"<>|]/g, "_")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned || "dokument.pdf";
+}
+
+function detectMimeType(buffer: Buffer, filename: string, providedMimeType: string) {
+  if (buffer.subarray(0, 4).toString("latin1") === "%PDF") return "application/pdf";
+  if (buffer.subarray(0, 4).toString("hex") === "504b0304") {
+    const lower = filename.toLowerCase();
+    if (lower.endsWith(".docx")) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    if (lower.endsWith(".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  }
+  if (buffer.subarray(0, 3).toString("hex") === "ffd8ff") return "image/jpeg";
+  if (buffer.subarray(0, 8).toString("hex") === "89504e470d0a1a0a") return "image/png";
+  return providedMimeType || "application/octet-stream";
+}
+
+function validateUploadType(buffer: Buffer, mimeType: string) {
+  if (!ALLOWED_MIME_TYPES.has(mimeType)) throw new Error(`Dateityp nicht erlaubt: ${mimeType}`);
+  if (mimeType === "application/pdf" && buffer.subarray(0, 4).toString("latin1") !== "%PDF") {
+    throw new Error("Dateityp nicht erlaubt: PDF-Signatur fehlt.");
+  }
 }
 
 async function resolveDocumentCategoryId(portal: PortalClient, categoryName: string, categoryGroup: string, createIfMissing: boolean) {

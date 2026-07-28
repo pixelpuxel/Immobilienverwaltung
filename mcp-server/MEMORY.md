@@ -25,7 +25,8 @@
 - Wohnungsgeberbestaetigung erzeugen.
 - Dokumente lesen/aendern/loeschen und Links erzeugen.
 - Dokumentkategorien lesen.
-- Angehaengte Dateien als Base64 hochladen.
+- Angehaengte Dateien direkt als MCP-Dateiobjekt oder als Base64-Rueckfall hochladen.
+- Dateien koennen zuerst neutral in den Dokumenteneingang geladen und danach mit `classify_document` fachlich einsortiert werden.
 - Mieterdokumente gezielt mit Kategorie-Name hochladen, z. B. Kuendigungen.
 - Vertragsvorlagen lesen und ableiten.
 - Mietvertraege erzeugen, suchen, loeschen und Links erzeugen.
@@ -40,7 +41,7 @@
 
 ## Noch bewusst offen
 
-- Direkter Datei-Upload ueber MCP ist per Base64-Tool vorhanden; grosse Dateien koennen je nach MCP-Client trotzdem begrenzt sein.
+- Echte Chat-Anhaenge werden ueber `file` unterstuetzt, soweit der jeweilige MCP-Client Dateiobjekte an Tools uebergibt. `fileBase64` bleibt als Rueckfall bestehen.
 - Separate GitHub-Repository-Auslagerung ist vorbereitet, aber noch nicht vollzogen.
 - Tool-Audit im MCP-Server selbst ist minimal; Audit erfolgt primaer im Portal.
 
