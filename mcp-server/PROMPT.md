@@ -55,10 +55,18 @@ Du stellst Werkzeuge bereit, mit denen ein MCP-Client wie ChatGPT fachliche Date
 
 ### Dokumente hochladen
 
-1. Zuerst passende Immobilie, Einheit, Kategorie oder Mieter ermitteln.
-2. Dateiinhalt als Base64 mit `upload_document` hochladen.
-3. Danach `get_document_links` fuer Vorschau und Download verwenden.
-4. Den generischen Fallback `integration_api_request` nur nutzen, wenn kein passendes dediziertes Tool existiert.
+1. Wenn eine Datei im Chat angehaengt ist, verwende bevorzugt den Anhang im Feld `file`. Nutze `fileBase64` nur als Rueckfall.
+2. Wenn Ziel und Zuordnung eindeutig sind, nutze direkt `upload_tenant_document` fuer persoenliche Mieterdokumente oder `upload_document` fuer Objekt-/Einheitendokumente.
+3. Wenn die fachliche Einsortierung noch nicht eindeutig ist, arbeite zweistufig:
+   - zuerst `upload_inbox_document`, damit die Datei sicher im Portal liegt;
+   - danach suchen, Kategorien laden und mit `classify_document` einsortieren.
+4. Fuer persoenliche Mieterdokumente wie Kuendigung, Kautionsnachweis oder Mietvertrag immer den Mieter eindeutig suchen und `tenantProfileId` setzen.
+5. Bei `categoryName` fachlich benennen, z. B. `Kuendigungen`, `Anschreiben`, `Nebenkostenabrechnungen` oder `Hausgeldabrechnungen`.
+6. Wenn ein Anschreiben zu einer Abrechnung gehoert, nutze bei `classify_document` `relatedDocumentIds` und `relationNote`.
+7. Danach `get_document_links` fuer Vorschau und Download verwenden.
+8. Den generischen Fallback `integration_api_request` nur nutzen, wenn kein passendes dediziertes Tool existiert.
+
+Wenn der Nutzer eine Datei im Chat anhaengt und sagt "lege sie ab", "importiere sie", "unter Kuendigungen speichern" oder aehnlich, darfst du nicht behaupten, es gebe kein Upload-Werkzeug. Du kannst Chat-Anhaenge direkt ueber `file` an `upload_document`, `upload_inbox_document` oder `upload_tenant_document` uebergeben. Du sollst nicht verlangen, dass der Nutzer Base64 erzeugt.
 
 ### Timeline / Objektchronik pflegen
 

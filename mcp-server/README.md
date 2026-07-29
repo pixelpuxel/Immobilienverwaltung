@@ -176,7 +176,11 @@ Der Server stellt fachliche Tools bereit, z. B.:
 - `list_tenant_documents`
 - `create_landlord_confirmation`
 - `list_documents`
+- `list_document_categories`
 - `upload_document`
+- `upload_inbox_document`
+- `classify_document`
+- `upload_tenant_document`
 - `update_document`
 - `delete_document`
 - `get_document_links`
@@ -203,7 +207,16 @@ Der Server stellt fachliche Tools bereit, z. B.:
 
 `integration_api_request` ist ein kontrollierter Fallback fuer neue Portal-Endpunkte. Er erlaubt nur relative Pfade unter `/api/integrations/v1/...` und keine externen URLs.
 
-Dokument-Uploads sollen bevorzugt ueber `upload_document` erfolgen. Das Tool erwartet `fileBase64`, `filename`, optional `mimeType`, `title`, `propertyId`, `unitId`, `tenantProfileId`, `categoryId`, `summary`, `tags` und `documentYear`.
+Dokument-Uploads sollen bevorzugt ueber `upload_document` erfolgen. Das Tool akzeptiert bevorzugt einen Chat-/MCP-Dateianhang im Feld `file` und weiterhin `fileBase64` als Rueckfall. Weitere Felder sind `filename`, optional `mimeType`, `title`, `propertyId`, `unitId`, `tenantProfileId`, `categoryId`, `summary`, `tags` und `documentYear`.
+
+Mieterdokumente wie Kuendigungen, Kautionsnachweise oder persoenliche Mietvertraege sollen bevorzugt ueber `upload_tenant_document` hochgeladen werden. Das Tool akzeptiert `tenantProfileId`, `file` oder `fileBase64`, `filename`, optional `categoryName` wie `Kuendigungen` und loest die Dokumentkategorie intern auf.
+
+Wenn die fachliche Einsortierung noch unklar ist, ist der Standardablauf zweistufig:
+
+1. `upload_inbox_document` speichert den Chat-Anhang neutral im Dokumenteneingang.
+2. `classify_document` setzt danach Immobilie, Einheit, Mieter, Kategorie, Beschreibung, Tags, Jahr und optionale Verknuepfungen.
+
+Der MCP-Server liest Datei-Anhaenge serverseitig. Unterstuetzt werden Dateiobjekte mit `path`, `filename`/`name`, `mimeType`/`type`, `data`/`base64` oder sichere HTTPS-URLs. Automatische Dubletten-Zusaetze wie `(1)`, `(2)` und `Kopie` werden aus Dateinamen entfernt. Erlaubt sind PDF, DOCX, XLSX, JPG und PNG bis 25 MB.
 
 ## Sicherheitsmodell
 

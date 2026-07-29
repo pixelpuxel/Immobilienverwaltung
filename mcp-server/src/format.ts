@@ -14,6 +14,18 @@ export function jsonContent(value: unknown) {
   };
 }
 
+export function structuredJsonContent<T extends Record<string, unknown>>(value: T) {
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: asText(value)
+      }
+    ],
+    structuredContent: value
+  };
+}
+
 export function textContent(text: string) {
   return {
     content: [

@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "invalid_redirect_uri", error_description: "redirect_uris ist erforderlich." }, { status: 400 });
   }
   if (!redirectUris.every((uri: string) => isSafeRedirectUri(uri))) {
-    return NextResponse.json({ error: "invalid_redirect_uri", error_description: "Nur HTTPS-Redirect-URIs sind erlaubt." }, { status: 400 });
+    return NextResponse.json({ error: "invalid_redirect_uri", error_description: "Redirect-URI ist nicht erlaubt." }, { status: 400 });
   }
 
   const tokenEndpointAuthMethod = String(body.token_endpoint_auth_method || "none");
@@ -44,6 +44,7 @@ export async function POST(request: NextRequest) {
 }
 
 function isSafeRedirectUri(value: string) {
+  if (value === "de.schreiber.mcpexplorer.oauth://callback") return true;
   try {
     const url = new URL(value);
     return url.protocol === "https:" || url.hostname === "localhost" || url.hostname === "127.0.0.1";
