@@ -471,6 +471,12 @@ Fuer native Clients gelten dieselben Vertraege unter
 `/api/integrations/v1/service-charge-statements`. Lesen/PDF benoetigt
 `read:properties`, Erzeugen/Festschreiben `write:properties`.
 
+Admins koennen mit `?tenantId=<Mietprofil-ID>` ein einzelnes Mieter-PDF
+erzeugen. Ein als Mieter angemeldeter Benutzer bekommt ueber die Webroute
+zwangsweise nur das PDF seines eigenen Mietprofils; fremde `tenantId`-Werte
+werden ignoriert beziehungsweise abgewiesen. Gesamt-PDFs sind fuer Mieter
+nicht zugaenglich.
+
 `POST /api/agent/config` speichert den System-Prompt des Agenten:
 
 ```json

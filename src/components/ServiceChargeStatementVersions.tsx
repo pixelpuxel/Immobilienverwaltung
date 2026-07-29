@@ -10,6 +10,7 @@ type Statement = {
   checksum: string;
   createdAt: string;
   finalizedAt: string | null;
+  tenants: Array<{ id: string; name: string }>;
 };
 
 export function ServiceChargeStatementVersions({
@@ -83,6 +84,16 @@ export function ServiceChargeStatementVersions({
               {statement.status !== "FINAL" ? <button disabled={Boolean(busy)} onClick={() => finalize(statement.id)} type="button">Festschreiben</button> : null}
               {statement.status !== "FINAL" ? <button className="button button-secondary" disabled={Boolean(busy)} onClick={() => remove(statement.id)} type="button">Ausblenden</button> : null}
             </div>
+            {statement.tenants.length ? (
+              <details className="md:col-span-4">
+                <summary className="cursor-pointer text-sm font-semibold text-accent">Einzelabrechnungen ({statement.tenants.length})</summary>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {statement.tenants.map((tenant) => (
+                    <a className="button button-secondary" href={`/api/service-charge-statements/${statement.id}/pdf?tenantId=${encodeURIComponent(tenant.id)}`} key={tenant.id} target="_blank" rel="noreferrer">{tenant.name}</a>
+                  ))}
+                </div>
+              </details>
+            ) : null}
           </div>
         ))}
         {!statements.length ? <div className="p-4 text-sm text-muted">Noch keine gespeicherte Abrechnungsversion.</div> : null}

@@ -38,6 +38,9 @@ Passwoerter und Tokenwerte gehoeren nicht in diese Datei.
 - Native Clients verwenden die Endpunkte unter
   `/api/integrations/v1/service-charge-statements`. Die iPhone-Handoff-Doku
   wird parallel im Repository `iPhone-Banking` aktualisiert.
+- Abrechnungsversionen bieten ein Admin-Gesamt-PDF und einzelne Mieter-PDFs.
+  Mieterzugriff wird serverseitig an das eigene Mietprofil gebunden; ein
+  Gesamtbericht oder fremdes Mieter-PDF ist fuer diese Rolle gesperrt.
 - Backup und Restore enthalten Verteilerschluessel, Einzelkosten und
   Abrechnungsversionen.
 - Der Docker-Build fuehrt Prisma-Generierung, Vitest und Next-Build aus.

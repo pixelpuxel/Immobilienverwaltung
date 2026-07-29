@@ -20,6 +20,7 @@ import {
   type AllocationRuleInput,
   type ServiceChargeMethod
 } from "@/lib/service-charge-allocation";
+import { isServiceChargeStatementSnapshot } from "@/lib/service-charge-statement";
 
 export const dynamic = "force-dynamic";
 
@@ -173,7 +174,10 @@ export default async function ServiceChargesPage({
             status: statement.status,
             checksum: statement.checksum,
             createdAt: statement.createdAt.toISOString(),
-            finalizedAt: statement.finalizedAt?.toISOString() || null
+            finalizedAt: statement.finalizedAt?.toISOString() || null,
+            tenants: isServiceChargeStatementSnapshot(statement.snapshot)
+              ? statement.snapshot.allocation.tenantResults.map((tenant) => ({ id: tenant.tenantId, name: tenant.tenantName }))
+              : []
           }))}
         />
       ) : null}

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireIntegrationUser } from "@/lib/integration-auth";
+import { requireAdminIntegration, requireIntegrationUser } from "@/lib/integration-auth";
 import { portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 import { isServiceChargeStatementSnapshot } from "@/lib/service-charge-statement";
@@ -8,6 +8,8 @@ import { renderServiceChargeStatementPdf, serviceChargeStatementPdfFilename } fr
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   const { user, response } = await requireIntegrationUser(request, ["read:properties"]);
   if (!user) return response;
+  const forbidden = requireAdminIntegration(user);
+  if (forbidden) return forbidden;
   const item = await prisma.serviceChargeStatement.findFirst({
     where: { id: params.id, deletedAt: null, property: portalWhere(user) }
   });

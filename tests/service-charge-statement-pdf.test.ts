@@ -52,4 +52,17 @@ describe("service charge statement PDF", () => {
   it("creates a stable safe filename", () => {
     expect(serviceChargeStatementPdfFilename(snapshot, 2)).toContain("2025_V2.pdf");
   });
+
+  it("renders an explicitly selected tenant statement", () => {
+    const pdf = renderServiceChargeStatementPdf({
+      snapshot,
+      version: 2,
+      status: "FINAL",
+      checksum: "abcdef0123456789abcdef0123456789",
+      tenantId: "tenant-1"
+    }).toString("latin1");
+    expect(pdf).toContain("Nebenkostenabrechnung - Max Beispiel");
+    expect(pdf).toContain("Ihr Kostenanteil");
+    expect(pdf).toContain("Nachzahlung");
+  });
 });

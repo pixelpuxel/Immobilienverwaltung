@@ -169,6 +169,10 @@ docker compose up -d --build
   Abrechnungsvertraege zu. Integrationszugriff liegt unter
   `/api/integrations/v1/service-charge-statements` und respektiert
   Portal-Instanz, Rolle und Token-Scopes.
+- Das Gesamt-PDF ist nur fuer Administratoren. Fuer jedes enthaltene
+  Mietverhaeltnis wird ein eigenes PDF angeboten. Ein Mieter darf
+  serverseitig ausschliesslich sein eigenes Ergebnis abrufen; eine manipulierte
+  Mietprofil-ID darf weder Namen noch Zahlen anderer Mieter offenlegen.
 - Mieter können minimal angelegt werden: Benutzername oder Vorname oder Nachname reicht; weitere Daten dürfen später ergänzt werden. Fehlermeldungen beim Speichern müssen konkrete Feldhinweise enthalten.
 - Einheiten enthalten Kaltmiete, Nebenkosten und Warmmiete.
 - Einheiten und Mieterprofile enthalten zusätzlich Tiefgarage/Garagenmiete.

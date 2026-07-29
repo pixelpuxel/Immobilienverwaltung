@@ -5,8 +5,8 @@ const pageWidth = 595;
 const pageHeight = 842;
 const margin = 42;
 
-export function serviceChargeStatementPdfFilename(snapshot: ServiceChargeStatementSnapshot, version: number) {
-  return safeFilename(`Nebenkostenabrechnung_${snapshot.property.name}_${snapshot.year}_V${version}.pdf`);
+export function serviceChargeStatementPdfFilename(snapshot: ServiceChargeStatementSnapshot, version: number, tenantName?: string) {
+  return safeFilename(`Nebenkostenabrechnung_${snapshot.property.name}_${tenantName || "Gesamt"}_${snapshot.year}_V${version}.pdf`);
 }
 
 export function renderServiceChargeStatementPdf(input: {
@@ -14,6 +14,7 @@ export function renderServiceChargeStatementPdf(input: {
   version: number;
   status: string;
   checksum: string;
+  tenantId?: string;
 }) {
   const pages: string[][] = [[]];
   let y = 790;
@@ -36,8 +37,15 @@ export function renderServiceChargeStatementPdf(input: {
   };
   const rule = input.snapshot.rule;
   const allocation = input.snapshot.allocation;
+  const selectedTenant = input.tenantId
+    ? allocation.tenantResults.find((tenant) => tenant.tenantId === input.tenantId)
+    : null;
+  const tenantResults = selectedTenant ? [selectedTenant] : allocation.tenantResults;
+  const statementLines = selectedTenant
+    ? input.snapshot.statementLines.filter((line) => !line.unitId || line.unitId === selectedTenant.unitId)
+    : input.snapshot.statementLines;
 
-  write("Nebenkostenabrechnung", { size: 18, bold: true, gap: 25 });
+  write(selectedTenant ? `Nebenkostenabrechnung - ${selectedTenant.tenantName}` : "Nebenkostenabrechnung", { size: 18, bold: true, gap: 25 });
   write(`${input.snapshot.property.name} - ${input.snapshot.property.address}`, { size: 11, bold: true });
   write(`Abrechnungsjahr ${input.snapshot.year} | Version ${input.version} | ${input.status === "FINAL" ? "Festgeschrieben" : "Entwurf"}`, { size: 9 });
   y -= 8;
@@ -47,16 +55,16 @@ export function renderServiceChargeStatementPdf(input: {
   y -= 5;
 
   write("Zusammenfassung", { size: 12, bold: true, gap: 18 });
-  metric(current(), "Umlagefaehige Kosten", allocation.allocableCosts, margin, y);
-  metric(current(), "Vorauszahlungen", allocation.totalPrepayments, 305, y);
+  metric(current(), selectedTenant ? "Ihr Kostenanteil" : "Umlagefaehige Kosten", selectedTenant?.allocatedCosts ?? allocation.allocableCosts, margin, y);
+  metric(current(), "Vorauszahlungen", selectedTenant?.actualPrepayments ?? allocation.totalPrepayments, 305, y);
   y -= 24;
-  metric(current(), "Mietern zugeordnet", allocation.allocatedToTenants, margin, y);
-  metric(current(), "Eigentuemer / Leerstand", allocation.ownerShare, 305, y);
+  metric(current(), selectedTenant ? (selectedTenant.result >= 0 ? "Nachzahlung" : "Guthaben") : "Mietern zugeordnet", selectedTenant ? Math.abs(selectedTenant.result) : allocation.allocatedToTenants, margin, y);
+  if (!selectedTenant) metric(current(), "Eigentuemer / Leerstand", allocation.ownerShare, 305, y);
   y -= 34;
 
-  if (input.snapshot.statementLines.length) {
+  if (statementLines.length) {
     write("Kostenpositionen", { size: 12, bold: true, gap: 18 });
-    for (const line of input.snapshot.statementLines) {
+    for (const line of statementLines) {
       ensure(28);
       current().push(text(`${treatmentLabel(line.treatment)} | ${line.description}`, margin, y, 8.5, true));
       current().push(text(money(line.amount), 475, y, 8.5, true));
@@ -70,7 +78,7 @@ export function renderServiceChargeStatementPdf(input: {
   }
 
   write("Abrechnung je Mietverhaeltnis", { size: 12, bold: true, gap: 18 });
-  for (const tenant of allocation.tenantResults) {
+  for (const tenant of tenantResults) {
     ensure(48);
     current().push(text(tenant.tenantName, margin, y, 9, true));
     current().push(text(`${tenant.occupiedDays}/${tenant.yearDays} Tage`, 330, y, 8));
