@@ -114,6 +114,18 @@ docker compose up -d --build
 - Mieterrechte hängen an einer Einheit und an freigegebenen/eigenen Dokumenten.
 - Mieter-Dashboard zeigt keine Immobilien-/Einheitenanzahl, sondern nur für Mieter relevante Dokumente und Verträge.
 - Nebenkostenabrechnungen werden als Dokumente der Kategorie "Nebenkostenabrechnungen" gespeichert, im Mieterbereich aber in einem eigenen Bereich angezeigt. Admins können je Einheit direkt aus der Objektansicht zur passend vorbefüllten Uploadmaske springen.
+- Der Adminbereich `/service-charges` lädt kontierte Ist-Kosten,
+  tatsächliche Nebenkostenvorauszahlungen, Abrechnungszahlungen und
+  Mietanteile serverseitig aus `banking.schreiber.info`. Auswahl erfolgt nach
+  Immobilie, Abrechnungsjahr, optional Einheit und Mietverhältnis.
+- Das Banking-API-Token wird pro Portal-Instanz verschlüsselt gespeichert und
+  niemals an Browser, Mieter oder lesende Konfigurationsantworten ausgegeben.
+  Die konfigurierbare Zieladresse ist aus SSRF-Schutz auf
+  `https://banking.schreiber.info` beschränkt.
+- Banking besitzt Bankbuchung, Kontierung und Ist-Zahlung. Das
+  Immobilienportal besitzt Vertragszeitraum, Umlageschlüssel, Verteilung und
+  Abrechnungsdokument. Die Berechnung darf nicht in beiden Systemen parallel
+  implementiert werden.
 - Mieter können minimal angelegt werden: Benutzername oder Vorname oder Nachname reicht; weitere Daten dürfen später ergänzt werden. Fehlermeldungen beim Speichern müssen konkrete Feldhinweise enthalten.
 - Einheiten enthalten Kaltmiete, Nebenkosten und Warmmiete.
 - Einheiten und Mieterprofile enthalten zusätzlich Tiefgarage/Garagenmiete.
@@ -173,6 +185,8 @@ docker compose up -d --build
 - `/broker` als Immobilienbereich für Makler
 - `/tenant`
 - `/contracts`
+- `/service-charges` als administrative Nebenkosten-Istdaten- und
+  Abrechnungsarbeitsfläche
 - `/settings`
 - `/audit`
 

@@ -59,6 +59,7 @@ model PortalInstance {
   mailTemplates MailTemplate[]
   telegramBotConfig TelegramBotConfig?
   aiProviderConfig AiProviderConfig?
+  bankingIntegrationConfig BankingIntegrationConfig?
   agentConfig AgentConfig?
   agentConversations AgentConversation[]
   auditLogs   AuditLog[]
@@ -620,6 +621,18 @@ model AiProviderConfig {
   apiKeyEncrypted String?
   embeddingModel  String          @default("text-embedding-3-small")
   transcriptionModel String       @default("gpt-4o-mini-transcribe")
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  portalInstance  PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
+}
+
+model BankingIntegrationConfig {
+  id              String          @id @default(cuid())
+  portalInstanceId String?        @unique
+  baseUrl         String          @default("https://banking.schreiber.info")
+  apiTokenEncrypted String?
+  lastSuccessfulAt DateTime?
+  lastError       String?
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
   portalInstance  PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)

@@ -8,6 +8,7 @@ import { AgentToolOverview } from "@/components/AgentToolOverview";
 import { AppShell } from "@/components/AppShell";
 import { ApiTokenManager } from "@/components/ApiTokenManager";
 import { BackupTools } from "@/components/BackupTools";
+import { BankingIntegrationSettings } from "@/components/BankingIntegrationSettings";
 import { CategoryVisibilityForm } from "@/components/CategoryVisibilityForm";
 import { JsonForm } from "@/components/JsonForm";
 import { MailSettingsCard } from "@/components/MailSettingsCard";
@@ -22,6 +23,7 @@ import { env } from "@/lib/env";
 import { DEFAULT_AGENT_SYSTEM_PROMPT, ensureAgentConfig } from "@/lib/agent";
 import { readAgentRegressionTests } from "@/lib/agent-regression-tests";
 import { agentToolCatalogForUi } from "@/lib/agent-tools";
+import { getBankingIntegration, redactBankingIntegration } from "@/lib/banking-integration";
 import { ensureMailTemplates, mailTemplatePreviewContext, renderMailTemplate } from "@/lib/mail-templates";
 import { prisma } from "@/lib/prisma";
 import { DEFAULT_TIME_ZONE } from "@/lib/time-zone";
@@ -32,7 +34,7 @@ export default async function SettingsPage() {
   const user = await requireUser([Role.ADMIN]);
   await ensureMailTemplates(user.portalInstanceId);
   const agentTools = agentToolCatalogForUi(user.role);
-  const [rawCategories, ownerProfile, apiTokens, mailTemplates, tenantMailRecipients, telegramConfig, aiConfig, agentConfig, agentRegressionTests, portalSettings] = await Promise.all([
+  const [rawCategories, ownerProfile, apiTokens, mailTemplates, tenantMailRecipients, telegramConfig, aiConfig, agentConfig, agentRegressionTests, portalSettings, bankingConfig] = await Promise.all([
     prisma.documentCategory.findMany({
       where: { OR: [{ portalInstanceId: user.portalInstanceId }, { portalInstanceId: null }] },
       orderBy: [{ group: "asc" }, { name: "asc" }]
@@ -77,7 +79,8 @@ export default async function SettingsPage() {
     }),
     ensureAgentConfig(user.portalInstanceId ?? null),
     readAgentRegressionTests(),
-    user.portalInstanceId ? prisma.portalInstance.findUnique({ where: { id: user.portalInstanceId }, select: { timeZone: true } }) : null
+    user.portalInstanceId ? prisma.portalInstance.findUnique({ where: { id: user.portalInstanceId }, select: { timeZone: true } }) : null,
+    getBankingIntegration(user.portalInstanceId)
   ]);
   const categories = dedupeCategories(rawCategories, user.portalInstanceId);
   return (
@@ -120,6 +123,9 @@ export default async function SettingsPage() {
         <div className="grid content-start gap-6">
           <SettingsFold title="Backup und Import" description="Daten exportieren, sichern und wiederherstellen." open>
             <BackupTools />
+          </SettingsFold>
+          <SettingsFold title="Banking-Integration" description="Kontierte Ist-Daten fuer Mieten und Nebenkosten laden." open>
+            <BankingIntegrationSettings initialConfig={redactBankingIntegration(bankingConfig)} />
           </SettingsFold>
           <SettingsFold title="Mailversand" description="SMTP/Postfix-Konfiguration und Testmail." open>
             <MailSettingsCard

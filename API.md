@@ -395,6 +395,28 @@ POST /api/agent/config
 POST /api/agent/chat
 ```
 
+Banking-Integration:
+
+```text
+GET  /api/banking-integration
+POST /api/banking-integration
+```
+
+`POST /api/banking-integration` ist nur für Admins und nur per Same-Origin
+zulässig:
+
+```json
+{
+  "baseUrl": "https://banking.schreiber.info",
+  "apiToken": "nur beim Setzen oder Wechseln mitsenden"
+}
+```
+
+Antworten enthalten nur `configured`, `baseUrl`, `lastSuccessfulAt` und
+`lastError`. Das verschlüsselte Token wird niemals zurückgegeben. Die Seite
+`/service-charges` ruft serverseitig den Banking-Vertrag
+`GET /api/v1/service-charge-data/{propertyId}/{year}` auf.
+
 `POST /api/agent/config` speichert den System-Prompt des Agenten:
 
 ```json
