@@ -214,7 +214,6 @@ model Property {
   templates             ContractTemplate[]
   todos                 PropertyTodo[]
   serviceChargeRules    ServiceChargeRule[]
-  serviceChargeStatementLines ServiceChargeStatementLine[]
   timelineEvents        TimelineEvent[]
   portalInstance        PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
 }
