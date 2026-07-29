@@ -177,6 +177,10 @@ Der Hook fuehrt standardmaessig aus:
 docker compose -p immobilienverwaltung up -d --build app
 ```
 
+Der Image-Build erzeugt zuerst den Prisma-Client, fuehrt danach die komplette
+Vitest-Suite aus und startet erst bei gruenen Tests den Next.js-Produktionsbuild.
+Lokale `node_modules` sind fuer Entwicklung und Deployment nicht erforderlich.
+
 ## Reverse Proxy
 
 Kompatibel mit Nginx Proxy Manager, Traefik und Caddy.

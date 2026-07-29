@@ -173,6 +173,9 @@ docker compose up -d --build
 - kompatibel mit Nginx Proxy Manager, Traefik und Caddy
 - `APP_URL` und `TRUST_PROXY` per ENV konfigurierbar
 - persistente Volumes: `postgres_data`, `uploads_data`, `contracts_data`
+- Der Docker-Builder muss nach `prisma generate` die vollstaendige
+  Vitest-Suite ausfuehren. Ein fehlgeschlagener Test blockiert Image und
+  Deployment; lokale `node_modules` sind kein Bestandteil des Betriebs.
 - Daten liegen im Betrieb in PostgreSQL sowie in den Docker-Volumes/Containerpfaden `UPLOAD_PATH` und `CONTRACTS_PATH`.
 - Einstellungen enthalten Backup/Import: ein einzelnes versioniertes JSON mit allen Tabellen, Dateien als Base64 und SHA-256-Prüfsummen. Import erfolgt mit einem Datei-Upload und stellt Datensätze und Dateien anhand stabiler IDs wieder her.
 - Backup/Export läuft instanzbezogen und kann Dokumente, Vertragsvorlagen und generierte Verträge optional einbetten.
