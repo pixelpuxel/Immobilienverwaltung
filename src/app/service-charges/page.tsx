@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { AppShell } from "@/components/AppShell";
 import { ServiceChargeRuleForm } from "@/components/ServiceChargeRuleForm";
 import { ServiceChargeStatementForm } from "@/components/ServiceChargeStatementForm";
+import { ServiceChargeStatementVersions } from "@/components/ServiceChargeStatementVersions";
 import {
   getBankingIntegration,
   loadServiceChargeData,
@@ -44,14 +45,20 @@ export default async function ServiceChargesPage({
   const selectedTenant = selectedProperty?.units
     .flatMap((unit) => unit.tenants)
     .find((tenant) => tenant.id === searchParams?.tenantId) || null;
-  const [config, savedRule] = await Promise.all([
+  const [config, savedRule, statements] = await Promise.all([
     getBankingIntegration(user.portalInstanceId),
     selectedProperty
       ? prisma.serviceChargeRule.findFirst({
           where: { propertyId: selectedProperty.id, year, property: portalWhere(user) },
           include: { unitAllocations: true, statementLines: { orderBy: { createdAt: "asc" } } }
         })
-      : null
+      : null,
+    selectedProperty
+      ? prisma.serviceChargeStatement.findMany({
+          where: { propertyId: selectedProperty.id, year, deletedAt: null, property: portalWhere(user) },
+          orderBy: { version: "desc" }
+        })
+      : []
   ]);
   const ruleInput = selectedProperty
     ? serviceChargeRuleInput(selectedProperty, savedRule)
@@ -155,6 +162,20 @@ export default async function ServiceChargesPage({
       ) : null}
       {data && ruleInput ? (
         <ServiceChargePreview data={data} rule={ruleInput} />
+      ) : null}
+      {selectedProperty && savedRule ? (
+        <ServiceChargeStatementVersions
+          propertyId={selectedProperty.id}
+          year={year}
+          statements={statements.map((statement) => ({
+            id: statement.id,
+            version: statement.version,
+            status: statement.status,
+            checksum: statement.checksum,
+            createdAt: statement.createdAt.toISOString(),
+            finalizedAt: statement.finalizedAt?.toISOString() || null
+          }))}
+        />
       ) : null}
       {!data && !error && config?.apiTokenEncrypted ? (
         <Notice tone="neutral">Immobilie und Abrechnungsjahr auswaehlen. Es werden noch keine Abrechnungsdaten gespeichert oder versendet.</Notice>

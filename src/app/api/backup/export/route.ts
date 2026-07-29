@@ -28,7 +28,11 @@ export async function GET(request: NextRequest) {
     leaseContracts,
     auditLogs,
     portalInstances,
-    mailTemplates
+    mailTemplates,
+    serviceChargeRules,
+    serviceChargeUnitAllocations,
+    serviceChargeStatementLines,
+    serviceChargeStatements
   ] = await Promise.all([
     prisma.user.findMany({ where: portalWhere(user) }),
     prisma.property.findMany({ where: portalWhere(user) }),
@@ -43,7 +47,11 @@ export async function GET(request: NextRequest) {
     prisma.leaseContract.findMany({ where: { unit: { property: portalWhere(user) } } }),
     prisma.auditLog.findMany({ where: portalWhere(user) }),
     prisma.portalInstance.findMany({ where: user.portalInstanceId ? { id: user.portalInstanceId } : {} }),
-    prisma.mailTemplate.findMany({ where: portalWhere(user) })
+    prisma.mailTemplate.findMany({ where: portalWhere(user) }),
+    prisma.serviceChargeRule.findMany({ where: { property: portalWhere(user) } }),
+    prisma.serviceChargeUnitAllocation.findMany({ where: { rule: { property: portalWhere(user) } } }),
+    prisma.serviceChargeStatementLine.findMany({ where: { rule: { property: portalWhere(user) } } }),
+    prisma.serviceChargeStatement.findMany({ where: { property: portalWhere(user) } })
   ]);
 
   const filePaths = Array.from(new Set([
@@ -69,7 +77,11 @@ export async function GET(request: NextRequest) {
     leaseContracts,
     auditLogs,
     portalInstances,
-    mailTemplates
+    mailTemplates,
+    serviceChargeRules,
+    serviceChargeUnitAllocations,
+    serviceChargeStatementLines,
+    serviceChargeStatements
   };
 
   const backup = {

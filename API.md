@@ -440,6 +440,37 @@ Zulaessige Methoden sind `AREA`, `FIXED_SHARE` und `EXTERNAL_STATEMENT`.
 Schreibzugriff erfordert Admin-Sitzung und Same-Origin. Einheitenschluessel
 werden gegen die ausgewaehlte, mandanteneigene Immobilie validiert.
 
+Positionen einer externen Hausverwaltungsabrechnung:
+
+```text
+POST   /api/service-charge-lines
+DELETE /api/service-charge-lines?id=<id>
+```
+
+Eine Position hat `description`, positiven `amount`, optional `unitId` und
+`sourceReference` sowie genau eine Behandlung: `ALLOCABLE`,
+`NON_ALLOCABLE` oder `RESERVE`. Nur `ALLOCABLE` fliesst in die
+Mieterabrechnung.
+
+Versionierte Abrechnungen:
+
+```text
+GET/POST /api/service-charge-statements
+PATCH   /api/service-charge-statements/{id}
+DELETE  /api/service-charge-statements/{id}
+GET     /api/service-charge-statements/{id}/pdf
+```
+
+`POST` erzeugt einen unveraenderlichen Snapshot aus Banking-Istdaten,
+Verteilerschluessel, Hausverwaltungspositionen und Mietzeitraeumen. Jede
+Erzeugung erhoeht `version` und speichert eine SHA-256-Pruefsumme. `PATCH`
+mit `{"status":"FINAL"}` schreibt eine Version fest. Nur Entwuerfe koennen
+ausgeblendet werden; festgeschriebene Versionen bleiben revisionsfest.
+
+Fuer native Clients gelten dieselben Vertraege unter
+`/api/integrations/v1/service-charge-statements`. Lesen/PDF benoetigt
+`read:properties`, Erzeugen/Festschreiben `write:properties`.
+
 `POST /api/agent/config` speichert den System-Prompt des Agenten:
 
 ```json

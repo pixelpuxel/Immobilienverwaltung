@@ -70,6 +70,10 @@ export async function importBackupFormData(form: FormData, user: BackupImportUse
     for (const row of t.contractTemplates || []) await tx.contractTemplate.upsert({ where: { id: row.id }, update: withPortal(row, user.portalInstanceId) as any, create: withPortal(row, user.portalInstanceId) as any });
     for (const row of t.mailTemplates || []) await upsertMailTemplate(tx, withPortal(row, user.portalInstanceId));
     for (const row of t.leaseContracts || []) await tx.leaseContract.upsert({ where: { id: row.id }, update: row as any, create: row as any });
+    for (const row of t.serviceChargeRules || []) await tx.serviceChargeRule.upsert({ where: { id: row.id }, update: withPortal(row, user.portalInstanceId) as any, create: withPortal(row, user.portalInstanceId) as any });
+    for (const row of t.serviceChargeUnitAllocations || []) await tx.serviceChargeUnitAllocation.upsert({ where: { id: row.id }, update: row as any, create: row as any });
+    for (const row of t.serviceChargeStatementLines || []) await tx.serviceChargeStatementLine.upsert({ where: { id: row.id }, update: withPortal(row, user.portalInstanceId) as any, create: withPortal(row, user.portalInstanceId) as any });
+    for (const row of t.serviceChargeStatements || []) await tx.serviceChargeStatement.upsert({ where: { id: row.id }, update: withPortal(row, user.portalInstanceId) as any, create: withPortal(row, user.portalInstanceId) as any });
     for (const row of t.brokerRequests || []) {
       await upsertBrokerRequest(tx, row);
     }
@@ -260,6 +264,9 @@ async function deletePortalData(tx: Prisma.TransactionClient, portalInstanceId?:
   await tx.brokerValuation.deleteMany({ where: { property: { portalInstanceId } } });
   await tx.brokerRequest.deleteMany({ where: { property: { portalInstanceId } } });
   await tx.leaseContract.deleteMany({ where: { template: { portalInstanceId } } });
+  await tx.serviceChargeStatement.deleteMany({ where: { portalInstanceId } });
+  await tx.serviceChargeStatementLine.deleteMany({ where: { portalInstanceId } });
+  await tx.serviceChargeRule.deleteMany({ where: { portalInstanceId } });
   await tx.contractTemplate.deleteMany({ where: { portalInstanceId } });
   await tx.tenantProfile.deleteMany({ where: { user: { portalInstanceId } } });
   await tx.document.deleteMany({ where: { portalInstanceId } });

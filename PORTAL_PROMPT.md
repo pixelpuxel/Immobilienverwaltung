@@ -148,6 +148,17 @@ docker compose up -d --build
   Nebenkostenbasis. Nur umlagefaehige Einzelpositionen werden auf Mieter
   verteilt; Positionen koennen bei mehreren Einheiten einer konkreten Einheit
   zugeordnet werden und behalten Quellen-/Seitenhinweise.
+- Eine Nebenkostenabrechnung wird als versionierter, unveraenderlicher
+  Snapshot gespeichert. Der Snapshot enthaelt Banking-Istdaten,
+  Verteilerschluessel, Einzelkosten, Mieterergebnisse, Erstellzeitpunkt und
+  SHA-256-Pruefsumme. Neue Berechnungen erzeugen neue Versionsnummern.
+  Entwuerfe duerfen ausgeblendet werden; festgeschriebene Versionen bleiben
+  sichtbar und unveraendert. Jede Version ist als geschuetztes,
+  druckfaehiges PDF abrufbar.
+- Web und native Clients greifen ueber die gleichen fachlichen
+  Abrechnungsvertraege zu. Integrationszugriff liegt unter
+  `/api/integrations/v1/service-charge-statements` und respektiert
+  Portal-Instanz, Rolle und Token-Scopes.
 - Mieter können minimal angelegt werden: Benutzername oder Vorname oder Nachname reicht; weitere Daten dürfen später ergänzt werden. Fehlermeldungen beim Speichern müssen konkrete Feldhinweise enthalten.
 - Einheiten enthalten Kaltmiete, Nebenkosten und Warmmiete.
 - Einheiten und Mieterprofile enthalten zusätzlich Tiefgarage/Garagenmiete.
