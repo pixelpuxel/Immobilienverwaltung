@@ -169,7 +169,7 @@ function text(value: string, x: number, y: number, size = 9, bold = false) {
 }
 
 function pdfText(value: string) {
-  return value
+  return value.normalize("NFC")
     .replace(/[–—]/g, "-")
     .replace(/[“”„]/g, '"')
     .replace(/[‘’]/g, "'")

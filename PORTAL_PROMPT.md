@@ -141,7 +141,8 @@ docker compose up -d --build
   Warnung.
 - Mietzeitraeume werden je Einheit als Zeitachse normalisiert: Ein spaeterer
   Einzug begrenzt einen widerspruechlich laenger laufenden historischen
-  Datensatz. Das Auszugsdatum ist der erste nicht mehr belegte Tag.
+  Datensatz. Das Auszugsdatum ist der letzte belegte Tag; ein direkt am
+  Folgetag beginnender Mieter erzeugt dadurch weder Luecke noch Doppelung.
   Mietprofile ohne Vertrags- oder Einzugsbeginn werden nicht geraten und
   nicht berechnet.
 - Das Abrechnungsergebnis je Mietverhaeltnis ist Kostenanteil minus

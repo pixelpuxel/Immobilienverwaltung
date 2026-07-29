@@ -192,7 +192,7 @@ function normalizedTenancyPeriods(data: ServiceChargeData) {
       .map((tenancy) => ({
         tenancy,
         start: parseDate(tenancy.move_in_date || tenancy.lease_start_date),
-        endExclusive: parseDate(tenancy.move_out_date)
+        endExclusive: addDay(parseDate(tenancy.move_out_date))
       }))
       .filter((item): item is typeof item & { start: number } => {
         if (item.start !== null) return true;
@@ -212,6 +212,10 @@ function normalizedTenancyPeriods(data: ServiceChargeData) {
     });
   }
   return { daysByTenant, clippedCount, missingStartCount };
+}
+
+function addDay(value: number | null) {
+  return value === null ? null : value + 86_400_000;
 }
 
 function isLeapYear(year: number) {
