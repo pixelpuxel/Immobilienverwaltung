@@ -41,6 +41,9 @@ Passwoerter und Tokenwerte gehoeren nicht in diese Datei.
 - Abrechnungsversionen bieten ein Admin-Gesamt-PDF und einzelne Mieter-PDFs.
   Mieterzugriff wird serverseitig an das eigene Mietprofil gebunden; ein
   Gesamtbericht oder fremdes Mieter-PDF ist fuer diese Rolle gesperrt.
+- Festgeschriebene Versionen werden automatisch im Mieterbereich des
+  enthaltenen Mietprofils angezeigt; ein manueller PDF-Upload ist nicht
+  erforderlich.
 - Backup und Restore enthalten Verteilerschluessel, Einzelkosten und
   Abrechnungsversionen.
 - Der Docker-Build fuehrt Prisma-Generierung, Vitest und Next-Build aus.

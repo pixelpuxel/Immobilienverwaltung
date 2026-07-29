@@ -173,6 +173,10 @@ docker compose up -d --build
   Mietverhaeltnis wird ein eigenes PDF angeboten. Ein Mieter darf
   serverseitig ausschliesslich sein eigenes Ergebnis abrufen; eine manipulierte
   Mietprofil-ID darf weder Namen noch Zahlen anderer Mieter offenlegen.
+- Festgeschriebene Abrechnungsversionen erscheinen ohne manuellen
+  Datei-Upload im Mieterbereich des jeweils enthaltenen Mietprofils. Sie
+  werden dort getrennt von allgemeinen Dokumenten nach Jahr und Version
+  angeboten.
 - Mieter können minimal angelegt werden: Benutzername oder Vorname oder Nachname reicht; weitere Daten dürfen später ergänzt werden. Fehlermeldungen beim Speichern müssen konkrete Feldhinweise enthalten.
 - Einheiten enthalten Kaltmiete, Nebenkosten und Warmmiete.
 - Einheiten und Mieterprofile enthalten zusätzlich Tiefgarage/Garagenmiete.

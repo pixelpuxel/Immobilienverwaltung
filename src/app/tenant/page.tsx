@@ -6,6 +6,7 @@ import { JsonForm } from "@/components/JsonForm";
 import { UploadForm } from "@/components/UploadForm";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { isServiceChargeStatementSnapshot } from "@/lib/service-charge-statement";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +49,19 @@ export default async function TenantPage() {
         include: { unit: { include: { property: true } }, template: true },
         orderBy: { createdAt: "desc" }
       })
+    : [];
+  const generatedUtilityStatements = profile?.unit?.propertyId
+    ? (await prisma.serviceChargeStatement.findMany({
+        where: {
+          propertyId: profile.unit.propertyId,
+          status: "FINAL",
+          deletedAt: null
+        },
+        orderBy: [{ year: "desc" }, { version: "desc" }]
+      })).filter((statement) =>
+        isServiceChargeStatementSnapshot(statement.snapshot)
+        && statement.snapshot.allocation.tenantResults.some((tenant) => tenant.tenantId === profile.id)
+      )
     : [];
   const utilityDocuments = documents.filter((document) => document.category?.name === "Nebenkostenabrechnungen");
   const otherDocuments = documents.filter((document) => document.category?.name !== "Nebenkostenabrechnungen");
@@ -102,6 +116,15 @@ export default async function TenantPage() {
             <p className="mt-1 text-sm text-muted">Jahresabrechnungen werden vom Eigentümer je Einheit bereitgestellt und bleiben hier getrennt von allgemeinen Dokumenten auffindbar.</p>
           </div>
           <div className="mt-4 grid gap-3">
+            {generatedUtilityStatements.map((statement) => (
+              <div className="grid gap-3 rounded-md bg-panel p-3 text-sm sm:grid-cols-[minmax(0,1fr)_130px]" key={statement.id}>
+                <div>
+                  <div className="font-semibold">Nebenkostenabrechnung {statement.year}</div>
+                  <div className="text-muted">Version {statement.version} · festgeschrieben am {formatDate(statement.finalizedAt)}</div>
+                </div>
+                <a className="button text-center" href={`/api/service-charge-statements/${statement.id}/pdf`}>PDF</a>
+              </div>
+            ))}
             {utilityDocuments.length ? utilityDocuments.map((document) => (
               <div className="grid gap-3 rounded-md bg-panel p-3 text-sm sm:grid-cols-[96px_minmax(0,1fr)_130px]" key={document.id}>
                 <DocumentThumbnail id={document.id} title={document.title} mimeType={document.mimeType} hasFile={Boolean(document.storagePath)} compact />
@@ -111,7 +134,8 @@ export default async function TenantPage() {
                 </div>
                 <a className="button text-center" href={`/api/documents/${document.id}/download`}>Download</a>
               </div>
-            )) : <div className="text-sm text-muted">Noch keine Nebenkostenabrechnung bereitgestellt.</div>}
+            )) : null}
+            {!generatedUtilityStatements.length && !utilityDocuments.length ? <div className="text-sm text-muted">Noch keine Nebenkostenabrechnung bereitgestellt.</div> : null}
           </div>
         </section>
       ) : null}
