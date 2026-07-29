@@ -245,3 +245,13 @@ docker compose up -d --build
 - `/audit`
 
 Diese Datei ist fortzuschreiben, sobald neue Features ergänzt oder bestehende Anforderungen korrigiert werden.
+
+## Betriebsregel fuer mehrere Deploy-Ziele
+
+`portal.schreiber.info` wird vom VPS `109.199.107.55` und dessen Repository
+`/opt/immobilienportal` ausgeliefert. Ein erfolgreicher NAS-Deploy allein
+aktualisiert die oeffentliche Domain nicht. Vor einem VPS-Deploy muessen
+lokale und VPS-Git-Historie zusammengefuehrt werden; keine Seite darf den
+anderen Zweig mit Reset oder Force-Push ueberschreiben. Danach sind
+Docker-Tests, Next-Build, Container-Neustart und ein oeffentlicher
+Routen-Smoke-Test verpflichtend.

@@ -51,3 +51,32 @@ Passwoerter und Tokenwerte gehoeren nicht in diese Datei.
 - Eine fruehere Dockerfile-Hilfe, die den kompletten `.next`-Routenbaum
   vorab erzeugte, verursachte reproduzierbare `mkdir`-Fehler in gecachten
   Docker-Layern. Sie wurde entfernt; Next erzeugt `.next` wieder selbst.
+
+## 29.07.2026 - Produktiver VPS-Merge und Abrechnungsentwurf Tirol 2025
+
+- Die oeffentliche Domain `portal.schreiber.info` zeigt auf den VPS
+  `109.199.107.55`. Der VPS-Zweig mit sechs MCP/OAuth-Commits und der lokale
+  Nebenkosten-Zweig hatten den gemeinsamen Stand `6acdc2c`. Beide Historien
+  wurden ohne Konflikte in Merge-Commit `b5d30e5` vereinigt, nach GitHub
+  gepusht und auf dem VPS gebaut.
+- Der autoritative Docker-Build bestand 18/18 Vitest-Tests, Typecheck,
+  Next.js-Produktionsbuild und Routengenerierung. Die neuen Web- und
+  Integrationsrouten fuer Abrechnungsversionen sind an der oeffentlichen
+  Domain aktiv.
+- In der VPS-Produktivdatenbank wurde fuer Tirolergasse 2025 die bestaetigte
+  Flaechenregel gespeichert: WG 1 `18,4`, WG 2 `18,4`, Dachgeschoss `23,8`,
+  zusammen `60,6 m2`; das autarke Ladengeschaeft hat Anteil `0`.
+- Das Portal verwendet einen dedizierten, unbegrenzten Banking-Lesetoken.
+  Der Token wird serverseitig gespeichert und niemals ausgegeben.
+- Abrechnungsentwurf Version 1 (`DRAFT`) wurde mit SHA-256-Pruefsumme
+  `ab62230e3d533dfc6925ec9097aa6c38bdebb33075d78c91fb09dfef8712898b`
+  erzeugt. Er enthaelt `6.239,75 EUR` umlagefaehige Kosten und
+  `4.434,00 EUR` Vorauszahlungen.
+- Visuelle PDF-Pruefung: eine A4-Seite, keine Ueberlaeufe, korrekte Umlaute,
+  Zeitraeume und Summen. Der Entwurf bleibt bewusst unveroeffentlicht.
+- Offener fachlicher Pruefpunkt: Jonas Dittmann ist fuer 92 Tage enthalten,
+  aber in den vorhandenen Bankdaten existiert von Oktober bis Dezember 2025
+  kein Zahlungseingang von ihm und kein plausibler alternativer
+  574-EUR-Eingang. Deshalb weist der Entwurf `0 EUR` Vorauszahlung und
+  `477,54 EUR` Nachzahlung aus. Vor `FINAL` muss dies fachlich bestaetigt
+  oder durch weitere Bankdaten korrigiert werden.
