@@ -45,3 +45,6 @@ Passwoerter und Tokenwerte gehoeren nicht in diese Datei.
   Abrechnungsversionen.
 - Der Docker-Build fuehrt Prisma-Generierung, Vitest und Next-Build aus.
   Erst ein erfolgreicher Build wird auf dem NAS gestartet.
+- Eine fruehere Dockerfile-Hilfe, die den kompletten `.next`-Routenbaum
+  vorab erzeugte, verursachte reproduzierbare `mkdir`-Fehler in gecachten
+  Docker-Layern. Sie wurde entfernt; Next erzeugt `.next` wieder selbst.

@@ -17,9 +17,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npx prisma generate
 RUN npm test -- --run
-RUN rm -rf .next \
-  && mkdir -p .next/cache .next/static/chunks/app .next/types/app .next/server/app \
-  && find src/app -type d -exec sh -c 'route="${1#src/}"; mkdir -p ".next/types/$route" ".next/static/chunks/$route" ".next/server/$route"' _ {} \;
+RUN rm -rf .next
 RUN npm run build
 
 FROM node:20-bookworm-slim AS runner
