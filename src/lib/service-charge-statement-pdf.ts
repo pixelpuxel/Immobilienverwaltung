@@ -86,6 +86,10 @@ export function renderServiceChargeStatementPdf(input: {
     write("Pruefhinweise", { size: 12, bold: true, gap: 18 });
     allocation.warnings.forEach((warning) => write(`- ${warning}`));
   }
+  if ((allocation.blockingWarnings || []).length) {
+    write("Abschluss blockiert", { size: 12, bold: true, gap: 18 });
+    (allocation.blockingWarnings || []).forEach((warning) => write(`- ${warning}`));
+  }
 
   pages.forEach((page, index) => {
     page.push(text(`Seite ${index + 1} von ${pages.length}`, 480, 28, 7));

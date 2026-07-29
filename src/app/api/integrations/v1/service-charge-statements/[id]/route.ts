@@ -4,6 +4,7 @@ import { auditLog } from "@/lib/audit";
 import { requireAdminIntegration, requireIntegrationUser } from "@/lib/integration-auth";
 import { portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
+import { isServiceChargeStatementSnapshot } from "@/lib/service-charge-statement";
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   const { user, response } = await requireIntegrationUser(request, ["write:properties"]);
@@ -16,6 +17,15 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     where: { id: params.id, deletedAt: null, property: portalWhere(user) }
   });
   if (!current) return NextResponse.json({ error: "Abrechnung nicht gefunden." }, { status: 404 });
+  if (!isServiceChargeStatementSnapshot(current.snapshot)) {
+    return NextResponse.json({ error: "Abrechnungssnapshot ist ungueltig." }, { status: 422 });
+  }
+  if (current.snapshot.allocation.blockingWarnings?.length) {
+    return NextResponse.json({
+      error: "Abrechnung enthaelt blockierende Pruefhinweise.",
+      warnings: current.snapshot.allocation.blockingWarnings
+    }, { status: 409 });
+  }
   const item = await prisma.serviceChargeStatement.update({
     where: { id: current.id },
     data: { status: "FINAL", finalizedAt: current.finalizedAt || new Date() }

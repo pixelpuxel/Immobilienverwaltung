@@ -139,6 +139,11 @@ docker compose up -d --build
   sie duerfen nicht durch Normalisierung auf die verbleibenden Mieter
   umgelegt werden. Ueberschneidende Mietzeiten einer Einheit erzeugen eine
   Warnung.
+- Mietzeitraeume werden je Einheit als Zeitachse normalisiert: Ein spaeterer
+  Einzug begrenzt einen widerspruechlich laenger laufenden historischen
+  Datensatz. Das Auszugsdatum ist der erste nicht mehr belegte Tag.
+  Mietprofile ohne Vertrags- oder Einzugsbeginn werden nicht geraten und
+  nicht berechnet.
 - Das Abrechnungsergebnis je Mietverhaeltnis ist Kostenanteil minus
   tatsaechlich kontierte Nebenkostenvorauszahlung. Positiv bedeutet
   Nachzahlung, negativ Guthaben.
@@ -155,6 +160,10 @@ docker compose up -d --build
   Entwuerfe duerfen ausgeblendet werden; festgeschriebene Versionen bleiben
   sichtbar und unveraendert. Jede Version ist als geschuetztes,
   druckfaehiges PDF abrufbar.
+- Festschreiben ist gesperrt, solange blockierende Pruefhinweise bestehen,
+  insbesondere fehlender Verteilerschluessel, nicht zugeordnete
+  Gesamtobjektkosten, fehlende externe Kostenpositionen, Restueberschneidungen
+  oder vollstaendig fehlende Kosten und Vorauszahlungen.
 - Web und native Clients greifen ueber die gleichen fachlichen
   Abrechnungsvertraege zu. Integrationszugriff liegt unter
   `/api/integrations/v1/service-charge-statements` und respektiert

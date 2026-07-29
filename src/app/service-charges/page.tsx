@@ -211,6 +211,9 @@ function ServiceChargePreview({ data, rule }: { data: ServiceChargeData; rule: A
         {allocation.warnings.map((warning) => (
           <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" key={warning}>{warning}</div>
         ))}
+        {allocation.blockingWarnings.map((warning) => (
+          <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-900" key={warning}>{warning}</div>
+        ))}
         {allocation.tenantResults.length ? (
           <div className="mt-5 overflow-x-auto">
             <table className="min-w-full text-sm">

@@ -17,7 +17,7 @@ function fixture(overrides?: Partial<ServiceChargeData>): ServiceChargeData {
         display_name: "Mieter Eins",
         lease_start_date: "2025-01-01",
         move_in_date: "2025-01-01",
-        move_out_date: "2025-12-31",
+        move_out_date: "",
         rent_amount: "500",
         garage_rent: "0",
         service_charges: "100",
@@ -30,7 +30,7 @@ function fixture(overrides?: Partial<ServiceChargeData>): ServiceChargeData {
         display_name: "Mieter Zwei",
         lease_start_date: "2025-01-01",
         move_in_date: "2025-01-01",
-        move_out_date: "2025-12-31",
+        move_out_date: "",
         rent_amount: "700",
         garage_rent: "0",
         service_charges: "200",
@@ -80,6 +80,23 @@ describe("service charge allocation", () => {
       unitValues: { "unit-1": 50, "unit-2": 50 }
     });
     expect(result.tenantResults.map((item) => item.allocatedCosts)).toEqual([600, 600]);
+  });
+
+  it("clips an older tenant at the following move-in date", () => {
+    const data = fixture();
+    data.tenancies = [
+      { ...data.tenancies[0], external_id: "old", move_in_date: "2023-01-01", move_out_date: "2025-12-31" },
+      { ...data.tenancies[0], external_id: "new", move_in_date: "2025-10-01", move_out_date: "" }
+    ];
+    const result = calculateServiceChargeAllocation(data, {
+      method: "AREA",
+      totalDistributionValue: 20,
+      unitValues: { "unit-1": 20 }
+    });
+    expect(result.tenantResults.map((item) => item.occupiedDays)).toEqual([273, 92]);
+    expect(result.allocatedToTenants).toBe(1200);
+    expect(result.blockingWarnings).toEqual([]);
+    expect(result.warnings[0]).toContain("Folgemieters");
   });
 
   it("uses only allocable external statement lines and ignores bank house-money payments", () => {

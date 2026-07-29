@@ -17,6 +17,7 @@ const snapshot: ServiceChargeStatementSnapshot = {
     ownerShare: 0,
     totalPrepayments: 1000,
     warnings: [],
+    blockingWarnings: [],
     tenantResults: [{
       tenantId: "tenant-1",
       unitId: "unit-1",

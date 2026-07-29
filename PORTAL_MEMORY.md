@@ -29,6 +29,11 @@ Passwoerter und Tokenwerte gehoeren nicht in diese Datei.
   Mieterergebnissen und geschuetztem PDF gespeichert.
 - Entwuerfe koennen ausgeblendet werden. Festgeschriebene Versionen bleiben
   revisionsfest; geaenderte Eingangsdaten fuehren zu einer neuen Version.
+- Die visuelle PDF-Pruefung deckte historische WG-Datensaetze mit zu spaetem
+  gemeinsamem Auszugsdatum auf. Die Berechnung normalisiert deshalb je
+  Einheit eine chronologische Zeitachse: Der naechste Einzug beendet den
+  vorherigen Zeitraum. Profile ohne Beginn werden ignoriert und gemeldet.
+  Blockierende Hinweise verhindern das Festschreiben.
 - Native Clients verwenden die Endpunkte unter
   `/api/integrations/v1/service-charge-statements`. Die iPhone-Handoff-Doku
   wird parallel im Repository `iPhone-Banking` aktualisiert.

@@ -35,6 +35,7 @@ export type AllocationResult = {
   totalPrepayments: number;
   tenantResults: TenantAllocation[];
   warnings: string[];
+  blockingWarnings: string[];
 };
 
 export function calculateServiceChargeAllocation(
@@ -43,6 +44,17 @@ export function calculateServiceChargeAllocation(
 ): AllocationResult {
   const costs = Math.abs(toNumber(data.allocable_costs.total));
   const warnings: string[] = [];
+  const blockingWarnings: string[] = [];
+  const periods = normalizedTenancyPeriods(data);
+  if (periods.clippedCount) {
+    warnings.push(`${periods.clippedCount} historische Mietzeitraeume wurden am Beginn des jeweiligen Folgemieters begrenzt.`);
+  }
+  if (periods.missingStartCount) {
+    warnings.push(`${periods.missingStartCount} Mietprofile ohne Einzugs- oder Vertragsbeginn wurden nicht in die Abrechnung einbezogen.`);
+  }
+  if (costs === 0 && Math.abs(toNumber(data.service_charge_prepayments.total)) === 0) {
+    blockingWarnings.push("Es sind weder umlagefaehige Kosten noch Nebenkostenvorauszahlungen kontiert.");
+  }
   if (rule.method === "EXTERNAL_STATEMENT") {
     const allocableLines = (rule.statementLines || []).filter((line) => line.treatment === "ALLOCABLE");
     const externalCosts = roundMoney(allocableLines.reduce((sum, line) => sum + Math.abs(line.amount), 0));
@@ -52,10 +64,10 @@ export function calculateServiceChargeAllocation(
       .filter((line) => !line.unitId)
       .reduce((sum, line) => sum + Math.abs(line.amount), 0);
     if (unassignedCosts && unitIds.size > 1) {
-      warnings.push("Kosten fuer das Gesamtobjekt muessen bei mehreren Einheiten einer Einheit zugeordnet werden.");
+      blockingWarnings.push("Kosten fuer das Gesamtobjekt muessen bei mehreren Einheiten einer Einheit zugeordnet werden.");
     }
     const tenantResults = data.tenancies.map((tenancy) => {
-      const occupiedDays = overlapDays(data.year, tenancy.move_in_date || tenancy.lease_start_date, tenancy.move_out_date);
+      const occupiedDays = periods.daysByTenant.get(tenancy.external_id) || 0;
       const unitCosts = allocableLines
         .filter((line) => line.unitId === tenancy.unit_external_id || (!line.unitId && unitIds.size === 1))
         .reduce((sum, line) => sum + Math.abs(line.amount), 0);
@@ -74,10 +86,10 @@ export function calculateServiceChargeAllocation(
         actualPrepayments,
         result: roundMoney(allocatedCosts - actualPrepayments)
       };
-    });
+    }).filter((item) => item.occupiedDays > 0);
     const allocatedToTenants = roundMoney(tenantResults.reduce((sum, item) => sum + item.allocatedCosts, 0));
     const totalPrepayments = roundMoney(tenantResults.reduce((sum, item) => sum + item.actualPrepayments, 0));
-    if (!allocableLines.length) warnings.push("Noch keine umlagefaehigen Positionen aus der Hausverwaltungsabrechnung erfasst.");
+    if (!allocableLines.length) blockingWarnings.push("Noch keine umlagefaehigen Positionen aus der Hausverwaltungsabrechnung erfasst.");
     return {
       method: rule.method,
       allocableCosts: externalCosts,
@@ -85,7 +97,8 @@ export function calculateServiceChargeAllocation(
       ownerShare: roundMoney(externalCosts - allocatedToTenants),
       totalPrepayments,
       tenantResults,
-      warnings
+      warnings,
+      blockingWarnings
     };
   }
   const yearDays = isLeapYear(data.year) ? 366 : 365;
@@ -98,15 +111,11 @@ export function calculateServiceChargeAllocation(
     ? rule.totalDistributionValue
     : Object.values(unitValues).reduce((sum, value) => sum + Math.max(0, value), 0);
   if (totalDistributionValue <= 0) {
-    warnings.push("Die gesamte Verteilerflaeche beziehungsweise Anteilssumme fehlt.");
+    blockingWarnings.push("Die gesamte Verteilerflaeche beziehungsweise Anteilssumme fehlt.");
   }
   const occupiedByUnit = new Map<string, number>();
   const tenantResults = data.tenancies.map((tenancy) => {
-    const occupiedDays = overlapDays(
-      data.year,
-      tenancy.move_in_date || tenancy.lease_start_date,
-      tenancy.move_out_date
-    );
+    const occupiedDays = periods.daysByTenant.get(tenancy.external_id) || 0;
     occupiedByUnit.set(
       tenancy.unit_external_id,
       (occupiedByUnit.get(tenancy.unit_external_id) || 0) + occupiedDays
@@ -129,10 +138,10 @@ export function calculateServiceChargeAllocation(
       actualPrepayments,
       result: roundMoney(allocatedCosts - actualPrepayments)
     };
-  });
+  }).filter((item) => item.occupiedDays > 0);
   for (const [unitId, days] of occupiedByUnit) {
     if (days > yearDays) {
-      warnings.push(`Einheit ${unitId} hat sich ueberschneidende Mietzeitraeume (${days} Belegungstage).`);
+      blockingWarnings.push(`Einheit ${unitId} hat trotz Zeitachsenbereinigung ueberschneidende Mietzeitraeume (${days} Belegungstage).`);
     }
   }
   const allocatedToTenants = roundMoney(
@@ -148,25 +157,61 @@ export function calculateServiceChargeAllocation(
     ownerShare: roundMoney(costs - allocatedToTenants),
     totalPrepayments,
     tenantResults,
-    warnings
+    warnings,
+    blockingWarnings
   };
 }
 
-function overlapDays(year: number, rawStart: string, rawEnd: string) {
+function overlapDaysExclusive(year: number, rawStart: number, rawEndExclusive: number) {
   const yearStart = Date.UTC(year, 0, 1);
-  const yearEnd = Date.UTC(year, 11, 31);
-  const parsedStart = parseDate(rawStart) ?? yearStart;
-  const parsedEnd = parseDate(rawEnd) ?? yearEnd;
-  const start = Math.max(yearStart, parsedStart);
-  const end = Math.min(yearEnd, parsedEnd);
-  if (end < start) return 0;
-  return Math.floor((end - start) / 86_400_000) + 1;
+  const yearEndExclusive = Date.UTC(year + 1, 0, 1);
+  const start = Math.max(yearStart, rawStart);
+  const endExclusive = Math.min(yearEndExclusive, rawEndExclusive);
+  if (endExclusive <= start) return 0;
+  return Math.floor((endExclusive - start) / 86_400_000);
 }
 
 function parseDate(value: string) {
   if (!/^\d{4}-\d{2}-\d{2}/.test(value || "")) return null;
   const parsed = Date.parse(value.slice(0, 10) + "T00:00:00Z");
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizedTenancyPeriods(data: ServiceChargeData) {
+  const daysByTenant = new Map<string, number>();
+  let clippedCount = 0;
+  let missingStartCount = 0;
+  const byUnit = new Map<string, typeof data.tenancies>();
+  for (const tenancy of data.tenancies) {
+    const group = byUnit.get(tenancy.unit_external_id) || [];
+    group.push(tenancy);
+    byUnit.set(tenancy.unit_external_id, group);
+  }
+  for (const tenancies of byUnit.values()) {
+    const valid = tenancies
+      .map((tenancy) => ({
+        tenancy,
+        start: parseDate(tenancy.move_in_date || tenancy.lease_start_date),
+        endExclusive: parseDate(tenancy.move_out_date)
+      }))
+      .filter((item): item is typeof item & { start: number } => {
+        if (item.start !== null) return true;
+        missingStartCount += 1;
+        daysByTenant.set(item.tenancy.external_id, 0);
+        return false;
+      })
+      .sort((a, b) => a.start - b.start || a.tenancy.external_id.localeCompare(b.tenancy.external_id));
+    valid.forEach((item, index) => {
+      const nextStart = valid[index + 1]?.start ?? null;
+      let endExclusive = item.endExclusive ?? Number.POSITIVE_INFINITY;
+      if (nextStart !== null && nextStart < endExclusive) {
+        endExclusive = nextStart;
+        clippedCount += 1;
+      }
+      daysByTenant.set(item.tenancy.external_id, overlapDaysExclusive(data.year, item.start, endExclusive));
+    });
+  }
+  return { daysByTenant, clippedCount, missingStartCount };
 }
 
 function isLeapYear(year: number) {

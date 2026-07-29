@@ -5,6 +5,7 @@ import { assertSameOrigin, clientIp, requireApiUser } from "@/lib/auth";
 import { auditLog } from "@/lib/audit";
 import { portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
+import { isServiceChargeStatementSnapshot } from "@/lib/service-charge-statement";
 
 const updateSchema = z.object({ status: z.literal("FINAL") });
 
@@ -18,6 +19,15 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     where: { id: params.id, deletedAt: null, property: portalWhere(user) }
   });
   if (!current) return NextResponse.json({ error: "Abrechnung nicht gefunden." }, { status: 404 });
+  if (!isServiceChargeStatementSnapshot(current.snapshot)) {
+    return NextResponse.json({ error: "Abrechnungssnapshot ist ungueltig." }, { status: 422 });
+  }
+  if (current.snapshot.allocation.blockingWarnings?.length) {
+    return NextResponse.json({
+      error: "Abrechnung enthaelt blockierende Pruefhinweise.",
+      warnings: current.snapshot.allocation.blockingWarnings
+    }, { status: 409 });
+  }
   const statement = await prisma.serviceChargeStatement.update({
     where: { id: current.id },
     data: { status: "FINAL", finalizedAt: current.finalizedAt || new Date() }
@@ -38,9 +48,13 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
   const user = await requireApiUser(request, [Role.ADMIN]);
   if (!user) return NextResponse.json({ error: "Nicht angemeldet." }, { status: 401 });
   const current = await prisma.serviceChargeStatement.findFirst({
-    where: { id: params.id, status: "DRAFT", deletedAt: null, property: portalWhere(user) }
+    where: { id: params.id, deletedAt: null, property: portalWhere(user) }
   });
-  if (!current) return NextResponse.json({ error: "Nur Entwuerfe koennen ausgeblendet werden." }, { status: 409 });
+  if (!current) return NextResponse.json({ error: "Abrechnung nicht gefunden." }, { status: 404 });
+  const finalConfirmed = request.nextUrl.searchParams.get("confirm") === "DELETE_FINAL";
+  if (current.status === "FINAL" && !finalConfirmed) {
+    return NextResponse.json({ error: "Festgeschriebene Version erfordert confirm=DELETE_FINAL." }, { status: 409 });
+  }
   await prisma.serviceChargeStatement.update({ where: { id: current.id }, data: { deletedAt: new Date() } });
   await auditLog({
     userId: user.id,
