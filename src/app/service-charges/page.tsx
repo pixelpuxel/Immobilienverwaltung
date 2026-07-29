@@ -254,24 +254,92 @@ function ServiceChargePreview({
       <section className="overflow-hidden rounded-lg border border-line bg-white">
         <div className="border-b border-line p-4">
           <h2 className="text-xl font-bold">Mietverhaeltnisse und Vorauszahlungen</h2>
-          <p className="mt-1 text-sm text-muted">Die Werte sind kontierte Ist-Zahlungen. Umlageschluessel werden erst im Portal angewendet.</p>
+          <p className="mt-1 text-sm text-muted">Abrechnungsrelevante Mietverhaeltnisse fuer {data.year}. Die Werte sind kontierte Ist-Zahlungen.</p>
         </div>
         <div className="divide-y divide-line">
-          {data.tenancies.map((tenancy) => (
-            <div className="grid gap-2 p-4 text-sm md:grid-cols-[minmax(180px,1fr)_minmax(140px,1fr)_150px]" key={tenancy.external_id}>
-              <div><div className="font-bold">{tenancy.display_name}</div><div className="text-muted">{tenancy.move_in_date || tenancy.lease_start_date} bis {tenancy.move_out_date || "laufend"}</div></div>
-              <div className="text-muted">Vertragliche NK: {money(Number(tenancy.service_charges || 0))} / Monat</div>
-              <div className="font-bold md:text-right">{money(Number(tenancy.actual_service_charge_prepayments || 0))}</div>
-            </div>
+          {relevantTenancies(data).map((tenancy) => (
+            <TenancyRow data={data} key={tenancy.external_id} tenancy={tenancy} />
           ))}
-          {!data.tenancies.length ? <div className="p-4 text-sm text-muted">Keine passenden Mietverhaeltnisse.</div> : null}
+          {!relevantTenancies(data).length ? <div className="p-4 text-sm text-muted">Keine Mietverhaeltnisse im gewaehlten Abrechnungsjahr.</div> : null}
         </div>
+        {historicalTenancies(data).length ? (
+          <details className="border-t border-line">
+            <summary className="cursor-pointer p-4 text-sm font-semibold text-muted">
+              Fruehere, fuer {data.year} nicht relevante Mietverhaeltnisse ({historicalTenancies(data).length})
+            </summary>
+            <div className="divide-y divide-line border-t border-line bg-panel/50">
+              {historicalTenancies(data).map((tenancy) => (
+                <TenancyRow data={data} historical key={tenancy.external_id} tenancy={tenancy} />
+              ))}
+            </div>
+          </details>
+        ) : null}
       </section>
 
       <LineTable title="Umlagefaehige Kosten" lines={data.allocable_costs.items} bankingBaseUrl={bankingBaseUrl} />
       <LineTable title="Nebenkostenvorauszahlungen" lines={data.service_charge_prepayments.items} bankingBaseUrl={bankingBaseUrl} />
     </div>
   );
+}
+
+function TenancyRow({
+  data,
+  tenancy,
+  historical = false
+}: {
+  data: ServiceChargeData;
+  tenancy: ServiceChargeData["tenancies"][number];
+  historical?: boolean;
+}) {
+  const unit = data.units.find((item) => item.external_id === tenancy.unit_external_id);
+  return (
+    <div className={`grid gap-3 p-4 text-sm md:grid-cols-[minmax(220px,1fr)_minmax(180px,0.8fr)_150px_auto] md:items-center ${historical ? "opacity-75" : ""}`}>
+      <div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-bold">{tenancy.display_name}</span>
+          {!historical ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-800">Im Abrechnungsjahr relevant</span> : null}
+        </div>
+        <div className="mt-1 text-muted">
+          {unit?.name || "Einheit ohne Bezeichnung"} · {formatDate(tenancy.move_in_date || tenancy.lease_start_date)} bis {tenancy.move_out_date ? formatDate(tenancy.move_out_date) : "laufend"}
+        </div>
+      </div>
+      <div className="text-muted">
+        <div>Vertragliche Kaltmiete: {money(Number(tenancy.rent_amount || 0))} / Monat</div>
+        <div>Vertragliche NK: {money(Number(tenancy.service_charges || 0))} / Monat</div>
+      </div>
+      <div>
+        <div className="text-xs font-bold uppercase text-muted">Ist-Vorauszahlungen</div>
+        <div className="font-bold md:text-right">{money(Number(tenancy.actual_service_charge_prepayments || 0))}</div>
+      </div>
+      <Link className="button button-secondary text-center" href={`/users?tenantId=${encodeURIComponent(tenancy.external_id)}`}>
+        Mietverhaeltnis bearbeiten
+      </Link>
+    </div>
+  );
+}
+
+function tenancyOverlapsYear(tenancy: ServiceChargeData["tenancies"][number], year: number) {
+  const start = (tenancy.move_in_date || tenancy.lease_start_date || "").slice(0, 10);
+  const end = (tenancy.move_out_date || "").slice(0, 10);
+  const yearStart = `${year}-01-01`;
+  const yearEnd = `${year}-12-31`;
+  return (!start || start <= yearEnd) && (!end || end >= yearStart);
+}
+
+function relevantTenancies(data: ServiceChargeData) {
+  return data.tenancies
+    .filter((tenancy) => tenancyOverlapsYear(tenancy, data.year))
+    .sort((left, right) => {
+      const leftOpen = left.move_out_date ? 1 : 0;
+      const rightOpen = right.move_out_date ? 1 : 0;
+      return leftOpen - rightOpen || left.display_name.localeCompare(right.display_name, "de");
+    });
+}
+
+function historicalTenancies(data: ServiceChargeData) {
+  return data.tenancies
+    .filter((tenancy) => !tenancyOverlapsYear(tenancy, data.year))
+    .sort((left, right) => (right.move_out_date || "").localeCompare(left.move_out_date || ""));
 }
 
 function serviceChargeRuleInput(

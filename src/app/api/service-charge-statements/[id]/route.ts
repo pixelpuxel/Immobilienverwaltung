@@ -1,44 +1,94 @@
-import { Role } from "@prisma/client";
+import { AuditAction, Role } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiUser } from "@/lib/auth";
+import { z } from "zod";
+import { assertSameOrigin, clientIp, requireApiUser } from "@/lib/auth";
+import { auditLog } from "@/lib/audit";
 import { portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 import { isServiceChargeStatementSnapshot } from "@/lib/service-charge-statement";
-import { renderServiceChargeStatementPdf, serviceChargeStatementPdfFilename } from "@/lib/service-charge-statement-pdf";
+
+const updateSchema = z.object({ status: z.literal("FINAL") });
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
-  const user = await requireApiUser(request);
+  const user = await requireApiUser(request, [Role.ADMIN]);
   if (!user) return NextResponse.json({ error: "Nicht angemeldet." }, { status: 401 });
   const statement = await prisma.serviceChargeStatement.findFirst({
-    where: { id: params.id, deletedAt: null, property: portalWhere(user) }
+    where: { id: params.id, deletedAt: null, property: portalWhere(user) },
+    include: {
+      property: { select: { name: true, address: true } },
+      createdBy: { select: { name: true, email: true } }
+    }
   });
   if (!statement || !isServiceChargeStatementSnapshot(statement.snapshot)) {
     return NextResponse.json({ error: "Abrechnung nicht gefunden oder ungueltig." }, { status: 404 });
   }
-  let tenantId = request.nextUrl.searchParams.get("tenantId") || "";
-  if (user.role === Role.TENANT) {
-    const profile = await prisma.tenantProfile.findUnique({ where: { userId: user.id }, select: { id: true } });
-    if (!profile) return NextResponse.json({ error: "Kein Mietprofil vorhanden." }, { status: 403 });
-    tenantId = profile.id;
-  } else if (user.role !== Role.ADMIN) {
-    return NextResponse.json({ error: "Nicht erlaubt." }, { status: 403 });
-  }
-  const tenant = tenantId
-    ? statement.snapshot.allocation.tenantResults.find((item) => item.tenantId === tenantId)
-    : null;
-  if (tenantId && !tenant) return NextResponse.json({ error: "Mietverhaeltnis gehoert nicht zu dieser Abrechnung." }, { status: 403 });
-  const pdf = renderServiceChargeStatementPdf({
-    snapshot: statement.snapshot,
+  return NextResponse.json({
+    id: statement.id,
     version: statement.version,
     status: statement.status,
     checksum: statement.checksum,
-    tenantId: tenant?.tenantId
+    createdAt: statement.createdAt,
+    finalizedAt: statement.finalizedAt,
+    createdBy: statement.createdBy.name || statement.createdBy.email,
+    property: statement.property,
+    snapshot: statement.snapshot
   });
-  return new NextResponse(new Uint8Array(pdf), {
-    headers: {
-      "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="${encodeURIComponent(serviceChargeStatementPdfFilename(statement.snapshot, statement.version, tenant?.tenantName))}"`,
-      "Cache-Control": "private, no-store"
-    }
+}
+
+export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
+  if (!assertSameOrigin(request)) return NextResponse.json({ error: "CSRF-Schutz." }, { status: 403 });
+  const user = await requireApiUser(request, [Role.ADMIN]);
+  if (!user) return NextResponse.json({ error: "Nicht angemeldet." }, { status: 401 });
+  const parsed = updateSchema.safeParse(await request.json().catch(() => ({})));
+  if (!parsed.success) return NextResponse.json({ error: "Ungueltiger Status." }, { status: 400 });
+  const current = await prisma.serviceChargeStatement.findFirst({
+    where: { id: params.id, deletedAt: null, property: portalWhere(user) }
   });
+  if (!current) return NextResponse.json({ error: "Abrechnung nicht gefunden." }, { status: 404 });
+  if (!isServiceChargeStatementSnapshot(current.snapshot)) {
+    return NextResponse.json({ error: "Abrechnungssnapshot ist ungueltig." }, { status: 422 });
+  }
+  if (current.snapshot.allocation.blockingWarnings?.length) {
+    return NextResponse.json({
+      error: "Abrechnung enthaelt blockierende Pruefhinweise.",
+      warnings: current.snapshot.allocation.blockingWarnings
+    }, { status: 409 });
+  }
+  const statement = await prisma.serviceChargeStatement.update({
+    where: { id: current.id },
+    data: { status: "FINAL", finalizedAt: current.finalizedAt || new Date() }
+  });
+  await auditLog({
+    userId: user.id,
+    action: AuditAction.PROPERTY_CHANGED,
+    entity: "ServiceChargeStatement",
+    entityId: statement.id,
+    ipAddress: clientIp(request),
+    detail: { operation: "finalized", version: statement.version, checksum: statement.checksum }
+  });
+  return NextResponse.json({ id: statement.id, status: statement.status, finalizedAt: statement.finalizedAt });
+}
+
+export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+  if (!assertSameOrigin(request)) return NextResponse.json({ error: "CSRF-Schutz." }, { status: 403 });
+  const user = await requireApiUser(request, [Role.ADMIN]);
+  if (!user) return NextResponse.json({ error: "Nicht angemeldet." }, { status: 401 });
+  const current = await prisma.serviceChargeStatement.findFirst({
+    where: { id: params.id, deletedAt: null, property: portalWhere(user) }
+  });
+  if (!current) return NextResponse.json({ error: "Abrechnung nicht gefunden." }, { status: 404 });
+  const finalConfirmed = request.nextUrl.searchParams.get("confirm") === "DELETE_FINAL";
+  if (current.status === "FINAL" && !finalConfirmed) {
+    return NextResponse.json({ error: "Festgeschriebene Version erfordert confirm=DELETE_FINAL." }, { status: 409 });
+  }
+  await prisma.serviceChargeStatement.update({ where: { id: current.id }, data: { deletedAt: new Date() } });
+  await auditLog({
+    userId: user.id,
+    action: AuditAction.PROPERTY_CHANGED,
+    entity: "ServiceChargeStatement",
+    entityId: current.id,
+    ipAddress: clientIp(request),
+    detail: { operation: "deleted", version: current.version }
+  });
+  return NextResponse.json({ deleted: true });
 }

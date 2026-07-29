@@ -44,6 +44,10 @@ export function renderServiceChargeStatementPdf(input: {
   const statementLines = selectedTenant
     ? input.snapshot.statementLines.filter((line) => !line.unitId || line.unitId === selectedTenant.unitId)
     : input.snapshot.statementLines;
+  const unitNames = new Map(
+    (input.snapshot.source.bankingDetails?.units || []).map((unit) => [unit.external_id, unit.name])
+  );
+  const unitName = (id: string) => unitNames.get(id) || "Einheit ohne Bezeichnung";
 
   write(selectedTenant ? `Nebenkostenabrechnung - ${selectedTenant.tenantName}` : "Nebenkostenabrechnung", { size: 18, bold: true, gap: 25 });
   write(`${input.snapshot.property.name} - ${input.snapshot.property.address}`, { size: 11, bold: true });
@@ -52,7 +56,7 @@ export function renderServiceChargeStatementPdf(input: {
   write("Abrechnungsgrundlage", { size: 12, bold: true, gap: 18 });
   write(methodLabel(input.snapshot.method));
   if (rule.note) write(`Hinweis: ${rule.note}`);
-  write(`Verteilerwert gesamt: ${number(rule.totalDistributionValue)} | Einheiten: ${Object.entries(rule.unitValues).map(([unit, value]) => `${unit} = ${number(value)}`).join(", ") || "-"}`);
+  write(`Verteilerwert gesamt: ${number(rule.totalDistributionValue)} | Einheiten: ${Object.entries(rule.unitValues).map(([unit, value]) => `${unitName(unit)} = ${number(value)}`).join(", ") || "-"}`);
   y -= 5;
 
   write("Zusammenfassung", { size: 12, bold: true, gap: 18 });
@@ -98,7 +102,7 @@ export function renderServiceChargeStatementPdf(input: {
       : details.tenancies;
     write("Vertrags- und Mietkontext", { size: 12, bold: true, gap: 18 });
     relevantTenancies.forEach((tenant) => {
-      write(`${tenant.display_name} | Einheit ${tenant.unit_external_id}`, { bold: true });
+      write(`${tenant.display_name} | ${unitName(tenant.unit_external_id)}`, { bold: true });
       write(
         `Zeitraum ${date(tenant.move_in_date || tenant.lease_start_date)} bis ${tenant.move_out_date ? date(tenant.move_out_date) : "laufend"}`
         + ` | Kaltmiete ${money(Number(tenant.rent_amount || 0))}`
@@ -114,10 +118,10 @@ export function renderServiceChargeStatementPdf(input: {
       if (tenantOnly) return line.tenant_external_id === selectedTenant.tenantId;
       return !line.unit_external_id || line.unit_external_id === selectedTenant.unitId;
     });
-    bankingSection("Umlagefaehige Bank-Kosten", relevant(details.allocableCosts), write, ensure, current, () => y, (next) => { y = next; });
-    bankingSection("Tatsaechliche Nebenkostenvorauszahlungen", relevant(details.serviceChargePrepayments, true), write, ensure, current, () => y, (next) => { y = next; });
-    bankingSection("Kaltmietanteile der Zahlungen", relevant(details.coldRent, true), write, ensure, current, () => y, (next) => { y = next; });
-    bankingSection("Nebenkostenabrechnungszahlungen", relevant(details.serviceChargeSettlements, true), write, ensure, current, () => y, (next) => { y = next; });
+    bankingSection("Umlagefaehige Bank-Kosten", relevant(details.allocableCosts), write, ensure, current, () => y, (next) => { y = next; }, unitName);
+    bankingSection("Tatsaechliche Nebenkostenvorauszahlungen", relevant(details.serviceChargePrepayments, true), write, ensure, current, () => y, (next) => { y = next; }, unitName);
+    bankingSection("Kaltmietanteile der Zahlungen", relevant(details.coldRent, true), write, ensure, current, () => y, (next) => { y = next; }, unitName);
+    bankingSection("Nebenkostenabrechnungszahlungen", relevant(details.serviceChargeSettlements, true), write, ensure, current, () => y, (next) => { y = next; }, unitName);
   }
 
   if (allocation.warnings.length) {
@@ -143,7 +147,8 @@ function bankingSection(
   ensure: (height?: number) => void,
   current: () => string[],
   getY: () => number,
-  setY: (value: number) => void
+  setY: (value: number) => void,
+  unitName: (id: string) => string
 ) {
   write(title, { size: 12, bold: true, gap: 18 });
   if (!lines.length) {
@@ -168,7 +173,7 @@ function bankingSection(
       `Buchung ${money(Number(line.transaction_amount || line.amount || 0))}`
       + ` | Split ${money(Number(line.amount || 0))}`
       + ` | Mieter ${line.tenant_external_id || "-"}`
-      + ` | Einheit ${line.unit_external_id || "Gesamtobjekt"}`,
+      + ` | Einheit ${line.unit_external_id ? unitName(line.unit_external_id) : "Gesamtobjekt"}`,
       { indent: 10, size: 7.5, gap: 10 }
     );
     write(
