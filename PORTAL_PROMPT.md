@@ -264,6 +264,15 @@ docker compose up -d --build
 
 Diese Datei ist fortzuschreiben, sobald neue Features ergänzt oder bestehende Anforderungen korrigiert werden.
 
+In der Nebenkostenarbeitsflaeche richtet sich die Sichtbarkeit der
+Mietverhaeltnisse nach dem ausgewaehlten Abrechnungsjahr. Relevante und
+laufende Mietverhaeltnisse stehen prominent, rein historische bleiben
+eingeklappt erreichbar. Datumswerte und Einheiten muessen menschenlesbar
+sein; interne IDs duerfen weder in der Arbeitsflaeche noch in PDFs als
+primaere Bezeichnung erscheinen. Gesamt- und Einzelabrechnungen enthalten
+alle Kosten, Vorauszahlungen, Kaltmietanteile und Abrechnungszahlungen
+einschliesslich ihrer Buchungs- und Splitdetails.
+
 ## Betriebsregel fuer mehrere Deploy-Ziele
 
 `portal.schreiber.info` wird vom VPS `109.199.107.55` und dessen Repository

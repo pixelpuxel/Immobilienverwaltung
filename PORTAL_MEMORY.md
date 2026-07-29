@@ -100,3 +100,22 @@ Passwoerter und Tokenwerte gehoeren nicht in diese Datei.
   574-EUR-Eingang. Deshalb weist der Entwurf `0 EUR` Vorauszahlung und
   `477,54 EUR` Nachzahlung aus. Vor `FINAL` muss dies fachlich bestaetigt
   oder durch weitere Bankdaten korrigiert werden.
+
+## 29.07.2026 - Jahresbezogene Mietverhaeltnisse und lesbare Abrechnung
+
+- `/service-charges` ordnet Mietverhaeltnisse nach dem gewaehlten
+  Abrechnungsjahr. Ueberschneidende beziehungsweise laufende Verhaeltnisse
+  stehen prominent oben; rein historische Verhaeltnisse bleiben
+  eingeklappt informativ erreichbar.
+- Vertragsbeginn, Einzug und Auszug werden im deutschen Datumsformat
+  dargestellt. Jede Zeile zeigt Einheit, Kaltmiete, vertragliche
+  Nebenkosten und tatsaechlich kontierte Vorauszahlungen.
+- Ein direkter Bearbeitungslink springt zum betreffenden Mietprofil in der
+  Benutzerverwaltung.
+- Interne Einheiten-IDs werden in Gesamt- und Einzel-PDFs durch die
+  menschenlesbare Einheitsbezeichnung ersetzt.
+- Die PDFs enthalten weiterhin jede Kostenposition sowie jede relevante
+  Vorauszahlung, Kaltmietaufteilung und Abrechnungszahlung mit Datum,
+  Betrag, Zweck, Split, Bankreferenz und Zuordnung.
+- Der produktive Docker-Build bestand 18/18 Tests, Typecheck und den
+  vollstaendigen Next.js-Build.
