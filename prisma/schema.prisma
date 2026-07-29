@@ -60,6 +60,7 @@ model PortalInstance {
   telegramBotConfig TelegramBotConfig?
   aiProviderConfig AiProviderConfig?
   bankingIntegrationConfig BankingIntegrationConfig?
+  serviceChargeRules ServiceChargeRule[]
   agentConfig AgentConfig?
   agentConversations AgentConversation[]
   auditLogs   AuditLog[]
@@ -211,6 +212,7 @@ model Property {
   brokerValuations      BrokerValuation[]
   templates             ContractTemplate[]
   todos                 PropertyTodo[]
+  serviceChargeRules    ServiceChargeRule[]
   timelineEvents        TimelineEvent[]
   portalInstance        PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
 }
@@ -252,6 +254,7 @@ model Unit {
   contracts   LeaseContract[]
   templates   ContractTemplate[] @relation("TemplateAssignedUnit")
   rentPayments RentPayment[]
+  serviceChargeAllocations ServiceChargeUnitAllocation[]
   timelineEvents TimelineEvent[]
 }
 
@@ -636,6 +639,37 @@ model BankingIntegrationConfig {
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
   portalInstance  PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
+}
+
+model ServiceChargeRule {
+  id                String          @id @default(cuid())
+  portalInstanceId  String?
+  propertyId        String
+  year              Int
+  method            String
+  totalDistributionValue Decimal?   @db.Decimal(12, 4)
+  note              String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  portalInstance    PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
+  property          Property        @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  unitAllocations   ServiceChargeUnitAllocation[]
+
+  @@unique([propertyId, year])
+  @@index([portalInstanceId, year])
+}
+
+model ServiceChargeUnitAllocation {
+  id          String            @id @default(cuid())
+  ruleId      String
+  unitId      String
+  value       Decimal           @db.Decimal(12, 4)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  rule        ServiceChargeRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  unit        Unit              @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@unique([ruleId, unitId])
 }
 
 model AgentConfig {

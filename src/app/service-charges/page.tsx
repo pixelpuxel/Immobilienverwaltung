@@ -2,6 +2,7 @@ import { Role } from "@prisma/client";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { AppShell } from "@/components/AppShell";
+import { ServiceChargeRuleForm } from "@/components/ServiceChargeRuleForm";
 import {
   getBankingIntegration,
   loadServiceChargeData,
@@ -12,6 +13,11 @@ import { requireUser } from "@/lib/auth";
 import { portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 import { money } from "@/lib/rent";
+import {
+  calculateServiceChargeAllocation,
+  type AllocationRuleInput,
+  type ServiceChargeMethod
+} from "@/lib/service-charge-allocation";
 
 export const dynamic = "force-dynamic";
 
@@ -34,8 +40,21 @@ export default async function ServiceChargesPage({
   });
   const selectedProperty = properties.find((property) => property.id === searchParams?.propertyId) || null;
   const selectedUnit = selectedProperty?.units.find((unit) => unit.id === searchParams?.unitId) || null;
-  const selectedTenant = selectedUnit?.tenants.find((tenant) => tenant.id === searchParams?.tenantId) || null;
-  const config = await getBankingIntegration(user.portalInstanceId);
+  const selectedTenant = selectedProperty?.units
+    .flatMap((unit) => unit.tenants)
+    .find((tenant) => tenant.id === searchParams?.tenantId) || null;
+  const [config, savedRule] = await Promise.all([
+    getBankingIntegration(user.portalInstanceId),
+    selectedProperty
+      ? prisma.serviceChargeRule.findFirst({
+          where: { propertyId: selectedProperty.id, year, property: portalWhere(user) },
+          include: { unitAllocations: true }
+        })
+      : null
+  ]);
+  const ruleInput = selectedProperty
+    ? serviceChargeRuleInput(selectedProperty, savedRule)
+    : null;
   let data: ServiceChargeData | null = null;
   let error = "";
   if (selectedProperty && config?.apiTokenEncrypted) {
@@ -97,7 +116,30 @@ export default async function ServiceChargesPage({
         <Notice tone="warning">In den Einstellungen fehlt noch ein Banking-API-Token.</Notice>
       ) : null}
       {error ? <Notice tone="error">{error}</Notice> : null}
-      {data ? <ServiceChargePreview data={data} /> : null}
+      {selectedProperty && ruleInput ? (
+        <section className="mt-6 rounded-lg border border-line bg-white p-5">
+          <div className="mb-4">
+            <div className="text-sm font-bold uppercase text-accent">Verteilerschluessel {year}</div>
+            <h2 className="mt-1 text-xl font-bold">{selectedProperty.name}</h2>
+          </div>
+          <ServiceChargeRuleForm
+            propertyId={selectedProperty.id}
+            year={year}
+            initialMethod={ruleInput.method}
+            initialTotal={ruleInput.totalDistributionValue}
+            initialNote={savedRule?.note || ""}
+            units={selectedProperty.units.map((unit) => ({
+              id: unit.id,
+              name: unit.unitNumber,
+              livingArea: Number(unit.livingArea || 0),
+              value: ruleInput.unitValues[unit.id] || 0
+            }))}
+          />
+        </section>
+      ) : null}
+      {data && ruleInput ? (
+        <ServiceChargePreview data={data} rule={ruleInput} />
+      ) : null}
       {!data && !error && config?.apiTokenEncrypted ? (
         <Notice tone="neutral">Immobilie und Abrechnungsjahr auswaehlen. Es werden noch keine Abrechnungsdaten gespeichert oder versendet.</Notice>
       ) : null}
@@ -105,7 +147,8 @@ export default async function ServiceChargesPage({
   );
 }
 
-function ServiceChargePreview({ data }: { data: ServiceChargeData }) {
+function ServiceChargePreview({ data, rule }: { data: ServiceChargeData; rule: AllocationRuleInput }) {
+  const allocation = calculateServiceChargeAllocation(data, rule);
   return (
     <div className="mt-6 grid gap-6">
       <section className="rounded-lg border border-line bg-white p-5">
@@ -118,6 +161,38 @@ function ServiceChargePreview({ data }: { data: ServiceChargeData }) {
           <Metric label="Abrechnungszahlungen" value={money(Number(data.service_charge_settlements.total || 0))} />
           <Metric label="Kaltmietanteile" value={money(Number(data.cold_rent.total || 0))} />
         </div>
+      </section>
+
+      <section className="rounded-lg border border-line bg-white p-5">
+        <div className="text-sm font-bold uppercase text-accent">Berechnete Verteilung</div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <Metric label="Kosten gesamt" value={money(allocation.allocableCosts)} />
+          <Metric label="Mietern zugeordnet" value={money(allocation.allocatedToTenants)} />
+          <Metric label="Eigentuemer / Leerstand" value={money(allocation.ownerShare)} />
+          <Metric label="Ist-Vorauszahlungen" value={money(allocation.totalPrepayments)} />
+        </div>
+        {allocation.warnings.map((warning) => (
+          <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" key={warning}>{warning}</div>
+        ))}
+        {allocation.tenantResults.length ? (
+          <div className="mt-5 overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-panel text-left"><tr><th className="p-3">Mietverhaeltnis</th><th className="p-3 text-right">Tage</th><th className="p-3 text-right">Anteil</th><th className="p-3 text-right">Kosten</th><th className="p-3 text-right">Vorauszahlung</th><th className="p-3 text-right">Ergebnis</th></tr></thead>
+              <tbody className="divide-y divide-line">
+                {allocation.tenantResults.map((item) => (
+                  <tr key={item.tenantId}>
+                    <td className="p-3 font-semibold">{item.tenantName}</td>
+                    <td className="p-3 text-right">{item.occupiedDays} / {item.yearDays}</td>
+                    <td className="p-3 text-right">{(item.share * 100).toLocaleString("de-DE", { maximumFractionDigits: 3 })} %</td>
+                    <td className="p-3 text-right">{money(item.allocatedCosts)}</td>
+                    <td className="p-3 text-right">{money(item.actualPrepayments)}</td>
+                    <td className={`p-3 text-right font-bold ${item.result > 0 ? "text-red-700" : "text-emerald-700"}`}>{money(item.result)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
       </section>
 
       <section className="overflow-hidden rounded-lg border border-line bg-white">
@@ -141,6 +216,47 @@ function ServiceChargePreview({ data }: { data: ServiceChargeData }) {
       <LineTable title="Nebenkostenvorauszahlungen" lines={data.service_charge_prepayments.items} />
     </div>
   );
+}
+
+function serviceChargeRuleInput(
+  property: {
+    name: string;
+    units: Array<{ id: string; livingArea: { toString(): string } | number | string | null }>;
+  },
+  savedRule: {
+    method: string;
+    totalDistributionValue: { toString(): string } | number | string | null;
+    unitAllocations: Array<{ unitId: string; value: { toString(): string } | number | string }>;
+  } | null
+): AllocationRuleInput {
+  if (savedRule) {
+    return {
+      method: savedRule.method as ServiceChargeMethod,
+      totalDistributionValue: savedRule.totalDistributionValue === null ? null : Number(savedRule.totalDistributionValue),
+      unitValues: Object.fromEntries(savedRule.unitAllocations.map((item) => [item.unitId, Number(item.value)]))
+    };
+  }
+  const normalizedName = property.name.toLocaleLowerCase("de-DE");
+  if (normalizedName.includes("tirol")) {
+    return {
+      method: "AREA",
+      totalDistributionValue: 60.6,
+      unitValues: Object.fromEntries(property.units.map((unit) => [unit.id, Number(unit.livingArea || 0)]))
+    };
+  }
+  if (normalizedName.includes("mainau")) {
+    const perUnit = property.units.length ? 100 / property.units.length : 0;
+    return {
+      method: "FIXED_SHARE",
+      totalDistributionValue: 100,
+      unitValues: Object.fromEntries(property.units.map((unit) => [unit.id, perUnit]))
+    };
+  }
+  return {
+    method: "EXTERNAL_STATEMENT",
+    totalDistributionValue: null,
+    unitValues: {}
+  };
 }
 
 function LineTable({ title, lines }: { title: string; lines: ServiceChargeLine[] }) {

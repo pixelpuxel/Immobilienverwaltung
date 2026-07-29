@@ -400,6 +400,8 @@ Banking-Integration:
 ```text
 GET  /api/banking-integration
 POST /api/banking-integration
+GET  /api/service-charge-rules?propertyId=<id>&year=<yyyy>
+POST /api/service-charge-rules
 ```
 
 `POST /api/banking-integration` ist nur für Admins und nur per Same-Origin
@@ -416,6 +418,27 @@ Antworten enthalten nur `configured`, `baseUrl`, `lastSuccessfulAt` und
 `lastError`. Das verschlüsselte Token wird niemals zurückgegeben. Die Seite
 `/service-charges` ruft serverseitig den Banking-Vertrag
 `GET /api/v1/service-charge-data/{propertyId}/{year}` auf.
+
+Ein Verteilerschluessel wird pro Immobilie und Jahr gespeichert:
+
+```json
+{
+  "propertyId": "cm...",
+  "year": 2025,
+  "method": "AREA",
+  "totalDistributionValue": 60.6,
+  "unitValues": {
+    "unit-id-1": 18.4,
+    "unit-id-2": 18.4,
+    "unit-id-3": 23.8
+  },
+  "note": "WG-Zimmer nach Flaeche"
+}
+```
+
+Zulaessige Methoden sind `AREA`, `FIXED_SHARE` und `EXTERNAL_STATEMENT`.
+Schreibzugriff erfordert Admin-Sitzung und Same-Origin. Einheitenschluessel
+werden gegen die ausgewaehlte, mandanteneigene Immobilie validiert.
 
 `POST /api/agent/config` speichert den System-Prompt des Agenten:
 

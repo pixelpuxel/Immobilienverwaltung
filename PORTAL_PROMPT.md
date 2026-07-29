@@ -126,6 +126,22 @@ docker compose up -d --build
   Immobilienportal besitzt Vertragszeitraum, Umlageschlüssel, Verteilung und
   Abrechnungsdokument. Die Berechnung darf nicht in beiden Systemen parallel
   implementiert werden.
+- Verteilerschluessel werden pro Immobilie und Abrechnungsjahr gespeichert:
+  `AREA` verteilt nach Einheitenflaeche und Belegungstagen,
+  `FIXED_SHARE` nach festen Einheitenanteilen und Belegungstagen,
+  `EXTERNAL_STATEMENT` verwendet keine Bank-Hausgeldzahlung als
+  Nebenkostenbasis.
+- Tirolergasse startet mit 60,60 Quadratmetern Gesamtverteilerflaeche und den
+  Zimmerflaechen der Einheiten. Mainaustrasse startet mit gleichen festen
+  Anteilen. Andere Objekte starten vorsichtig im Modus externe
+  Hausverwaltungsabrechnung. Startwerte werden erst durch Speichern bindend.
+- Leerstand und unbelegte Zeitanteile bleiben als Eigentuemerkosten sichtbar;
+  sie duerfen nicht durch Normalisierung auf die verbleibenden Mieter
+  umgelegt werden. Ueberschneidende Mietzeiten einer Einheit erzeugen eine
+  Warnung.
+- Das Abrechnungsergebnis je Mietverhaeltnis ist Kostenanteil minus
+  tatsaechlich kontierte Nebenkostenvorauszahlung. Positiv bedeutet
+  Nachzahlung, negativ Guthaben.
 - Mieter können minimal angelegt werden: Benutzername oder Vorname oder Nachname reicht; weitere Daten dürfen später ergänzt werden. Fehlermeldungen beim Speichern müssen konkrete Feldhinweise enthalten.
 - Einheiten enthalten Kaltmiete, Nebenkosten und Warmmiete.
 - Einheiten und Mieterprofile enthalten zusätzlich Tiefgarage/Garagenmiete.
