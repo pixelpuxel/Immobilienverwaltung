@@ -67,6 +67,26 @@ Passwoerter und Tokenwerte gehoeren nicht in diese Datei.
   Flaechenregel gespeichert: WG 1 `18,4`, WG 2 `18,4`, Dachgeschoss `23,8`,
   zusammen `60,6 m2`; das autarke Ladengeschaeft hat Anteil `0`.
 - Das Portal verwendet einen dedizierten, unbegrenzten Banking-Lesetoken.
+
+## 29.07.2026 - Vollstaendiger Banking-Kontext in Abrechnungen
+
+- Die Nebenkostenansicht zeigt Banking-Positionen als aufklappbare
+  Detailzeilen statt nur Datum, Name, Referenz und Betrag.
+- Angezeigt werden Gesamtbuchung und Splitanteil, Bank/Konto,
+  Gegenparteidaten, Zweck, Referenzen, Kategorie, Zuordnung, Buchungsstatus
+  sowie die am Buchungstag wirksame vertragliche Kaltmiete.
+- Ein sichtbares Herkunftskennzeichen unterscheidet geschuetzte direkte
+  Bankimporte von manuellen beziehungsweise Dateiimporten. Das Portal
+  veraendert Bankbuchungen nicht.
+- Jede Zeile verlinkt auf die vollstaendige Quellbuchung im Banking-Portal.
+- Neue Abrechnungsversionen verwenden Snapshot-Schema 2 und frieren
+  Banking-Quellzeilen, Vertragsdaten, Kosten, Vorauszahlungen,
+  Kaltmietanteile und Abrechnungszahlungen ein. Schema 1 bleibt lesbar.
+- Der neue Button `Protokoll` liefert den vollstaendigen unveraenderlichen
+  Snapshot mit Pruefsumme und Versionsmetadaten.
+- Gesamt- und Mieter-PDFs enthalten nun Vertrags- und Mietkontext,
+  Verteilerschluessel und die einzelnen relevanten Banking-Positionen mit
+  Split, Zweck, Zuordnung, Referenz und Kaltmiete.
   Der Token wird serverseitig gespeichert und niemals ausgegeben.
 - Abrechnungsentwurf Version 1 (`DRAFT`) wurde mit SHA-256-Pruefsumme
   `ab62230e3d533dfc6925ec9097aa6c38bdebb33075d78c91fb09dfef8712898b`

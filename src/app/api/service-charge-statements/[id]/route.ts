@@ -9,6 +9,32 @@ import { isServiceChargeStatementSnapshot } from "@/lib/service-charge-statement
 
 const updateSchema = z.object({ status: z.literal("FINAL") });
 
+export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+  const user = await requireApiUser(request, [Role.ADMIN]);
+  if (!user) return NextResponse.json({ error: "Nicht angemeldet." }, { status: 401 });
+  const statement = await prisma.serviceChargeStatement.findFirst({
+    where: { id: params.id, deletedAt: null, property: portalWhere(user) },
+    include: {
+      property: { select: { name: true, address: true } },
+      createdBy: { select: { name: true, email: true } }
+    }
+  });
+  if (!statement || !isServiceChargeStatementSnapshot(statement.snapshot)) {
+    return NextResponse.json({ error: "Abrechnung nicht gefunden oder ungueltig." }, { status: 404 });
+  }
+  return NextResponse.json({
+    id: statement.id,
+    version: statement.version,
+    status: statement.status,
+    checksum: statement.checksum,
+    createdAt: statement.createdAt,
+    finalizedAt: statement.finalizedAt,
+    createdBy: statement.createdBy.name || statement.createdBy.email,
+    property: statement.property,
+    snapshot: statement.snapshot
+  });
+}
+
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   if (!assertSameOrigin(request)) return NextResponse.json({ error: "CSRF-Schutz." }, { status: 403 });
   const user = await requireApiUser(request, [Role.ADMIN]);

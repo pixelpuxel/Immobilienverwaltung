@@ -114,6 +114,24 @@ docker compose up -d --build
 - Mieterrechte hängen an einer Einheit und an freigegebenen/eigenen Dokumenten.
 - Mieter-Dashboard zeigt keine Immobilien-/Einheitenanzahl, sondern nur für Mieter relevante Dokumente und Verträge.
 - Nebenkostenabrechnungen werden als Dokumente der Kategorie "Nebenkostenabrechnungen" gespeichert, im Mieterbereich aber in einem eigenen Bereich angezeigt. Admins können je Einheit direkt aus der Objektansicht zur passend vorbefüllten Uploadmaske springen.
+- Banking-Positionen in der Nebenkostenansicht sind aufklappbar und zeigen
+  den vollstaendigen kontrollierbaren Buchungskontext: Gesamtbuchung,
+  Splitanteil, Daten, Bank/Konto, Gegenpartei, Zweck, Referenzen,
+  Kategorie, Mieter/Einheit, Status und die am Buchungstag wirksame
+  vertragliche Kaltmiete. Ein Direktlink oeffnet die Quellbuchung im
+  Banking-Portal.
+- Die Herkunft jeder Buchung ist sichtbar als `Bankimport` oder
+  `Manuell / Import`. Direkt von der Bank importierte Buchungen sind im
+  Immobilienportal nur lesbar und werden im Banking besonders gegen
+  Aenderung und Loeschung geschuetzt.
+- Jede neue Abrechnungsversion friert neben Summen und Verteilung auch die
+  vollstaendigen Banking-Quellzeilen und Vertragsdaten ein. Das Protokoll
+  stellt diesen Snapshot unverkuerzt bereit.
+- Gesamt- und Mieter-PDFs muessen die Herleitung enthalten: verwendeter
+  Verteilerschluessel, Mietzeitraum und Vertragswerte, einzelne
+  Kostenbuchungen, tatsaechliche Vorauszahlungen, Kaltmietanteile,
+  Abrechnungszahlungen, Splitzuordnung und Bankreferenzen. Reine
+  Summen-PDFs sind nicht ausreichend.
 - Der Adminbereich `/service-charges` lädt kontierte Ist-Kosten,
   tatsächliche Nebenkostenvorauszahlungen, Abrechnungszahlungen und
   Mietanteile serverseitig aus `banking.schreiber.info`. Auswahl erfolgt nach

@@ -80,6 +80,7 @@ export function ServiceChargeStatementVersions({
             <div className={`text-sm font-bold ${statement.status === "FINAL" ? "text-emerald-700" : "text-amber-700"}`}>{statement.status === "FINAL" ? "Festgeschrieben" : "Entwurf"}</div>
             <div className="truncate font-mono text-xs text-muted" title={statement.checksum}>SHA-256 {statement.checksum}</div>
             <div className="flex flex-wrap gap-2">
+              <a className="button button-secondary" href={`/api/service-charge-statements/${statement.id}`} target="_blank" rel="noreferrer">Protokoll</a>
               <a className="button button-secondary" href={`/api/service-charge-statements/${statement.id}/pdf`} target="_blank" rel="noreferrer">PDF</a>
               {statement.status !== "FINAL" ? <button disabled={Boolean(busy)} onClick={() => finalize(statement.id)} type="button">Festschreiben</button> : null}
               {statement.status !== "FINAL" ? <button className="button button-secondary" disabled={Boolean(busy)} onClick={() => remove(statement.id)} type="button">Ausblenden</button> : null}
