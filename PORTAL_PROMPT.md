@@ -142,6 +142,12 @@ docker compose up -d --build
 - Das Abrechnungsergebnis je Mietverhaeltnis ist Kostenanteil minus
   tatsaechlich kontierte Nebenkostenvorauszahlung. Positiv bedeutet
   Nachzahlung, negativ Guthaben.
+- Bei Objekten mit externer Hausverwaltung werden Positionen der
+  Jahresabrechnung einzeln als umlagefaehig, nicht umlagefaehig oder
+  Erhaltungsruecklage erfasst. Hausgeld-Bankbuchungen sind keine
+  Nebenkostenbasis. Nur umlagefaehige Einzelpositionen werden auf Mieter
+  verteilt; Positionen koennen bei mehreren Einheiten einer konkreten Einheit
+  zugeordnet werden und behalten Quellen-/Seitenhinweise.
 - Mieter können minimal angelegt werden: Benutzername oder Vorname oder Nachname reicht; weitere Daten dürfen später ergänzt werden. Fehlermeldungen beim Speichern müssen konkrete Feldhinweise enthalten.
 - Einheiten enthalten Kaltmiete, Nebenkosten und Warmmiete.
 - Einheiten und Mieterprofile enthalten zusätzlich Tiefgarage/Garagenmiete.

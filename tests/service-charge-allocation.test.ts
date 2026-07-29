@@ -82,14 +82,20 @@ describe("service charge allocation", () => {
     expect(result.tenantResults.map((item) => item.allocatedCosts)).toEqual([600, 600]);
   });
 
-  it("does not derive condominium allocations from bank house-money payments", () => {
+  it("uses only allocable external statement lines and ignores bank house-money payments", () => {
     const result = calculateServiceChargeAllocation(fixture(), {
       method: "EXTERNAL_STATEMENT",
       totalDistributionValue: null,
-      unitValues: {}
+      unitValues: {},
+      statementLines: [
+        { unitId: "unit-1", amount: 300, treatment: "ALLOCABLE" },
+        { unitId: "unit-2", amount: 600, treatment: "ALLOCABLE" },
+        { unitId: "unit-1", amount: 100, treatment: "NON_ALLOCABLE" },
+        { unitId: "unit-2", amount: 200, treatment: "RESERVE" }
+      ]
     });
-    expect(result.tenantResults).toEqual([]);
-    expect(result.ownerShare).toBe(1200);
-    expect(result.warnings[0]).toContain("Hausgeldzahlungen");
+    expect(result.allocableCosts).toBe(900);
+    expect(result.tenantResults.map((item) => item.allocatedCosts)).toEqual([300, 600]);
+    expect(result.ownerShare).toBe(0);
   });
 });

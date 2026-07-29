@@ -7,6 +7,11 @@ export type AllocationRuleInput = {
   method: ServiceChargeMethod;
   totalDistributionValue: number | null;
   unitValues: Record<string, number>;
+  statementLines?: Array<{
+    unitId: string | null;
+    amount: number;
+    treatment: "ALLOCABLE" | "NON_ALLOCABLE" | "RESERVE";
+  }>;
 };
 
 export type TenantAllocation = {
@@ -39,16 +44,48 @@ export function calculateServiceChargeAllocation(
   const costs = Math.abs(toNumber(data.allocable_costs.total));
   const warnings: string[] = [];
   if (rule.method === "EXTERNAL_STATEMENT") {
+    const allocableLines = (rule.statementLines || []).filter((line) => line.treatment === "ALLOCABLE");
+    const externalCosts = roundMoney(allocableLines.reduce((sum, line) => sum + Math.abs(line.amount), 0));
+    const yearDays = isLeapYear(data.year) ? 366 : 365;
+    const unitIds = new Set(data.units.map((unit) => unit.external_id));
+    const unassignedCosts = allocableLines
+      .filter((line) => !line.unitId)
+      .reduce((sum, line) => sum + Math.abs(line.amount), 0);
+    if (unassignedCosts && unitIds.size > 1) {
+      warnings.push("Kosten fuer das Gesamtobjekt muessen bei mehreren Einheiten einer Einheit zugeordnet werden.");
+    }
+    const tenantResults = data.tenancies.map((tenancy) => {
+      const occupiedDays = overlapDays(data.year, tenancy.move_in_date || tenancy.lease_start_date, tenancy.move_out_date);
+      const unitCosts = allocableLines
+        .filter((line) => line.unitId === tenancy.unit_external_id || (!line.unitId && unitIds.size === 1))
+        .reduce((sum, line) => sum + Math.abs(line.amount), 0);
+      const share = occupiedDays / yearDays;
+      const allocatedCosts = roundMoney(unitCosts * share);
+      const actualPrepayments = roundMoney(toNumber(tenancy.actual_service_charge_prepayments));
+      return {
+        tenantId: tenancy.external_id,
+        unitId: tenancy.unit_external_id,
+        tenantName: tenancy.display_name,
+        occupiedDays,
+        yearDays,
+        unitValue: unitCosts,
+        share,
+        allocatedCosts,
+        actualPrepayments,
+        result: roundMoney(allocatedCosts - actualPrepayments)
+      };
+    });
+    const allocatedToTenants = roundMoney(tenantResults.reduce((sum, item) => sum + item.allocatedCosts, 0));
+    const totalPrepayments = roundMoney(tenantResults.reduce((sum, item) => sum + item.actualPrepayments, 0));
+    if (!allocableLines.length) warnings.push("Noch keine umlagefaehigen Positionen aus der Hausverwaltungsabrechnung erfasst.");
     return {
       method: rule.method,
-      allocableCosts: costs,
-      allocatedToTenants: 0,
-      ownerShare: costs,
-      totalPrepayments: toNumber(data.service_charge_prepayments.total),
-      tenantResults: [],
-      warnings: [
-        "Bei externer Hausverwaltungsabrechnung werden Bank-Hausgeldzahlungen nicht verteilt. Die umlagefaehigen Einzelkosten muessen aus der Hausverwaltungsabrechnung uebernommen werden."
-      ]
+      allocableCosts: externalCosts,
+      allocatedToTenants,
+      ownerShare: roundMoney(externalCosts - allocatedToTenants),
+      totalPrepayments,
+      tenantResults,
+      warnings
     };
   }
   const yearDays = isLeapYear(data.year) ? 366 : 365;

@@ -3,6 +3,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { AppShell } from "@/components/AppShell";
 import { ServiceChargeRuleForm } from "@/components/ServiceChargeRuleForm";
+import { ServiceChargeStatementForm } from "@/components/ServiceChargeStatementForm";
 import {
   getBankingIntegration,
   loadServiceChargeData,
@@ -48,7 +49,7 @@ export default async function ServiceChargesPage({
     selectedProperty
       ? prisma.serviceChargeRule.findFirst({
           where: { propertyId: selectedProperty.id, year, property: portalWhere(user) },
-          include: { unitAllocations: true }
+          include: { unitAllocations: true, statementLines: { orderBy: { createdAt: "asc" } } }
         })
       : null
   ]);
@@ -135,6 +136,21 @@ export default async function ServiceChargesPage({
               value: ruleInput.unitValues[unit.id] || 0
             }))}
           />
+          {ruleInput.method === "EXTERNAL_STATEMENT" && savedRule ? (
+            <ServiceChargeStatementForm
+              propertyId={selectedProperty.id}
+              year={year}
+              units={selectedProperty.units.map((unit) => ({ id: unit.id, name: unit.unitNumber }))}
+              lines={savedRule.statementLines.map((line) => ({
+                id: line.id,
+                unitId: line.unitId,
+                description: line.description,
+                amount: Number(line.amount),
+                treatment: line.treatment,
+                sourceReference: line.sourceReference
+              }))}
+            />
+          ) : null}
         </section>
       ) : null}
       {data && ruleInput ? (
@@ -227,13 +243,23 @@ function serviceChargeRuleInput(
     method: string;
     totalDistributionValue: { toString(): string } | number | string | null;
     unitAllocations: Array<{ unitId: string; value: { toString(): string } | number | string }>;
+    statementLines: Array<{
+      unitId: string | null;
+      amount: { toString(): string } | number | string;
+      treatment: string;
+    }>;
   } | null
 ): AllocationRuleInput {
   if (savedRule) {
     return {
       method: savedRule.method as ServiceChargeMethod,
       totalDistributionValue: savedRule.totalDistributionValue === null ? null : Number(savedRule.totalDistributionValue),
-      unitValues: Object.fromEntries(savedRule.unitAllocations.map((item) => [item.unitId, Number(item.value)]))
+      unitValues: Object.fromEntries(savedRule.unitAllocations.map((item) => [item.unitId, Number(item.value)])),
+      statementLines: savedRule.statementLines.map((line) => ({
+        unitId: line.unitId,
+        amount: Number(line.amount),
+        treatment: line.treatment as "ALLOCABLE" | "NON_ALLOCABLE" | "RESERVE"
+      }))
     };
   }
   const normalizedName = property.name.toLocaleLowerCase("de-DE");
@@ -241,7 +267,8 @@ function serviceChargeRuleInput(
     return {
       method: "AREA",
       totalDistributionValue: 60.6,
-      unitValues: Object.fromEntries(property.units.map((unit) => [unit.id, Number(unit.livingArea || 0)]))
+      unitValues: Object.fromEntries(property.units.map((unit) => [unit.id, Number(unit.livingArea || 0)])),
+      statementLines: []
     };
   }
   if (normalizedName.includes("mainau")) {
@@ -249,13 +276,15 @@ function serviceChargeRuleInput(
     return {
       method: "FIXED_SHARE",
       totalDistributionValue: 100,
-      unitValues: Object.fromEntries(property.units.map((unit) => [unit.id, perUnit]))
+      unitValues: Object.fromEntries(property.units.map((unit) => [unit.id, perUnit])),
+      statementLines: []
     };
   }
   return {
     method: "EXTERNAL_STATEMENT",
     totalDistributionValue: null,
-    unitValues: {}
+    unitValues: {},
+    statementLines: []
   };
 }
 

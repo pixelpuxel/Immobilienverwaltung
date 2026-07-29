@@ -422,6 +422,10 @@ Tests:
 npm test
 ```
 
+Der produktive Docker-Build fuehrt die Tests bereits im Builder aus und
+bricht bei Fehlern ab. Eine lokale Installation ist fuer Deployment und
+Betrieb nicht erforderlich.
+
 ## Produktionshinweise
 
 - `ADMIN_PASSWORD`, `JWT_SECRET` und `NEXTAUTH_SECRET` sofort aendern.
