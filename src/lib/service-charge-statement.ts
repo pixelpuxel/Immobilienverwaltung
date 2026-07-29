@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
-import { loadServiceChargeData } from "./banking-integration";
+import { loadServiceChargeData, type ServiceChargeData } from "./banking-integration";
 import { portalWhere } from "./portal-instance";
 import { prisma } from "./prisma";
 import { calculateServiceChargeAllocation, type AllocationRuleInput, type ServiceChargeMethod } from "./service-charge-allocation";
 
 export type ServiceChargeStatementSnapshot = {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   generatedAt: string;
   property: { id: string; name: string; address: string };
   year: number;
@@ -32,6 +32,16 @@ export type ServiceChargeStatementSnapshot = {
     actualPrepayments: number;
     settlements: number;
     coldRent: number;
+    bankingDetails?: {
+      generatedAt: string;
+      allocationNote: string;
+      units: ServiceChargeData["units"];
+      tenancies: ServiceChargeData["tenancies"];
+      allocableCosts: ServiceChargeData["allocable_costs"]["items"];
+      serviceChargePrepayments: ServiceChargeData["service_charge_prepayments"]["items"];
+      serviceChargeSettlements: ServiceChargeData["service_charge_settlements"]["items"];
+      coldRent: ServiceChargeData["cold_rent"]["items"];
+    };
   };
 };
 
@@ -83,7 +93,7 @@ export async function buildServiceChargeStatementSnapshot(input: {
     }))
   };
   const snapshot: ServiceChargeStatementSnapshot = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAt: new Date().toISOString(),
     property: { id: property.id, name: property.name, address: property.address },
     year: input.year,
@@ -100,7 +110,17 @@ export async function buildServiceChargeStatementSnapshot(input: {
       allocableBankCosts: Number(data.allocable_costs.total || 0),
       actualPrepayments: Number(data.service_charge_prepayments.total || 0),
       settlements: Number(data.service_charge_settlements.total || 0),
-      coldRent: Number(data.cold_rent.total || 0)
+      coldRent: Number(data.cold_rent.total || 0),
+      bankingDetails: {
+        generatedAt: new Date().toISOString(),
+        allocationNote: data.allocation.note,
+        units: data.units,
+        tenancies: data.tenancies,
+        allocableCosts: data.allocable_costs.items,
+        serviceChargePrepayments: data.service_charge_prepayments.items,
+        serviceChargeSettlements: data.service_charge_settlements.items,
+        coldRent: data.cold_rent.items
+      }
     }
   };
   return snapshot;
@@ -113,5 +133,8 @@ export function serviceChargeSnapshotChecksum(snapshot: ServiceChargeStatementSn
 export function isServiceChargeStatementSnapshot(value: unknown): value is ServiceChargeStatementSnapshot {
   if (!value || typeof value !== "object") return false;
   const item = value as Partial<ServiceChargeStatementSnapshot>;
-  return item.schemaVersion === 1 && typeof item.year === "number" && Boolean(item.property) && Boolean(item.allocation);
+  return (item.schemaVersion === 1 || item.schemaVersion === 2)
+    && typeof item.year === "number"
+    && Boolean(item.property)
+    && Boolean(item.allocation);
 }

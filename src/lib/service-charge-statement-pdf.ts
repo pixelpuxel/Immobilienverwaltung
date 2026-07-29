@@ -52,6 +52,7 @@ export function renderServiceChargeStatementPdf(input: {
   write("Abrechnungsgrundlage", { size: 12, bold: true, gap: 18 });
   write(methodLabel(input.snapshot.method));
   if (rule.note) write(`Hinweis: ${rule.note}`);
+  write(`Verteilerwert gesamt: ${number(rule.totalDistributionValue)} | Einheiten: ${Object.entries(rule.unitValues).map(([unit, value]) => `${unit} = ${number(value)}`).join(", ") || "-"}`);
   y -= 5;
 
   write("Zusammenfassung", { size: 12, bold: true, gap: 18 });
@@ -90,6 +91,35 @@ export function renderServiceChargeStatementPdf(input: {
   }
   if (!allocation.tenantResults.length) write("Keine Mietverhaeltnisse mit berechenbarem Anteil vorhanden.");
 
+  const details = input.snapshot.source.bankingDetails;
+  if (details) {
+    const relevantTenancies = selectedTenant
+      ? details.tenancies.filter((tenant) => tenant.external_id === selectedTenant.tenantId)
+      : details.tenancies;
+    write("Vertrags- und Mietkontext", { size: 12, bold: true, gap: 18 });
+    relevantTenancies.forEach((tenant) => {
+      write(`${tenant.display_name} | Einheit ${tenant.unit_external_id}`, { bold: true });
+      write(
+        `Zeitraum ${date(tenant.move_in_date || tenant.lease_start_date)} bis ${tenant.move_out_date ? date(tenant.move_out_date) : "laufend"}`
+        + ` | Kaltmiete ${money(Number(tenant.rent_amount || 0))}`
+        + ` | Garage ${money(Number(tenant.garage_rent || 0))}`
+        + ` | vertragliche NK ${money(Number(tenant.service_charges || 0))}`,
+        { indent: 10 }
+      );
+    });
+    if (!relevantTenancies.length) write("Keine passenden Vertragsdaten im Snapshot.");
+
+    const relevant = (lines: typeof details.allocableCosts, tenantOnly = false) => lines.filter((line) => {
+      if (!selectedTenant) return true;
+      if (tenantOnly) return line.tenant_external_id === selectedTenant.tenantId;
+      return !line.unit_external_id || line.unit_external_id === selectedTenant.unitId;
+    });
+    bankingSection("Umlagefaehige Bank-Kosten", relevant(details.allocableCosts), write, ensure, current, () => y, (next) => { y = next; });
+    bankingSection("Tatsaechliche Nebenkostenvorauszahlungen", relevant(details.serviceChargePrepayments, true), write, ensure, current, () => y, (next) => { y = next; });
+    bankingSection("Kaltmietanteile der Zahlungen", relevant(details.coldRent, true), write, ensure, current, () => y, (next) => { y = next; });
+    bankingSection("Nebenkostenabrechnungszahlungen", relevant(details.serviceChargeSettlements, true), write, ensure, current, () => y, (next) => { y = next; });
+  }
+
   if (allocation.warnings.length) {
     write("Pruefhinweise", { size: 12, bold: true, gap: 18 });
     allocation.warnings.forEach((warning) => write(`- ${warning}`));
@@ -104,6 +134,51 @@ export function renderServiceChargeStatementPdf(input: {
     page.push(text(`Pruefsumme ${input.checksum.slice(0, 16)}`, margin, 28, 7));
   });
   return buildPdf(pages.map((page) => page.join("\n")));
+}
+
+function bankingSection(
+  title: string,
+  lines: NonNullable<ServiceChargeStatementSnapshot["source"]["bankingDetails"]>["allocableCosts"],
+  write: (value: string, options?: { size?: number; bold?: boolean; indent?: number; gap?: number }) => void,
+  ensure: (height?: number) => void,
+  current: () => string[],
+  getY: () => number,
+  setY: (value: number) => void
+) {
+  write(title, { size: 12, bold: true, gap: 18 });
+  if (!lines.length) {
+    write("Keine Positionen.");
+    return;
+  }
+  for (const line of lines) {
+    ensure(55);
+    let y = getY();
+    current().push(text(
+      `${date(line.value_date || line.booking_date)} | ${line.applicant_name || "Ohne Gegenpartei"}`,
+      margin,
+      y,
+      8.5,
+      true
+    ));
+    current().push(text(money(Number(line.amount || 0)), 475, y, 8.5, true));
+    y -= 12;
+    setY(y);
+    write(`Zweck: ${line.purpose || line.memo || "-"}`, { indent: 10, size: 7.5, gap: 10 });
+    write(
+      `Buchung ${money(Number(line.transaction_amount || line.amount || 0))}`
+      + ` | Split ${money(Number(line.amount || 0))}`
+      + ` | Mieter ${line.tenant_external_id || "-"}`
+      + ` | Einheit ${line.unit_external_id || "Gesamtobjekt"}`,
+      { indent: 10, size: 7.5, gap: 10 }
+    );
+    write(
+      `Bank ${line.bank_name || "-"} / ${line.account_name || "-"}`
+      + ` | Referenz ${line.bank_reference || line.customer_reference || "-"}`
+      + ` | Kaltmiete ${line.contractual_cold_rent ? money(Number(line.contractual_cold_rent)) : "-"}`,
+      { indent: 10, size: 7.5, gap: 10 }
+    );
+    setY(getY() - 5);
+  }
 }
 
 function metric(rows: string[], label: string, value: number, x: number, y: number) {
@@ -126,6 +201,16 @@ function treatmentLabel(value: string) {
 
 function money(value: number) {
   return `${value.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR`;
+}
+
+function number(value: number | null) {
+  return value === null ? "-" : value.toLocaleString("de-DE", { maximumFractionDigits: 3 });
+}
+
+function date(value: string) {
+  if (!value) return "-";
+  const match = value.slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return match ? `${match[3]}.${match[2]}.${match[1]}` : value;
 }
 
 function wrap(value: string, width: number) {

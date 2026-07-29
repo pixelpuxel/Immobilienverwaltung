@@ -162,7 +162,11 @@ export default async function ServiceChargesPage({
         </section>
       ) : null}
       {data && ruleInput ? (
-        <ServiceChargePreview data={data} rule={ruleInput} />
+        <ServiceChargePreview
+          data={data}
+          rule={ruleInput}
+          bankingBaseUrl={config?.baseUrl || "https://banking.schreiber.info"}
+        />
       ) : null}
       {selectedProperty && savedRule ? (
         <ServiceChargeStatementVersions
@@ -188,7 +192,15 @@ export default async function ServiceChargesPage({
   );
 }
 
-function ServiceChargePreview({ data, rule }: { data: ServiceChargeData; rule: AllocationRuleInput }) {
+function ServiceChargePreview({
+  data,
+  rule,
+  bankingBaseUrl
+}: {
+  data: ServiceChargeData;
+  rule: AllocationRuleInput;
+  bankingBaseUrl: string;
+}) {
   const allocation = calculateServiceChargeAllocation(data, rule);
   return (
     <div className="mt-6 grid gap-6">
@@ -256,8 +268,8 @@ function ServiceChargePreview({ data, rule }: { data: ServiceChargeData; rule: A
         </div>
       </section>
 
-      <LineTable title="Umlagefaehige Kosten" lines={data.allocable_costs.items} />
-      <LineTable title="Nebenkostenvorauszahlungen" lines={data.service_charge_prepayments.items} />
+      <LineTable title="Umlagefaehige Kosten" lines={data.allocable_costs.items} bankingBaseUrl={bankingBaseUrl} />
+      <LineTable title="Nebenkostenvorauszahlungen" lines={data.service_charge_prepayments.items} bankingBaseUrl={bankingBaseUrl} />
     </div>
   );
 }
@@ -316,28 +328,97 @@ function serviceChargeRuleInput(
   };
 }
 
-function LineTable({ title, lines }: { title: string; lines: ServiceChargeLine[] }) {
+function LineTable({
+  title,
+  lines,
+  bankingBaseUrl
+}: {
+  title: string;
+  lines: ServiceChargeLine[];
+  bankingBaseUrl: string;
+}) {
   return (
     <section className="overflow-hidden rounded-lg border border-line bg-white">
       <div className="border-b border-line p-4"><h2 className="text-xl font-bold">{title}</h2></div>
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-sm">
-          <thead className="bg-panel text-left"><tr><th className="p-3">Datum</th><th className="p-3">Gegenpartei / Zweck</th><th className="p-3">Zuordnung</th><th className="p-3 text-right">Betrag</th></tr></thead>
-          <tbody className="divide-y divide-line">
-            {lines.map((line) => (
-              <tr key={line.id}>
-                <td className="whitespace-nowrap p-3">{line.value_date || line.booking_date}</td>
-                <td className="p-3"><div className="font-semibold">{line.applicant_name || "-"}</div><div className="text-muted">{line.memo || line.purpose || "-"}</div></td>
-                <td className="p-3 text-muted">{line.tenant_external_id || line.unit_external_id || "Gesamtobjekt"}</td>
-                <td className="whitespace-nowrap p-3 text-right font-bold">{money(Number(line.amount || 0))}</td>
-              </tr>
-            ))}
-            {!lines.length ? <tr><td className="p-4 text-muted" colSpan={4}>Keine kontierten Positionen.</td></tr> : null}
-          </tbody>
-        </table>
+      <div className="divide-y divide-line">
+        {lines.map((line) => (
+          <details className="group" key={line.id}>
+            <summary className="grid cursor-pointer list-none gap-2 p-4 text-sm hover:bg-panel md:grid-cols-[110px_minmax(220px,1fr)_minmax(150px,0.7fr)_140px_120px] md:items-center">
+              <div className="whitespace-nowrap">{formatDate(line.value_date || line.booking_date)}</div>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-semibold">{line.applicant_name || "-"}</span>
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${line.bank_imported ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
+                    {line.bank_imported ? "Bankimport" : "Manuell / Import"}
+                  </span>
+                </div>
+                <div className="line-clamp-2 text-muted">{line.memo || line.purpose || "-"}</div>
+              </div>
+              <div className="text-muted">{line.tenant_external_id || line.unit_external_id || "Gesamtobjekt"}</div>
+              <div>
+                <div className="text-xs font-bold uppercase text-muted">Kaltmiete</div>
+                <div className="font-semibold">
+                  {line.contractual_cold_rent === "" ? "-" : `${money(Number(line.contractual_cold_rent))} / Monat`}
+                </div>
+              </div>
+              <div className="flex items-center justify-between gap-3 md:justify-end">
+                <span className="font-bold">{money(Number(line.amount || 0))}</span>
+                <span aria-hidden="true" className="text-lg text-muted transition group-open:rotate-180">⌄</span>
+              </div>
+            </summary>
+            <div className="border-t border-line bg-panel/60 p-4">
+              <div className="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
+                <Detail label="Buchungsdatum" value={formatDate(line.booking_date)} />
+                <Detail label="Wertstellung" value={formatDate(line.value_date)} />
+                <Detail label="Gesamtbuchung" value={money(Number(line.transaction_amount || line.amount || 0))} />
+                <Detail label="Kontierter Anteil" value={money(Number(line.amount || 0))} />
+                <Detail label="Bank / Konto" value={[line.bank_name, line.account_name].filter(Boolean).join(" · ")} />
+                <Detail label="Konto-IBAN" value={line.account_iban} />
+                <Detail label="Gegenpartei" value={line.applicant_name} />
+                <Detail label="Gegenpartei-IBAN" value={line.applicant_iban} />
+                <Detail label="Verwendungszweck" value={line.purpose} wide />
+                <Detail label="Split-Notiz" value={line.memo} />
+                <Detail label="Buchungsreferenz" value={line.bank_reference} />
+                <Detail label="Kundenreferenz" value={line.customer_reference} />
+                <Detail label="Kategorie" value={line.category_path} />
+                <Detail label="Buchungscode" value={line.transaction_code} />
+                <Detail label="Quelle" value={line.source_type} />
+                <Detail label="Herkunftsschutz" value={line.bank_imported ? "Direkt von der Bank importiert · besonders geschuetzt" : "Manuell oder aus Datei importiert"} />
+                <Detail label="Status" value={line.pending ? "Vorgemerkt" : "Gebucht"} />
+                <Detail label="Vertragliche Kaltmiete" value={line.contractual_cold_rent === "" ? "" : `${money(Number(line.contractual_cold_rent))} / Monat`} />
+                <Detail label="Garage" value={line.contractual_garage_rent === "" ? "" : `${money(Number(line.contractual_garage_rent))} / Monat`} />
+              </div>
+              <div className="mt-4">
+                <Link
+                  className="button button-secondary"
+                  href={`${bankingBaseUrl.replace(/\/+$/, "")}/transactions/${line.transaction_id}/edit`}
+                  target="_blank"
+                >
+                  Vollstaendige Buchung in Banking oeffnen
+                </Link>
+              </div>
+            </div>
+          </details>
+        ))}
+        {!lines.length ? <div className="p-4 text-sm text-muted">Keine kontierten Positionen.</div> : null}
       </div>
     </section>
   );
+}
+
+function Detail({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) {
+  return (
+    <div className={wide ? "sm:col-span-2 xl:col-span-4" : ""}>
+      <div className="text-xs font-bold uppercase text-muted">{label}</div>
+      <div className="mt-1 break-words font-medium">{value || "-"}</div>
+    </div>
+  );
+}
+
+function formatDate(value: string) {
+  if (!value) return "-";
+  const parsed = new Date(`${value.slice(0, 10)}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString("de-DE");
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
