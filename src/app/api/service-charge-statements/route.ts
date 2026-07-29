@@ -1,9 +1,8 @@
 import { AuditAction, Prisma, Role } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { assertSameOrigin, requireApiUser } from "@/lib/auth";
+import { assertSameOrigin, clientIp, requireApiUser } from "@/lib/auth";
 import { auditLog } from "@/lib/audit";
-import { clientIp } from "@/lib/http";
 import { portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 import { buildServiceChargeStatementSnapshot, serviceChargeSnapshotChecksum } from "@/lib/service-charge-statement";
