@@ -7,7 +7,7 @@ import { auditLog } from "@/lib/audit";
 import { assertSameOrigin, clientIp, requireApiUser } from "@/lib/auth";
 import { buildDocumentMetadata } from "@/lib/document-metadata";
 import { safeFilename } from "@/lib/files";
-import { assertPropertyInPortal, assertUnitInPortal, portalWhere } from "@/lib/portal-instance";
+import { assertDocumentCategoryInPortal, assertPropertyInPortal, assertUnitInPortal, portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 
 const documentUpdateSchema = z.object({
@@ -23,7 +23,7 @@ const documentUpdateSchema = z.object({
   isPrimaryImage: z.boolean().optional(),
   summary: z.string().nullable().optional(),
   tags: z.array(z.string()).optional(),
-  documentYear: z.number().int().min(1900).max(2049).nullable().optional()
+  documentYear: z.number().int().min(1900).max(2100).nullable().optional()
 });
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
@@ -60,6 +60,9 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   }
   if (!(await assertPropertyInPortal(data.propertyId, user)) || !(await assertUnitInPortal(data.unitId, user))) {
     return NextResponse.json({ error: "Zuordnung gehoert nicht zu dieser Instanz." }, { status: 403 });
+  }
+  if (!(await assertDocumentCategoryInPortal(data.categoryId, user))) {
+    return NextResponse.json({ error: "Kategorie gehoert nicht zu dieser Instanz." }, { status: 400 });
   }
   if (data.isPrimaryImage) {
     const propertyId = data.propertyId ?? existing.propertyId;

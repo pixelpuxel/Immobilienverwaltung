@@ -6,7 +6,7 @@ import { assertSameOrigin, clientIp, requireApiUser } from "@/lib/auth";
 import { buildDocumentMetadata, extractDocumentYear } from "@/lib/document-metadata";
 import { saveUpload } from "@/lib/files";
 import { brokerPropertyIds, brokerVisibleDocumentWhere, tenantUnitId } from "@/lib/permissions";
-import { assertPropertyInPortal, assertUnitInPortal, portalWhere } from "@/lib/portal-instance";
+import { assertDocumentCategoryInPortal, assertPropertyInPortal, assertUnitInPortal, portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(request: NextRequest) {
@@ -198,8 +198,14 @@ export async function POST(request: NextRequest) {
   let propertyId = String(form.get("propertyId") || "") || null;
   let unitId = String(form.get("unitId") || "") || null;
   const tenantProfileId = String(form.get("tenantProfileId") || "") || null;
+  const categoryId = String(form.get("categoryId") || "") || null;
+  const documentYearValue = String(form.get("documentYear") || "").trim();
+  const documentYear = documentYearValue ? Number(documentYearValue) : null;
   const isPropertyImage = String(form.get("isPropertyImage") || "") === "true";
   const isPrimaryImage = String(form.get("isPrimaryImage") || "") === "true";
+  if (documentYear !== null && (!Number.isInteger(documentYear) || documentYear < 1900 || documentYear > 2100)) {
+    return NextResponse.json({ error: "Abrechnungsjahr ist ungueltig." }, { status: 400 });
+  }
   if (tenantProfileId) {
     const tenant = await prisma.tenantProfile.findFirst({
       where: { id: tenantProfileId, user: portalWhere(user) },
@@ -214,6 +220,9 @@ export async function POST(request: NextRequest) {
   }
   if (!(await assertPropertyInPortal(propertyId, user)) || !(await assertUnitInPortal(unitId, user))) {
     return NextResponse.json({ error: "Zuordnung gehoert nicht zu dieser Instanz." }, { status: 403 });
+  }
+  if (!(await assertDocumentCategoryInPortal(categoryId, user))) {
+    return NextResponse.json({ error: "Kategorie gehoert nicht zu dieser Instanz." }, { status: 400 });
   }
   if (isPropertyImage && isPrimaryImage && propertyId) {
     await prisma.document.updateMany({
@@ -239,7 +248,8 @@ export async function POST(request: NextRequest) {
         propertyId,
         unitId,
         tenantProfileId,
-        categoryId: String(form.get("categoryId") || "") || null,
+        categoryId,
+        documentYear,
         isPropertyImage,
         isPrimaryImage: isPropertyImage && isPrimaryImage && index === 0,
         uploadedById: user.id

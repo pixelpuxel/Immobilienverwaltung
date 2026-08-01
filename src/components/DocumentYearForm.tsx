@@ -38,7 +38,7 @@ export function DocumentYearForm({ documentId, documentYear }: { documentId: str
           className="text-sm"
           defaultValue={documentYear || ""}
           inputMode="numeric"
-          max={2049}
+          max={2100}
           min={1900}
           name="documentYear"
           placeholder="Automatisch"

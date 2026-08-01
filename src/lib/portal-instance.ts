@@ -19,6 +19,17 @@ export async function assertUnitInPortal(unitId: string | null | undefined, user
   return count > 0;
 }
 
+export async function assertDocumentCategoryInPortal(categoryId: string | null | undefined, user: Pick<User, "portalInstanceId">) {
+  if (!categoryId || !user.portalInstanceId) return true;
+  const count = await prisma.documentCategory.count({
+    where: {
+      id: categoryId,
+      OR: [{ portalInstanceId: null }, { portalInstanceId: user.portalInstanceId }]
+    }
+  });
+  return count > 0;
+}
+
 export function canAccessPortalUser(actor: ScopedUser, target: Pick<User, "portalInstanceId">) {
   if (actor.platformAdmin) return true;
   return actor.portalInstanceId === target.portalInstanceId;

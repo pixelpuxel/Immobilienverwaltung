@@ -273,7 +273,7 @@ function booleanValue(value: unknown) {
 function numberValue(value: unknown) {
   if (value === undefined || value === null || value === "") return null;
   const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 1900 || parsed > 2049) throw new Error("documentYear ist ungueltig.");
+  if (!Number.isInteger(parsed) || parsed < 1900 || parsed > 2100) throw new Error("documentYear ist ungueltig.");
   return parsed;
 }
 
