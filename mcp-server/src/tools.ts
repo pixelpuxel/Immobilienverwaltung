@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { isIP } from "node:net";
 import { z } from "zod";
 import { PortalClient } from "./portal-client.js";
-import { jsonContent, structuredJsonContent, textContent } from "./format.js";
+import { asText, jsonContent, structuredJsonContent, textContent } from "./format.js";
 
 const optionalString = z.string().trim().optional();
 const optionalId = z.string().trim().min(1).optional();
@@ -27,6 +27,59 @@ const documentToolOutputSchema = {
   message: z.string(),
   document: z.unknown()
 };
+const maxMcpDocumentBytes = 25 * 1024 * 1024;
+const supportedDocumentMimeTypes = new Set([
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-excel",
+  "image/jpeg",
+  "image/png",
+  "text/plain",
+  "text/markdown",
+  "text/csv",
+  "application/csv"
+]);
+const supportedDocumentExtensions = new Set(["pdf", "docx", "doc", "xlsx", "xls", "jpg", "jpeg", "png", "txt", "md", "csv"]);
+
+function extensionOf(filename: string) {
+  const match = filename.toLowerCase().match(/\.([a-z0-9]+)$/);
+  return match?.[1] || "";
+}
+
+function mcpDocumentResource(input: { documentId: string; filename: string; mimeType: string; size: number; buffer: Buffer }) {
+  const metadata = {
+    documentId: input.documentId,
+    filename: input.filename,
+    mimeType: input.mimeType,
+    size: input.size,
+    file: `mcp-resource://documents/${encodeURIComponent(input.documentId)}/${encodeURIComponent(input.filename)}`
+  };
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: asText(metadata)
+      },
+      {
+        type: "resource" as const,
+        resource: {
+          uri: metadata.file,
+          mimeType: input.mimeType,
+          blob: input.buffer.toString("base64"),
+          _meta: {
+            documentId: input.documentId,
+            filename: input.filename,
+            size: input.size
+          }
+        }
+      }
+    ],
+    structuredContent: metadata
+  };
+}
+
 const classifyDocumentOutputSchema = {
   ...documentToolOutputSchema,
   relatedDocumentIds: z.array(z.string()),
@@ -684,6 +737,36 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
       method: "DELETE",
       path: `/api/integrations/v1/documents/${encodeURIComponent(id)}`
     }))
+  );
+
+  server.registerTool(
+    "download_document",
+    {
+      title: "Dokument direkt herunterladen",
+      description: "Laedt die Originaldatei eines Dokuments aus dem Portal und gibt sie direkt als eingebettete MCP-Datei/Resource zurueck. Nutzt keine signierte URL und keine frei uebergebenen Dateipfade. Unterstuetzt PDF, DOCX, DOC, XLSX, XLS, JPG, PNG, TXT und CSV bis 25 MB.",
+      inputSchema: {
+        documentId: z.string().trim().min(1)
+      }
+    },
+    async ({ documentId }) => {
+      const file = await portal.file({
+        path: `/api/integrations/v1/documents/${encodeURIComponent(documentId)}/download`
+      });
+      const ext = extensionOf(file.filename);
+      if (!supportedDocumentMimeTypes.has(file.mimeType) && !supportedDocumentExtensions.has(ext)) {
+        throw new Error(`UNSUPPORTED_FILE_TYPE: Dateityp ${file.mimeType || ext || "unbekannt"} wird fuer direkte MCP-Dateien nicht unterstuetzt.`);
+      }
+      if (file.size > maxMcpDocumentBytes) {
+        throw new Error(`FILE_TOO_LARGE: Datei ist ${file.size} Bytes gross. Limit: ${maxMcpDocumentBytes} Bytes.`);
+      }
+      return mcpDocumentResource({
+        documentId,
+        filename: file.filename,
+        mimeType: file.mimeType,
+        size: file.size,
+        buffer: file.buffer
+      });
+    }
   );
 
   server.registerTool(

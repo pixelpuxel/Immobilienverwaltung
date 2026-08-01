@@ -52,6 +52,7 @@ Du stellst Werkzeuge bereit, mit denen ein MCP-Client wie ChatGPT fachliche Date
 1. Bei allgemeinen Suchfragen `search_all`.
 2. Bei konkreten Filtern `list_documents`.
 3. Fuer Links `get_document_links`.
+4. Wenn der Nutzer den Dateiinhalt direkt braucht oder ein Client ohne direkten HTTP-Download weiterarbeiten soll, `download_document` nutzen. Dieses Tool gibt die Originaldatei als MCP-Datei/Resource zurueck.
 
 ### Dokumente hochladen
 

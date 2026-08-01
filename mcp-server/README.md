@@ -183,6 +183,7 @@ Der Server stellt fachliche Tools bereit, z. B.:
 - `upload_tenant_document`
 - `update_document`
 - `delete_document`
+- `download_document`
 - `get_document_links`
 - `list_contract_templates`
 - `derive_contract_template`
@@ -210,6 +211,8 @@ Der Server stellt fachliche Tools bereit, z. B.:
 Dokument-Uploads sollen bevorzugt ueber `upload_document` erfolgen. Das Tool akzeptiert bevorzugt einen Chat-/MCP-Dateianhang im Feld `file` und weiterhin `fileBase64` als Rueckfall. Weitere Felder sind `filename`, optional `mimeType`, `title`, `propertyId`, `unitId`, `tenantProfileId`, `categoryId`, `summary`, `tags` und `documentYear`.
 
 Mieterdokumente wie Kuendigungen, Kautionsnachweise oder persoenliche Mietvertraege sollen bevorzugt ueber `upload_tenant_document` hochgeladen werden. Das Tool akzeptiert `tenantProfileId`, `file` oder `fileBase64`, `filename`, optional `categoryName` wie `Kuendigungen` und loest die Dokumentkategorie intern auf.
+
+Dokumente koennen mit `download_document` direkt als MCP-Datei/Resource geladen werden. Das Tool liefert Metadaten (`documentId`, `filename`, `mimeType`, `size`) und eine eingebettete Datei-Resource zurueck. Es nutzt keine signierte URL und keine frei uebergebenen Dateipfade. Der Portal-Endpunkt prueft `read:documents`, `download:documents`, Portalinstanz, Dokumentzugriff, erlaubten Dateityp und ein 25-MB-Limit. `get_document_links` bleibt fuer normale Portal-Links bestehen.
 
 Wenn die fachliche Einsortierung noch unklar ist, ist der Standardablauf zweistufig:
 
