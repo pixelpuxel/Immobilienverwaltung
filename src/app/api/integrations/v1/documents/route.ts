@@ -33,6 +33,9 @@ export async function GET(request: NextRequest) {
   const unitId = request.nextUrl.searchParams.get("unitId");
   const tenantId = request.nextUrl.searchParams.get("tenantId") || request.nextUrl.searchParams.get("tenantProfileId");
   const categoryId = request.nextUrl.searchParams.get("categoryId");
+  const categoryName = request.nextUrl.searchParams.get("categoryName")?.trim();
+  const categoryGroup = request.nextUrl.searchParams.get("categoryGroup")?.trim();
+  const kind = request.nextUrl.searchParams.get("kind")?.trim();
   const updatedSince = request.nextUrl.searchParams.get("updatedSince");
   const limit = Math.min(100, Math.max(1, Number(request.nextUrl.searchParams.get("limit") || "50") || 50));
   const page = Math.max(1, Number(request.nextUrl.searchParams.get("page") || "1") || 1);
@@ -50,15 +53,18 @@ export async function GET(request: NextRequest) {
       unitId ? { unitId } : {},
       tenant ? tenantPersonalDocumentWhere(tenant) : {},
       categoryId ? { categoryId } : {},
+      categoryName ? { category: { name: { contains: categoryName, mode: "insensitive" } } } : {},
+      categoryGroup ? { category: { group: { contains: categoryGroup, mode: "insensitive" } } } : {},
+      kind ? documentKindWhere(kind) : {},
       updatedSince ? { updatedAt: { gte: new Date(updatedSince) } } : {},
-      q ? { OR: [{ title: { contains: q, mode: "insensitive" } }, { filename: { contains: q, mode: "insensitive" } }, { summary: { contains: q, mode: "insensitive" } }] } : {}
+      q ? documentSearchWhere(q) : {}
     ]
   };
   const [documents, total] = await Promise.all([
     prisma.document.findMany({
       where,
       include: integrationDocumentInclude(),
-      orderBy: { updatedAt: "desc" },
+      orderBy: [{ documentYear: "desc" }, { title: "desc" }, { updatedAt: "desc" }],
       skip: (page - 1) * limit,
       take: limit
     }),
@@ -173,6 +179,47 @@ export async function POST(request: NextRequest) {
       }
     }, { status: uploadErrorStatus(message) });
   }
+}
+
+function documentSearchWhere(q: string): Prisma.DocumentWhereInput {
+  return {
+    OR: [
+      { title: { contains: q, mode: "insensitive" } },
+      { filename: { contains: q, mode: "insensitive" } },
+      { summary: { contains: q, mode: "insensitive" } },
+      { category: { name: { contains: q, mode: "insensitive" } } },
+      { category: { group: { contains: q, mode: "insensitive" } } },
+      { property: { name: { contains: q, mode: "insensitive" } } },
+      { property: { address: { contains: q, mode: "insensitive" } } },
+      { unit: { unitNumber: { contains: q, mode: "insensitive" } } },
+      { tenantProfile: { firstName: { contains: q, mode: "insensitive" } } },
+      { tenantProfile: { lastName: { contains: q, mode: "insensitive" } } }
+    ]
+  };
+}
+
+function strictDocumentTypeWhere(value: string): Prisma.DocumentWhereInput {
+  return {
+    OR: [
+      { title: { contains: value, mode: "insensitive" } },
+      { filename: { contains: value, mode: "insensitive" } },
+      { category: { name: { contains: value, mode: "insensitive" } } }
+    ]
+  };
+}
+
+function documentKindWhere(kind: string): Prisma.DocumentWhereInput {
+  const normalized = kind.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+  if (["lease_contract", "mietvertrag", "mietvertraege", "contract"].includes(normalized)) {
+    return strictDocumentTypeWhere("Mietvertrag");
+  }
+  if (["stepped_rent", "staffelmiete"].includes(normalized)) {
+    return strictDocumentTypeWhere("Staffelmiete");
+  }
+  if (["termination", "kuendigung", "kundigung"].includes(normalized)) {
+    return strictDocumentTypeWhere("Kuendigung");
+  }
+  return {};
 }
 
 function savedImageMimeType(file: File) {

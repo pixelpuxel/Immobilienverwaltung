@@ -256,15 +256,17 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
     "list_tenants",
     {
       title: "Mieter listen",
-      description: "Listet Mieter, optional gefiltert nach Immobilie und aktueller Belegung.",
+      description: "Listet Mieter, optional gefiltert nach Suchtext, Immobilie, Einheit und aktueller Belegung. Nutze q fuer Namen, Adressen, Einheiten oder Objektkuerzel wie Schreibergasse/Mainaustr.",
       inputSchema: {
+        q: optionalString,
         propertyId: optionalId,
+        unitId: optionalId,
         current: z.boolean().optional()
       }
     },
-    async ({ propertyId, current }) => jsonContent(await portal.json({
+    async ({ q, propertyId, unitId, current }) => jsonContent(await portal.json({
       path: "/api/integrations/v1/tenants",
-      query: { propertyId, current: current === undefined ? undefined : String(current) }
+      query: { q, propertyId, unitId, current: current === undefined ? undefined : String(current) }
     }))
   );
 
@@ -352,7 +354,10 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
         propertyId: optionalId,
         unitId: optionalId,
         categoryId: optionalId,
+        categoryName: optionalString,
+        categoryGroup: optionalString,
         tenantProfileId: optionalId,
+        kind: z.enum(["lease_contract", "stepped_rent", "termination"]).optional().describe("Fachlicher Dokumenttyp. Nutze lease_contract fuer Mietvertraege und stepped_rent fuer Staffelmiete."),
         documentYear: z.number().int().min(1900).max(2049).optional(),
         limit: z.number().int().min(1).max(100).optional(),
         updatedSince: optionalString
@@ -361,6 +366,43 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
     async (args) => jsonContent(await portal.json({
       path: "/api/integrations/v1/documents",
       query: args
+    }))
+  );
+
+  server.registerTool(
+    "list_lease_documents",
+    {
+      title: "Mietvertragsdokumente listen",
+      description: "Findet Mietvertraege, die als Dokumente importiert sind, auch wenn kein LeaseContract-Datensatz existiert. Filtere nach Immobilie, Einheit, Mietername oder Suchtext; nutze dies fuer Fragen wie aktueller Mietvertrag der Schreibergasse oder Mietvertrag von Eleonora Rizzo.",
+      inputSchema: {
+        q: optionalString,
+        propertyId: optionalId,
+        unitId: optionalId,
+        tenantProfileId: optionalId,
+        limit: z.number().int().min(1).max(100).optional()
+      }
+    },
+    async ({ q, propertyId, unitId, tenantProfileId, limit }) => jsonContent(await portal.json({
+      path: "/api/integrations/v1/documents",
+      query: { q, propertyId, unitId, tenantProfileId, kind: "lease_contract", limit }
+    }))
+  );
+
+  server.registerTool(
+    "list_stepped_rent_documents",
+    {
+      title: "Staffelmiete-Dokumente listen",
+      description: "Findet Staffelmiete-Unterlagen als Dokumente. Kombiniere dies mit read_document_content, um vereinbarte Staffelmiete, naechste Erhoehung und aktuelle/naechste Miete zu ermitteln.",
+      inputSchema: {
+        q: optionalString,
+        propertyId: optionalId,
+        unitId: optionalId,
+        limit: z.number().int().min(1).max(100).optional()
+      }
+    },
+    async ({ q, propertyId, unitId, limit }) => jsonContent(await portal.json({
+      path: "/api/integrations/v1/documents",
+      query: { q, propertyId, unitId, kind: "stepped_rent", limit }
     }))
   );
 
@@ -668,6 +710,28 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
   );
 
   server.registerTool(
+    "read_document_content",
+    {
+      title: "Dokumentinhalt lesen",
+      description: "Liest den Inhalt eines Dokuments. PDF, DOCX, DOC, TXT und Markdown werden als Text extrahiert, soweit maschinenlesbar. Es wird keine serverseitige OCR ausgefuehrt. Bei gescannten PDFs/Bildern oder nicht extrahierbarem Inhalt wird die Originaldatei bzw. bei Word-Dokumenten optional ein PDF als Base64 zur Analyse durch den MCP-Client/LLM zurueckgegeben.",
+      inputSchema: {
+        id: z.string().trim().min(1),
+        includeFile: z.boolean().optional().describe("Wenn true, gibt das Tool die Datei bis 15 MB als Base64 mit zurueck. Bei nicht extrahierbaren Dokumenten passiert das automatisch."),
+        preferPdf: z.boolean().optional().describe("Default true. Wandelt DOC/DOCX fuer returnedFile nach PDF, wenn moeglich."),
+        maxChars: z.number().int().min(1000).max(500000).optional()
+      }
+    },
+    async ({ id, includeFile, preferPdf, maxChars }) => jsonContent(await portal.json({
+      path: `/api/integrations/v1/documents/${encodeURIComponent(id)}/content`,
+      query: {
+        includeFile: includeFile === undefined ? undefined : String(includeFile),
+        preferPdf: preferPdf === undefined ? undefined : (preferPdf ? "1" : "0"),
+        maxChars
+      }
+    }))
+  );
+
+  server.registerTool(
     "list_contract_templates",
     {
       title: "Vertragsvorlagen listen",
@@ -740,14 +804,19 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
     "list_contracts",
     {
       title: "Mietvertraege listen",
-      description: "Listet Mietvertraege, optional fuer einen Mieter.",
+      description: "Listet Mietvertraege, optional gefiltert nach Mieter, Immobilie, Einheit, Suchtext oder aktueller Belegung. Nutze q fuer Anfragen wie aktueller Mietvertrag Schreibergasse oder Mietvertrag von Eleonora Rizzo.",
       inputSchema: {
-        tenantId: optionalId
+        q: optionalString,
+        tenantId: optionalId,
+        tenantProfileId: optionalId,
+        propertyId: optionalId,
+        unitId: optionalId,
+        current: z.boolean().optional()
       }
     },
-    async ({ tenantId }) => jsonContent(await portal.json({
+    async ({ q, tenantId, tenantProfileId, propertyId, unitId, current }) => jsonContent(await portal.json({
       path: "/api/integrations/v1/contracts",
-      query: { tenantId }
+      query: { q, tenantId: tenantId || tenantProfileId, propertyId, unitId, current: current === undefined ? undefined : String(current) }
     }))
   );
 

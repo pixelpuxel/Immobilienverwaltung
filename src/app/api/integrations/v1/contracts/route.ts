@@ -18,16 +18,24 @@ const createSchema = z.object({
 export async function GET(request: NextRequest) {
   const { user, response } = await requireIntegrationUser(request, ["read:contracts"]);
   if (!user) return response;
-  const tenantId = request.nextUrl.searchParams.get("tenantId");
+  const q = request.nextUrl.searchParams.get("q")?.trim();
+  const tenantId = request.nextUrl.searchParams.get("tenantId") || request.nextUrl.searchParams.get("tenantProfileId");
+  const propertyId = request.nextUrl.searchParams.get("propertyId");
+  const unitId = request.nextUrl.searchParams.get("unitId");
+  const current = request.nextUrl.searchParams.get("current");
   const where: Prisma.LeaseContractWhereInput = {
     AND: [
       await contractAccessWhere(user),
-      tenantId ? { tenantProfileId: tenantId } : {}
+      tenantId ? { tenantProfileId: tenantId } : {},
+      propertyId ? { unit: { propertyId } } : {},
+      unitId ? { unitId } : {},
+      current === "true" ? { tenantProfile: { isCurrent: true } } : current === "false" ? { tenantProfile: { isCurrent: false } } : {},
+      q ? contractSearchWhere(q) : {}
     ]
   };
   const contracts = await prisma.leaseContract.findMany({
     where,
-    include: { tenantProfile: true, unit: { include: { property: { select: { id: true, name: true } } } }, template: { select: { id: true, name: true } } },
+    include: { tenantProfile: true, unit: { include: { property: { select: { id: true, name: true, address: true } } } }, template: { select: { id: true, name: true, propertyId: true, unitId: true, isGlobalTemplate: true } } },
     orderBy: { createdAt: "desc" }
   });
   return NextResponse.json({
@@ -36,11 +44,15 @@ export async function GET(request: NextRequest) {
       tenantProfileId: contract.tenantProfileId,
       unitId: contract.unitId,
       template: contract.template,
-      tenantProfile: contract.tenantProfile,
-      unit: contract.unit,
+      tenantProfile: serializeTenantContractData(contract.tenantProfile),
+      unit: serializeContractUnit(contract.unit),
+      propertyId: contract.unit.property.id,
+      property: contract.unit.property,
       createdAt: contract.createdAt,
       previewUrl: `/api/contracts/${contract.id}/preview`,
-      downloadUrl: `/api/contracts/${contract.id}/download`
+      docxDownloadUrl: `/api/integrations/v1/contracts/${contract.id}/download?format=docx`,
+      pdfDownloadUrl: `/api/integrations/v1/contracts/${contract.id}/download?format=pdf`,
+      downloadUrl: `/api/integrations/v1/contracts/${contract.id}/download?format=pdf`
     })),
     nextCursor: null
   });
@@ -92,6 +104,53 @@ export async function POST(request: NextRequest) {
     pdfDownloadUrl: `/api/contracts/${contract.id}/download?format=pdf`,
     documentId: document.id
   }, { status: 201 });
+}
+
+function contractSearchWhere(q: string): Prisma.LeaseContractWhereInput {
+  return {
+    OR: [
+      { tenantProfile: { firstName: { contains: q, mode: "insensitive" } } },
+      { tenantProfile: { lastName: { contains: q, mode: "insensitive" } } },
+      { tenantProfile: { email: { contains: q, mode: "insensitive" } } },
+      { tenantProfile: { user: { username: { contains: q, mode: "insensitive" } } } },
+      { unit: { unitNumber: { contains: q, mode: "insensitive" } } },
+      { unit: { property: { name: { contains: q, mode: "insensitive" } } } },
+      { unit: { property: { address: { contains: q, mode: "insensitive" } } } },
+      { template: { name: { contains: q, mode: "insensitive" } } }
+    ]
+  };
+}
+
+function serializeTenantContractData(tenant: {
+  rentAmount?: { toString(): string } | null;
+  garageRent?: { toString(): string } | null;
+  serviceCharges?: { toString(): string } | null;
+  deposit?: { toString(): string } | null;
+  [key: string]: unknown;
+}) {
+  return {
+    ...tenant,
+    rentAmount: tenant.rentAmount?.toString() ?? null,
+    garageRent: tenant.garageRent?.toString() ?? null,
+    serviceCharges: tenant.serviceCharges?.toString() ?? null,
+    deposit: tenant.deposit?.toString() ?? null
+  };
+}
+
+function serializeContractUnit(unit: {
+  rentAmount?: { toString(): string } | null;
+  garageRent?: { toString(): string } | null;
+  serviceCharges?: { toString(): string } | null;
+  warmRent?: { toString(): string } | null;
+  [key: string]: unknown;
+}) {
+  return {
+    ...unit,
+    rentAmount: unit.rentAmount?.toString() ?? null,
+    garageRent: unit.garageRent?.toString() ?? null,
+    serviceCharges: unit.serviceCharges?.toString() ?? null,
+    warmRent: unit.warmRent?.toString() ?? null
+  };
 }
 
 async function contractAccessWhere(user: { id: string; role: Role; portalInstanceId: string | null }) {
