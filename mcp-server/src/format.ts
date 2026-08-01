@@ -10,7 +10,8 @@ export function jsonContent(value: unknown) {
         type: "text" as const,
         text: asText(value)
       }
-    ]
+    ],
+    structuredContent: asStructuredContent(value)
   };
 }
 
@@ -33,6 +34,12 @@ export function textContent(text: string) {
         type: "text" as const,
         text
       }
-    ]
+    ],
+    structuredContent: { text }
   };
+}
+
+function asStructuredContent(value: unknown) {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
+  return { value };
 }

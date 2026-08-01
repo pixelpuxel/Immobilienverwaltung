@@ -10,6 +10,8 @@ const optionalId = z.string().trim().min(1).optional();
 const money = z.union([z.string(), z.number()]).optional().nullable();
 const uploadedFileInput = z.unknown().optional().describe("Bevorzugt: Datei-Referenz des MCP-/Chat-Clients. Unterstuetzt Objekte mit path, filename/name, mimeType/type, data/base64 oder url.");
 const optionalFileBase64 = z.string().trim().min(1).optional().describe("Rueckfall: Dateiinhalt als Base64 oder Data-URL.");
+const genericToolOutputSchema = z.object({}).passthrough();
+
 const documentToolOutputSchema = {
   success: z.boolean(),
   documentId: z.string(),
@@ -88,6 +90,13 @@ const classifyDocumentOutputSchema = {
 };
 
 export function registerPortalTools(server: McpServer, portal: PortalClient) {
+  const originalRegisterTool = server.registerTool.bind(server);
+  server.registerTool = ((name: string, config: Record<string, unknown>, callback: unknown) => originalRegisterTool(
+    name,
+    { outputSchema: genericToolOutputSchema, ...config } as Parameters<McpServer["registerTool"]>[1],
+    callback as Parameters<McpServer["registerTool"]>[2]
+  )) as McpServer["registerTool"];
+
   server.registerTool(
     "portal_health",
     {
