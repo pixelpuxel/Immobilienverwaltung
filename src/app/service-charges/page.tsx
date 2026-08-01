@@ -278,6 +278,8 @@ function ServiceChargePreview({
 
       <LineTable title="Umlagefaehige Kosten" lines={data.allocable_costs.items} bankingBaseUrl={bankingBaseUrl} />
       <LineTable title="Nebenkostenvorauszahlungen" lines={data.service_charge_prepayments.items} bankingBaseUrl={bankingBaseUrl} />
+      <LineTable title="Kaltmietanteile" lines={data.cold_rent.items} bankingBaseUrl={bankingBaseUrl} />
+      <LineTable title="Nebenkostenabrechnungszahlungen" lines={data.service_charge_settlements.items} bankingBaseUrl={bankingBaseUrl} />
     </div>
   );
 }
