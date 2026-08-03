@@ -24,6 +24,7 @@
 - Mieterdokumente lesen.
 - Wohnungsgeberbestaetigung erzeugen.
 - Dokumente lesen/aendern/loeschen und Links erzeugen.
+- Dokumente mit `download_document` direkt als eingebettete MCP-Datei/Resource zurueckgeben, ohne signierte URL und ohne direkte Storage-Zugriffe.
 - Dokumentkategorien lesen.
 - Angehaengte Dateien direkt als MCP-Dateiobjekt oder als Base64-Rueckfall hochladen.
 - Dateien koennen zuerst neutral in den Dokumenteneingang geladen und danach mit `classify_document` fachlich einsortiert werden.
