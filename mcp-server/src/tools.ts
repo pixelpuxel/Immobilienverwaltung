@@ -783,6 +783,176 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
   );
 
   server.registerTool(
+    "get_service_charge_workspace",
+    {
+      title: "Nebenkostenabrechnung laden",
+      description: "Laedt fuer Immobilie und Jahr den vollstaendigen Abrechnungs-Workspace: Einheiten, Verteilerschluessel, Hausverwaltungspositionen, Banking-Istdaten, serverseitige Verteilung, Pruefhinweise, Quelldokumente und Versionen.",
+      inputSchema: {
+        propertyId: z.string().trim().min(1),
+        year: z.number().int().min(2000).max(2100),
+        unitId: optionalId,
+        tenantId: optionalId
+      }
+    },
+    async (args) => jsonContent(await portal.json({
+      path: "/api/integrations/v1/service-charges",
+      query: args
+    }))
+  );
+
+  server.registerTool(
+    "save_service_charge_rule",
+    {
+      title: "Nebenkosten-Verteilerschluessel speichern",
+      description: "Speichert den Verteilerschluessel einer Immobilie fuer ein Abrechnungsjahr. AREA nutzt Flaechen, FIXED_SHARE feste Anteile und EXTERNAL_STATEMENT die einzeln erfassten Positionen der Hausverwaltung.",
+      inputSchema: {
+        propertyId: z.string().trim().min(1),
+        year: z.number().int().min(2000).max(2100),
+        method: z.enum(["AREA", "FIXED_SHARE", "EXTERNAL_STATEMENT"]),
+        totalDistributionValue: z.number().positive().optional().nullable(),
+        note: optionalString,
+        unitValues: z.record(z.number().finite().min(0))
+      }
+    },
+    async (args) => jsonContent(await portal.json({
+      method: "PUT",
+      path: "/api/integrations/v1/service-charges/rule",
+      body: args
+    }))
+  );
+
+  server.registerTool(
+    "add_service_charge_line",
+    {
+      title: "Nebenkostenposition erfassen",
+      description: "Erfasst eine Position aus einer externen Hausverwaltungsabrechnung mit Behandlung, optionaler Einheit, Quellenangabe und Notiz.",
+      inputSchema: {
+        propertyId: z.string().trim().min(1),
+        year: z.number().int().min(2000).max(2100),
+        unitId: optionalId.nullable(),
+        description: z.string().trim().min(1).max(300),
+        amount: z.number().finite().min(0),
+        treatment: z.enum(["ALLOCABLE", "NON_ALLOCABLE", "RESERVE"]),
+        sourceReference: z.string().trim().max(300).optional(),
+        note: z.string().trim().max(2000).optional()
+      }
+    },
+    async (args) => jsonContent(await portal.json({
+      method: "POST",
+      path: "/api/integrations/v1/service-charges/lines",
+      body: args
+    }))
+  );
+
+  server.registerTool(
+    "delete_service_charge_line",
+    {
+      title: "Nebenkostenposition loeschen",
+      description: "Loescht eine noch nicht in einem unveraenderlichen Snapshot festgeschriebene Hausverwaltungsposition.",
+      inputSchema: { id: z.string().trim().min(1) }
+    },
+    async ({ id }) => jsonContent(await portal.json({
+      method: "DELETE",
+      path: "/api/integrations/v1/service-charges/lines",
+      query: { id }
+    }))
+  );
+
+  server.registerTool(
+    "list_service_charge_statements",
+    {
+      title: "Nebenkostenabrechnungs-Versionen listen",
+      description: "Listet gespeicherte Entwuerfe und festgeschriebene Nebenkostenabrechnungen, optional nach Immobilie und Jahr.",
+      inputSchema: {
+        propertyId: optionalId,
+        year: z.number().int().min(2000).max(2100).optional(),
+        limit: z.number().int().min(1).max(100).optional()
+      }
+    },
+    async (args) => jsonContent(await portal.json({
+      path: "/api/integrations/v1/service-charge-statements",
+      query: args
+    }))
+  );
+
+  server.registerTool(
+    "create_service_charge_statement",
+    {
+      title: "Nebenkostenabrechnungs-Version erzeugen",
+      description: "Erzeugt einen unveraenderlichen Entwurfs-Snapshot aus Banking-Istdaten, Verteilerschluessel, Kostenpositionen und Mietverhaeltnissen. Vorher Workspace und Pruefhinweise kontrollieren.",
+      inputSchema: {
+        propertyId: z.string().trim().min(1),
+        year: z.number().int().min(2000).max(2100)
+      }
+    },
+    async (args) => jsonContent(await portal.json({
+      method: "POST",
+      path: "/api/integrations/v1/service-charge-statements",
+      body: args
+    }))
+  );
+
+  server.registerTool(
+    "get_service_charge_statement",
+    {
+      title: "Nebenkostenabrechnungs-Protokoll laden",
+      description: "Laedt den vollstaendigen eingefrorenen Snapshot mit Pruefsumme, Berechnung, Quellbuchungen und Vertragsdaten.",
+      inputSchema: { id: z.string().trim().min(1) }
+    },
+    async ({ id }) => jsonContent(await portal.json({
+      path: `/api/integrations/v1/service-charge-statements/${encodeURIComponent(id)}`
+    }))
+  );
+
+  server.registerTool(
+    "finalize_service_charge_statement",
+    {
+      title: "Nebenkostenabrechnung festschreiben",
+      description: "Schreibt eine Abrechnung fest. Der Server verweigert dies bei blockierenden Pruefhinweisen.",
+      inputSchema: { id: z.string().trim().min(1) }
+    },
+    async ({ id }) => jsonContent(await portal.json({
+      method: "PATCH",
+      path: `/api/integrations/v1/service-charge-statements/${encodeURIComponent(id)}`,
+      body: { status: "FINAL" }
+    }))
+  );
+
+  server.registerTool(
+    "delete_service_charge_statement",
+    {
+      title: "Nebenkostenabrechnungs-Version ausblenden",
+      description: "Blendet einen Entwurf aus. Eine festgeschriebene Version wird nur bei explizitem confirmFinal=true entfernt.",
+      inputSchema: {
+        id: z.string().trim().min(1),
+        confirmFinal: z.boolean().optional()
+      }
+    },
+    async ({ id, confirmFinal }) => jsonContent(await portal.json({
+      method: "DELETE",
+      path: `/api/integrations/v1/service-charge-statements/${encodeURIComponent(id)}`,
+      query: { confirm: confirmFinal ? "DELETE_FINAL" : undefined }
+    }))
+  );
+
+  server.registerTool(
+    "get_service_charge_statement_links",
+    {
+      title: "Nebenkostenabrechnungs-PDF-Links",
+      description: "Gibt die geschuetzten Integrations-Endpunkte fuer das Gesamt-PDF oder ein Mieter-PDF aus. Der aufrufende Client muss den Portal-Bearer-Token mitsenden.",
+      inputSchema: {
+        id: z.string().trim().min(1),
+        tenantId: optionalId
+      }
+    },
+    async ({ id, tenantId }) => textContent([
+      tenantId ? "Mieter-PDF:" : "Gesamt-PDF:",
+      portal.integrationUrl(`/api/integrations/v1/service-charge-statements/${encodeURIComponent(id)}/pdf`, { tenantId }),
+      "Hinweis: Der Download braucht denselben Portal-Bearer-Token wie der MCP-Aufruf."
+    ].join("\n"))
+  );
+
+  server.registerTool(
     "list_rent_payments",
     {
       title: "Mieteinnahmen listen",
@@ -998,7 +1168,7 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
       title: "Kontrollierter Integrations-API-Aufruf",
       description: "Fallback fuer neue /api/integrations/v1-Endpunkte. Nur relative Integrationspfade sind erlaubt, keine externen URLs.",
       inputSchema: {
-        method: z.enum(["GET", "POST", "PATCH", "DELETE"]).default("GET"),
+        method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).default("GET"),
         path: z.string().trim().regex(/^\/api\/integrations\/v1\/[a-zA-Z0-9/_?=&.%:-]*$/),
         query: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
         body: z.unknown().optional()

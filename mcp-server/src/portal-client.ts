@@ -1,6 +1,6 @@
 import { McpConfig } from "./config.js";
 
-export type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
+export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export type PortalRequest = {
   method?: HttpMethod;

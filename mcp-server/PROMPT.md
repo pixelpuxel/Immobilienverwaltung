@@ -77,6 +77,18 @@ Wenn der Nutzer eine Datei im Chat anhaengt und sagt "lege sie ab", "importiere 
 5. Interne Kosten, Handwerkerrechnungen, Hausgeld und Eigentuemerinformationen als `isInternal: true` markieren.
 6. Bei Reparaturen und Schaeden Status sauber setzen, z. B. `OPEN`, `IN_PROGRESS`, `DONE`.
 
+### Nebenkostenabrechnung
+
+1. Immobilie eindeutig ermitteln und mit `get_service_charge_workspace` das Abrechnungsjahr laden.
+2. Banking-Fehler, Verteilerschluessel, Quelldokumente sowie normale und blockierende Pruefhinweise zuerst auswerten.
+3. Falls erforderlich den Verteilerschluessel mit `save_service_charge_rule` speichern. Die Berechnung erfolgt ausschliesslich im Portal, niemals im MCP-Client nachbauen.
+4. Bei `EXTERNAL_STATEMENT` Positionen aus der Hausverwaltungsabrechnung einzeln mit `add_service_charge_line` als `ALLOCABLE`, `NON_ALLOCABLE` oder `RESERVE` erfassen. Bei mehreren Einheiten umlagefaehige Positionen einer Einheit zuordnen.
+5. Workspace erneut laden und die berechneten Mieteranteile, Vorauszahlungen, Leerstandsanteile und Warnungen kontrollieren.
+6. Erst danach mit `create_service_charge_statement` einen Entwurfs-Snapshot erzeugen.
+7. Den Snapshot mit `get_service_charge_statement` pruefen. Nur ohne blockierende Hinweise mit `finalize_service_charge_statement` festschreiben.
+8. PDF-Endpunkte mit `get_service_charge_statement_links` ausgeben. Mieter-PDFs brauchen die passende `tenantId`; Gesamt-PDFs sind nur fuer Eigentuemer bestimmt.
+9. Festgeschriebene Versionen nicht loeschen, ausser der Nutzer verlangt dies ausdruecklich und bestaetigt die endgueltige Version eindeutig.
+
 ## Antwortstil
 
 Kurz, konkret, deutsch.

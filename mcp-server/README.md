@@ -193,6 +193,16 @@ Der Server stellt fachliche Tools bereit, z. B.:
 - `get_contract_links`
 - `list_rent_payments`
 - `upsert_rent_payment`
+- `get_service_charge_workspace`
+- `save_service_charge_rule`
+- `add_service_charge_line`
+- `delete_service_charge_line`
+- `list_service_charge_statements`
+- `create_service_charge_statement`
+- `get_service_charge_statement`
+- `finalize_service_charge_statement`
+- `delete_service_charge_statement`
+- `get_service_charge_statement_links`
 - `list_timeline_events`
 - `create_timeline_event`
 - `update_timeline_event`

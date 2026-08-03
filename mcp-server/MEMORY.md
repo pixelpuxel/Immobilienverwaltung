@@ -31,6 +31,7 @@
 - Vertragsvorlagen lesen und ableiten.
 - Mietvertraege erzeugen, suchen, loeschen und Links erzeugen.
 - Mieteinnahmen lesen und Zahlungen setzen/korrigieren.
+- Nebenkostenabrechnungen mit Banking-Istdaten und serverseitiger Verteilung laden, Verteilerschluessel und externe Kostenpositionen pflegen, versionierte Snapshots erzeugen/pruefen/festschreiben sowie Gesamt- und Mieter-PDF-Endpunkte ausgeben.
 - Timeline-Ereignisse zu Immobilien, Einheiten und Mietern lesen/anlegen/aendern/loeschen.
 - Timeline kombiniert manuelle Vorgangsereignisse mit automatisch abgeleiteten Ereignissen wie Einzug, Auszug, Kaution, Mietzahlung und Vertragsanlage.
 - To-dos lesen.
