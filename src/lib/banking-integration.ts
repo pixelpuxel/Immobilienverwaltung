@@ -124,7 +124,7 @@ export async function loadServiceChargeData(input: {
       const body = await response.json().catch(() => ({}));
       throw new Error(String(body.detail || body.error || `Banking antwortet mit HTTP ${response.status}.`));
     }
-    const data = await response.json() as ServiceChargeData;
+    const data = normalizeServiceChargeData(await response.json() as ServiceChargeData);
     await prisma.bankingIntegrationConfig.update({
       where: { id: config.id },
       data: { lastSuccessfulAt: new Date(), lastError: null }
@@ -138,6 +138,27 @@ export async function loadServiceChargeData(input: {
     });
     throw error;
   }
+}
+
+export function normalizeServiceChargeData(data: ServiceChargeData): ServiceChargeData {
+  const normalizeBucket = (bucket: ServiceChargeData["allocable_costs"]) => ({
+    ...bucket,
+    items: bucket.items.map((item) => ({
+      ...item,
+      pending: normalizeBoolean(item.pending)
+    }))
+  });
+  return {
+    ...data,
+    allocable_costs: normalizeBucket(data.allocable_costs),
+    service_charge_prepayments: normalizeBucket(data.service_charge_prepayments),
+    service_charge_settlements: normalizeBucket(data.service_charge_settlements),
+    cold_rent: normalizeBucket(data.cold_rent)
+  };
+}
+
+function normalizeBoolean(value: unknown) {
+  return value === true || value === 1 || String(value).toLowerCase() === "true";
 }
 
 export function redactBankingIntegration(config: Awaited<ReturnType<typeof getBankingIntegration>>) {

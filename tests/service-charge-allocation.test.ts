@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ServiceChargeData } from "../src/lib/banking-integration";
+import { normalizeServiceChargeData, type ServiceChargeData, type ServiceChargeLine } from "../src/lib/banking-integration";
 import { calculateServiceChargeAllocation } from "../src/lib/service-charge-allocation";
 
 function fixture(overrides?: Partial<ServiceChargeData>): ServiceChargeData {
@@ -48,6 +48,19 @@ function fixture(overrides?: Partial<ServiceChargeData>): ServiceChargeData {
 }
 
 describe("service charge allocation", () => {
+  it("normalizes numeric pending flags returned by the banking service", () => {
+    const data = fixture({
+      service_charge_prepayments: {
+        total: "100",
+        items: [{ pending: 0 as unknown as boolean } as ServiceChargeLine]
+      }
+    });
+    expect(normalizeServiceChargeData(data).service_charge_prepayments.items[0].pending).toBe(false);
+
+    data.service_charge_prepayments.items[0].pending = 1 as unknown as boolean;
+    expect(normalizeServiceChargeData(data).service_charge_prepayments.items[0].pending).toBe(true);
+  });
+
   it("allocates full-year WG costs by area without shifting an owner share", () => {
     const result = calculateServiceChargeAllocation(fixture(), {
       method: "AREA",

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ServiceChargeLine } from "../src/lib/banking-integration";
-import type { ServiceChargeStatementSnapshot } from "../src/lib/service-charge-statement";
+import { serviceChargeTenantResult, type ServiceChargeStatementSnapshot } from "../src/lib/service-charge-statement";
 import { renderServiceChargeStatementPdf, serviceChargeStatementPdfFilename } from "../src/lib/service-charge-statement-pdf";
 
 const snapshot: ServiceChargeStatementSnapshot = {
@@ -104,6 +104,11 @@ function bankingLine(overrides: Partial<ServiceChargeLine>): ServiceChargeLine {
 }
 
 describe("service charge statement PDF", () => {
+  it("selects only an explicitly allowed tenant result", () => {
+    expect(serviceChargeTenantResult(snapshot, ["tenant-1"])?.tenantName).toBe("Max Beispiel");
+    expect(serviceChargeTenantResult(snapshot, ["tenant-other"])).toBeNull();
+  });
+
   it("renders a valid PDF with statement content and checksum", () => {
     const pdf = renderServiceChargeStatementPdf({
       snapshot,
