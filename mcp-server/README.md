@@ -192,6 +192,7 @@ Der Server stellt fachliche Tools bereit, z. B.:
 - `list_contracts`
 - `delete_contract`
 - `get_contract_links`
+- `get_transaction_details`
 - `list_rent_payments`
 - `upsert_rent_payment`
 - `get_service_charge_workspace`
@@ -228,6 +229,14 @@ Wenn die fachliche Einsortierung noch unklar ist, ist der Standardablauf zweistu
 
 1. `upload_inbox_document` speichert den Chat-Anhang neutral im Dokumenteneingang.
 2. `classify_document` setzt danach Immobilie, Einheit, Mieter, Kategorie, Beschreibung, Tags, Jahr und optionale Verknuepfungen.
+
+Banking-Buchungen koennen mit `get_transaction_details` ueber das Immoportal gelesen werden, sofern im Portal unter **Einstellungen -> Banking-Integration** ein Banking-API-Token hinterlegt ist. Das Tool ruft keine Banking-Datenbank direkt ab, sondern nutzt:
+
+```text
+/api/integrations/v1/banking/transactions/{transaction_id}/details
+```
+
+Die Antwort enthaelt die Rohbuchung, Kategorie/Unterkategorie, zugeordnete Immobilie, Einheit, Mieter, Vertrag, Notizen, OCR-/KI-Daten, verknuepfte Dokumente, Historie, Benutzerkommentare und die vollstaendige Split-Struktur. Falls das Banking-Portal selbst keinen Detail-Endpunkt liefert, setzt das Immoportal die Daten aus den vorhandenen Banking-Endpunkten fuer Buchung, Splits, Historie und Kommentare zusammen.
 
 Der MCP-Server liest Datei-Anhaenge serverseitig. Unterstuetzt werden Dateiobjekte mit `path`, `filename`/`name`, `mimeType`/`type`, `data`/`base64` oder sichere HTTPS-URLs. Automatische Dubletten-Zusaetze wie `(1)`, `(2)` und `Kopie` werden aus Dateinamen entfernt. Erlaubt sind PDF, DOCX, XLSX, JPG und PNG bis 25 MB.
 

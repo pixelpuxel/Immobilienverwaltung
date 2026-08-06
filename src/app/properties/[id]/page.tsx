@@ -277,27 +277,48 @@ export default async function PropertyDetailPage({ params }: { params: { id: str
             {documentsByCategory.length ? documentsByCategory.map((group, index) => (
               <details className="border-b border-line last:border-b-0" key={group.label} open={index === 0}>
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-3 bg-panel px-4 py-3 [&::-webkit-details-marker]:hidden">
-                  <span className="font-bold">{group.label}</span>
-                  <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-muted">{group.documents.length} Dokumente</span>
+                  <span>
+                    <span className="block font-bold">{group.label}</span>
+                    <span className="block text-xs font-semibold text-muted">
+                      Nach Jahren sortiert · {group.years.length} {group.years.length === 1 ? "Jahr/Gruppe" : "Jahre/Gruppen"}
+                    </span>
+                  </span>
+                  <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-muted">{group.count} Dokumente</span>
                 </summary>
-                <div className="border-t border-line">
-                  {group.documents.map((document) => (
-                    <div key={document.id} className="grid gap-3 border-b border-line p-4 text-sm last:border-b-0 sm:grid-cols-[120px_minmax(0,1fr)_120px_160px]">
-                      <DocumentThumbnail id={document.id} title={document.title} mimeType={document.mimeType} hasFile={Boolean(document.storagePath)} compact />
-                      <div>
-                        <div className="font-semibold">{document.title}</div>
-                        <div className="text-muted">{document.unit ? `Einheit ${document.unit.unitNumber}` : "Objektdokument"}</div>
+                <div className="border-t border-line bg-white">
+                  {group.years.map((yearGroup, yearIndex) => (
+                    <details className="border-b border-line last:border-b-0" key={`${group.label}-${yearGroup.label}`} open={index === 0 && yearIndex === 0}>
+                      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 bg-white px-4 py-3 hover:bg-panel [&::-webkit-details-marker]:hidden">
+                        <span>
+                          <span className="block text-base font-bold">{yearGroup.label === "Ohne Jahr" ? "Ohne Jahr" : `Jahr ${yearGroup.label}`}</span>
+                          <span className="block text-xs font-semibold text-muted">{group.label}</span>
+                        </span>
+                        <span className="rounded-full bg-panel px-3 py-1 text-xs font-semibold text-muted">{yearGroup.documents.length} Dokumente</span>
+                      </summary>
+                      <div className="border-t border-line bg-panel/40">
+                        {yearGroup.documents.map((document) => (
+                          <div key={document.id} className="grid gap-3 border-b border-line bg-white p-4 text-sm last:border-b-0 sm:grid-cols-[120px_minmax(0,1fr)_120px_160px]">
+                            <DocumentThumbnail id={document.id} title={document.title} mimeType={document.mimeType} hasFile={Boolean(document.storagePath)} compact />
+                            <div>
+                              <div className="font-semibold">{document.title}</div>
+                              <div className="text-muted">{document.unit ? `Einheit ${document.unit.unitNumber}` : "Objektdokument"}</div>
+                              <div className="mt-1 text-xs text-muted">
+                                {document.documentYear ? `Dokumentjahr ${document.documentYear}` : "Kein Dokumentjahr gepflegt"} · hochgeladen {new Intl.DateTimeFormat("de-DE").format(document.createdAt)}
+                              </div>
+                            </div>
+                            <div>{document.status}</div>
+                            <div className="grid gap-2">
+                              <Link className="button button-secondary block text-center" href={`/documents?documentId=${document.id}`}>In Dokumente bearbeiten</Link>
+                              {document.storagePath ? (
+                                <a className="button block text-center" href={`/api/documents/${document.id}/download`}>Download</a>
+                              ) : (
+                                <span className="rounded-md border border-line bg-panel px-3 py-2 text-center text-muted">Keine Datei</span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                      <div>{document.status}</div>
-                      <div className="grid gap-2">
-                        <Link className="button button-secondary block text-center" href={`/documents?documentId=${document.id}`}>In Dokumente bearbeiten</Link>
-                        {document.storagePath ? (
-                          <a className="button block text-center" href={`/api/documents/${document.id}/download`}>Download</a>
-                        ) : (
-                          <span className="rounded-md border border-line bg-panel px-3 py-2 text-center text-muted">Keine Datei</span>
-                        )}
-                      </div>
-                    </div>
+                    </details>
                   ))}
                 </div>
               </details>
@@ -420,13 +441,56 @@ function currentTenant(tenants: Array<{ id: string; firstName: string; lastName:
   ) : <span className="text-muted">Kein laufender Mieter hinterlegt.</span>;
 }
 
-function groupDocumentsByCategory<T extends { category: { group: string; name: string } | null }>(documents: T[]) {
+function groupDocumentsByCategory<T extends {
+  category: { group: string; name: string } | null;
+  createdAt: Date;
+  documentYear?: number | null;
+  filename: string;
+  title: string;
+}>(documents: T[]) {
   const groups = new Map<string, T[]>();
   for (const document of documents) {
     const label = document.category ? `${document.category.group} / ${document.category.name}` : "Ohne Kategorie";
     groups.set(label, [...(groups.get(label) || []), document]);
   }
   return Array.from(groups.entries())
-    .map(([label, groupDocuments]) => ({ label, documents: groupDocuments }))
+    .map(([label, groupDocuments]) => {
+      const years = new Map<string, T[]>();
+      for (const document of groupDocuments) {
+        const year = documentYearGroup(document);
+        years.set(year.label, [...(years.get(year.label) || []), document]);
+      }
+      return {
+        label,
+        count: groupDocuments.length,
+        years: Array.from(years.entries())
+          .map(([yearLabel, yearDocuments]) => ({
+            label: yearLabel,
+            sortKey: yearSortKey(yearLabel),
+            documents: yearDocuments.sort(documentSort)
+          }))
+          .sort((a, b) => b.sortKey - a.sortKey || a.label.localeCompare(b.label, "de"))
+      };
+    })
     .sort((a, b) => a.label.localeCompare(b.label, "de"));
+}
+
+function documentYearGroup(document: { documentYear?: number | null; filename: string; title: string }) {
+  const explicit = Number(document.documentYear || 0);
+  if (explicit >= 1900 && explicit <= 2100) return { label: String(explicit) };
+  const match = `${document.title} ${document.filename}`.match(/\b(19|20)\d{2}\b/);
+  return { label: match?.[0] || "Ohne Jahr" };
+}
+
+function yearSortKey(label: string) {
+  const year = Number(label);
+  return Number.isFinite(year) ? year : -1;
+}
+
+function documentSort<T extends { createdAt: Date; title: string; filename: string; documentYear?: number | null }>(left: T, right: T) {
+  const year = yearSortKey(documentYearGroup(right).label) - yearSortKey(documentYearGroup(left).label);
+  if (year) return year;
+  const date = right.createdAt.getTime() - left.createdAt.getTime();
+  if (date) return date;
+  return (left.title || left.filename).localeCompare(right.title || right.filename, "de");
 }

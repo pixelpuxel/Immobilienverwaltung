@@ -27,6 +27,7 @@ type LazyDocument = {
   categoryId: string | null;
   canDownload?: boolean;
   documentYear?: number | null;
+  ocrStatus?: string | null;
   property?: { id: string; name: string } | null;
   unit?: { id: string; unitNumber: string; property?: { id: string; name: string } | null } | null;
   category?: { id: string; group: string; name: string } | null;
@@ -178,6 +179,7 @@ function CategoryFolderList({
           targetDocumentId={targetDocumentId}
           units={units}
           tenants={tenants}
+          titleMode="category"
         />
       );
     }
@@ -208,6 +210,7 @@ function CategoryFolderList({
               targetDocumentId={targetDocumentId}
               units={units}
               tenants={tenants}
+              titleMode="year"
             />
           ))}
         </div>
@@ -225,7 +228,8 @@ function DocumentFolderItem({
   tenants,
   categories,
   shareUsers,
-  targetDocumentId
+  targetDocumentId,
+  titleMode
 }: {
   folder: DocumentFolder;
   groupId: string;
@@ -236,6 +240,7 @@ function DocumentFolderItem({
   categories: Option[];
   shareUsers: ShareUserOption[];
   targetDocumentId: string;
+  titleMode: "category" | "year";
 }) {
   const [documents, setDocuments] = useState<LazyDocument[]>([]);
   const [page, setPage] = useState(1);
@@ -283,6 +288,11 @@ function DocumentFolderItem({
     }, 120);
   }, [documents, targetDocumentId]);
 
+  const folderTitle = titleMode === "year" ? yearFolderTitle(folder.year) : folder.categoryLabel;
+  const folderSubtitle = titleMode === "year"
+    ? folder.preview.join(" · ")
+    : [yearFolderTitle(folder.year), folder.preview.join(" · ")].filter(Boolean).join(" · ");
+
   return (
     <details
       className="group/folder overflow-hidden rounded-md border border-line bg-panel"
@@ -297,8 +307,8 @@ function DocumentFolderItem({
             <span className="transition-transform group-open/folder:rotate-90">›</span>
           </span>
           <span className="min-w-0">
-            <span className="block truncate font-bold">{folder.categoryLabel}</span>
-            <span className="block truncate text-xs font-semibold text-muted">{folder.year} · {folder.preview.join(" · ")}</span>
+            <span className="block truncate font-bold">{folderTitle}</span>
+            <span className="block truncate text-xs font-semibold text-muted">{folderSubtitle}</span>
           </span>
         </span>
         <span className="rounded-full bg-panel px-3 py-1 text-xs font-semibold text-muted">{folder.count} Dokumente</span>
@@ -368,4 +378,8 @@ function DocumentFolderItem({
       </div>
     </details>
   );
+}
+
+function yearFolderTitle(year: string) {
+  return year === "Ohne Jahr" ? "Ohne Jahr" : `Jahr ${year}`;
 }

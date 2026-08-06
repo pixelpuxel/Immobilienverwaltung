@@ -18,6 +18,8 @@ import { prisma } from "@/lib/prisma";
 import { money } from "@/lib/rent";
 import {
   calculateServiceChargeAllocation,
+  normalizeServiceChargeMethod,
+  normalizeTreatment,
   type AllocationRuleInput,
   type ServiceChargeMethod
 } from "@/lib/service-charge-allocation";
@@ -205,7 +207,7 @@ export default async function ServiceChargesPage({
                 unitId: line.unitId,
                 description: line.description,
                 amount: Number(line.amount),
-                treatment: line.treatment,
+treatment: normalizeTreatment(line.treatment),
                 sourceReference: line.sourceReference,
                 note: line.note
               }))}
@@ -328,10 +330,30 @@ function ServiceChargePreview({
         ) : null}
       </section>
 
-      <LineTable title="Umlagefaehige Kosten" lines={data.allocable_costs.items} bankingBaseUrl={bankingBaseUrl} />
-      <LineTable title="Nebenkostenvorauszahlungen" lines={data.service_charge_prepayments.items} bankingBaseUrl={bankingBaseUrl} />
-      <LineTable title="Kaltmietanteile" lines={data.cold_rent.items} bankingBaseUrl={bankingBaseUrl} />
-      <LineTable title="Nebenkostenabrechnungszahlungen" lines={data.service_charge_settlements.items} bankingBaseUrl={bankingBaseUrl} />
+      <LineTable
+        title="Umlagefaehige Kosten"
+        lines={data.allocable_costs.items}
+        data={data}
+        bankingBaseUrl={bankingBaseUrl}
+        amountLabel="Kostenposition"
+        emptyMessage="Keine umlagefaehigen Kosten kontiert."
+      />
+      <LineTable
+        title="Nebenkostenvorauszahlungen"
+        lines={data.service_charge_prepayments.items}
+        data={data}
+        bankingBaseUrl={bankingBaseUrl}
+        amountLabel="Nebenkostenvorauszahlung"
+        emptyMessage="Keine Nebenkostenvorauszahlungen kontiert."
+      />
+      <LineTable
+        title="Kaltmietanteile"
+        lines={data.cold_rent.items}
+        data={data}
+        bankingBaseUrl={bankingBaseUrl}
+        amountLabel="Kaltmietanteil"
+        emptyMessage="Keine Kaltmietanteile kontiert."
+      />
     </div>
   );
 }
@@ -414,13 +436,13 @@ function serviceChargeRuleInput(
 ): AllocationRuleInput {
   if (savedRule) {
     return {
-      method: savedRule.method as ServiceChargeMethod,
+      method: normalizeServiceChargeMethod(savedRule.method),
       totalDistributionValue: savedRule.totalDistributionValue === null ? null : Number(savedRule.totalDistributionValue),
       unitValues: Object.fromEntries(savedRule.unitAllocations.map((item) => [item.unitId, Number(item.value)])),
       statementLines: savedRule.statementLines.map((line) => ({
         unitId: line.unitId,
         amount: Number(line.amount),
-        treatment: line.treatment as "ALLOCABLE" | "NON_ALLOCABLE" | "RESERVE"
+        treatment: normalizeTreatment(line.treatment)
       }))
     };
   }
@@ -454,79 +476,115 @@ function serviceChargeRuleInput(
 function LineTable({
   title,
   lines,
-  bankingBaseUrl
+  data,
+  bankingBaseUrl,
+  amountLabel,
+  emptyMessage
 }: {
   title: string;
   lines: ServiceChargeLine[];
+  data: ServiceChargeData;
   bankingBaseUrl: string;
+  amountLabel: string;
+  emptyMessage: string;
 }) {
   return (
     <section className="overflow-hidden rounded-lg border border-line bg-white">
       <div className="border-b border-line p-4"><h2 className="text-xl font-bold">{title}</h2></div>
       <div className="divide-y divide-line">
-        {lines.map((line) => (
-          <details className="group" key={line.id}>
-            <summary className="grid cursor-pointer list-none gap-2 p-4 text-sm hover:bg-panel md:grid-cols-[110px_minmax(220px,1fr)_minmax(150px,0.7fr)_140px_120px] md:items-center">
-              <div className="whitespace-nowrap">{formatDate(line.value_date || line.booking_date)}</div>
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-semibold">{line.applicant_name || "-"}</span>
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${line.bank_imported ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
-                    {line.bank_imported ? "Bankimport" : "Manuell / Import"}
-                  </span>
+        {lines.map((line) => {
+          const subject = lineSubjectLabel(line, data);
+          const split = splitInfo(line);
+          return (
+            <details className="group" key={`${title}-${line.id}-${line.accounting_role || amountLabel}`}>
+              <summary className="grid cursor-pointer list-none gap-2 p-4 text-sm hover:bg-panel md:grid-cols-[110px_minmax(220px,1fr)_minmax(170px,0.8fr)_160px_120px] md:items-center">
+                <div className="whitespace-nowrap">{formatDate(line.value_date || line.booking_date)}</div>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold">{line.applicant_name || "-"}</span>
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${line.bank_imported ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
+                      {line.bank_imported ? "Bankimport" : "Manuell / Import"}
+                    </span>
+                    {split ? (
+                      <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-bold text-blue-800">
+                        Splitbuchung
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="line-clamp-2 text-muted">{line.memo || line.purpose || "-"}</div>
                 </div>
-                <div className="line-clamp-2 text-muted">{line.memo || line.purpose || "-"}</div>
-              </div>
-              <div className="text-muted">{line.tenant_external_id || line.unit_external_id || "Gesamtobjekt"}</div>
-              <div>
-                <div className="text-xs font-bold uppercase text-muted">Kaltmiete</div>
-                <div className="font-semibold">
-                  {line.contractual_cold_rent === "" ? "-" : `${money(Number(line.contractual_cold_rent))} / Monat`}
+                <div>
+                  <div className="text-xs font-bold uppercase text-muted">Zugeordnet zu</div>
+                  <div className="font-semibold">{subject}</div>
+                </div>
+                <div>
+                  <div className="text-xs font-bold uppercase text-muted">Interpretation</div>
+                  <div className="font-semibold">{amountLabel}</div>
+                  {split ? <div className="text-xs text-muted">{money(split.part)} von {money(split.total)}</div> : null}
+                </div>
+                <div className="flex items-center justify-between gap-3 md:justify-end">
+                  <span className="font-bold">{money(Number(line.amount || 0))}</span>
+                  <span aria-hidden="true" className="text-lg text-muted transition group-open:rotate-180">⌄</span>
+                </div>
+              </summary>
+              <div className="border-t border-line bg-panel/60 p-4">
+                <div className="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
+                  <Detail label="Buchungsdatum" value={formatDate(line.booking_date)} />
+                  <Detail label="Wertstellung" value={formatDate(line.value_date)} />
+                  <Detail label="Gesamtbuchung" value={money(Number(line.transaction_amount || line.amount || 0))} />
+                  <Detail label="Kontierter Anteil" value={money(Number(line.amount || 0))} />
+                  <Detail label="Interpretation" value={amountLabel} />
+                  <Detail label="Zugeordnet zu" value={subject} />
+                  <Detail label="Bank / Konto" value={[line.bank_name, line.account_name].filter(Boolean).join(" · ")} />
+                  <Detail label="Konto-IBAN" value={line.account_iban} />
+                  <Detail label="Gegenpartei" value={line.applicant_name} />
+                  <Detail label="Gegenpartei-IBAN" value={line.applicant_iban} />
+                  <Detail label="Verwendungszweck" value={line.purpose} wide />
+                  <Detail label="Split-Notiz" value={line.memo} />
+                  <Detail label="Buchungsreferenz" value={line.bank_reference} />
+                  <Detail label="Kundenreferenz" value={line.customer_reference} />
+                  <Detail label="Bank-Kategorie" value={line.category_path} />
+                  <Detail label="Buchungscode" value={line.transaction_code} />
+                  <Detail label="Quelle" value={line.source_type} />
+                  <Detail label="Herkunftsschutz" value={line.bank_imported ? "Direkt von der Bank importiert · besonders geschuetzt" : "Manuell oder aus Datei importiert"} />
+                  <Detail label="Status" value={line.pending ? "Vorgemerkt" : "Gebucht"} />
+                  <Detail label="Vertragliche Kaltmiete" value={line.contractual_cold_rent === "" ? "" : `${money(Number(line.contractual_cold_rent))} / Monat`} />
+                  <Detail label="Garage" value={line.contractual_garage_rent === "" ? "" : `${money(Number(line.contractual_garage_rent))} / Monat`} />
+                </div>
+                <div className="mt-4">
+                  <Link
+                    className="button button-secondary"
+                    href={`${bankingBaseUrl.replace(/\/+$/, "")}/transactions/${line.transaction_id}/edit`}
+                    target="_blank"
+                  >
+                    Vollstaendige Buchung in Banking oeffnen
+                  </Link>
                 </div>
               </div>
-              <div className="flex items-center justify-between gap-3 md:justify-end">
-                <span className="font-bold">{money(Number(line.amount || 0))}</span>
-                <span aria-hidden="true" className="text-lg text-muted transition group-open:rotate-180">⌄</span>
-              </div>
-            </summary>
-            <div className="border-t border-line bg-panel/60 p-4">
-              <div className="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
-                <Detail label="Buchungsdatum" value={formatDate(line.booking_date)} />
-                <Detail label="Wertstellung" value={formatDate(line.value_date)} />
-                <Detail label="Gesamtbuchung" value={money(Number(line.transaction_amount || line.amount || 0))} />
-                <Detail label="Kontierter Anteil" value={money(Number(line.amount || 0))} />
-                <Detail label="Bank / Konto" value={[line.bank_name, line.account_name].filter(Boolean).join(" · ")} />
-                <Detail label="Konto-IBAN" value={line.account_iban} />
-                <Detail label="Gegenpartei" value={line.applicant_name} />
-                <Detail label="Gegenpartei-IBAN" value={line.applicant_iban} />
-                <Detail label="Verwendungszweck" value={line.purpose} wide />
-                <Detail label="Split-Notiz" value={line.memo} />
-                <Detail label="Buchungsreferenz" value={line.bank_reference} />
-                <Detail label="Kundenreferenz" value={line.customer_reference} />
-                <Detail label="Kategorie" value={line.category_path} />
-                <Detail label="Buchungscode" value={line.transaction_code} />
-                <Detail label="Quelle" value={line.source_type} />
-                <Detail label="Herkunftsschutz" value={line.bank_imported ? "Direkt von der Bank importiert · besonders geschuetzt" : "Manuell oder aus Datei importiert"} />
-                <Detail label="Status" value={line.pending ? "Vorgemerkt" : "Gebucht"} />
-                <Detail label="Vertragliche Kaltmiete" value={line.contractual_cold_rent === "" ? "" : `${money(Number(line.contractual_cold_rent))} / Monat`} />
-                <Detail label="Garage" value={line.contractual_garage_rent === "" ? "" : `${money(Number(line.contractual_garage_rent))} / Monat`} />
-              </div>
-              <div className="mt-4">
-                <Link
-                  className="button button-secondary"
-                  href={`${bankingBaseUrl.replace(/\/+$/, "")}/transactions/${line.transaction_id}/edit`}
-                  target="_blank"
-                >
-                  Vollstaendige Buchung in Banking oeffnen
-                </Link>
-              </div>
-            </div>
-          </details>
-        ))}
-        {!lines.length ? <div className="p-4 text-sm text-muted">Keine kontierten Positionen.</div> : null}
+            </details>
+          );
+        })}
+        {!lines.length ? <div className="p-4 text-sm text-muted">{emptyMessage}</div> : null}
       </div>
     </section>
   );
+}
+
+function lineSubjectLabel(line: ServiceChargeLine, data: ServiceChargeData) {
+  const tenant = data.tenancies.find((item) => item.external_id === line.tenant_external_id);
+  const unit = data.units.find((item) => item.external_id === (tenant?.unit_external_id || line.unit_external_id));
+  if (tenant && unit) return `${tenant.display_name} · ${unit.name}`;
+  if (tenant) return tenant.display_name;
+  if (unit) return unit.name;
+  if (!line.tenant_external_id && !line.unit_external_id) return "Gesamtobjekt";
+  return "Noch nicht lesbar zugeordnet";
+}
+
+function splitInfo(line: ServiceChargeLine) {
+  const total = Math.abs(Number(line.transaction_amount || 0));
+  const part = Math.abs(Number(line.amount || 0));
+  if (!Number.isFinite(total) || !Number.isFinite(part) || total <= 0 || part <= 0) return null;
+  return Math.abs(total - part) > 0.009 ? { total, part } : null;
 }
 
 function Detail({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) {

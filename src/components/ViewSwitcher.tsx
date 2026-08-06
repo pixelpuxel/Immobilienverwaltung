@@ -44,13 +44,17 @@ export function ViewSwitcher({ currentUserId, compact = false }: { currentUserId
   async function switchUser(userId: string) {
     if (userId === currentUserId || busy) return;
     setBusy(true);
-    const response = await fetch("/api/auth/switch-view", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId })
-    });
-    setBusy(false);
-    if (response.ok) window.location.href = "/dashboard";
+    try {
+      const response = await fetch("/api/auth/switch-view", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ userId })
+      });
+      if (response.ok) window.location.assign("/dashboard");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -68,7 +72,7 @@ export function ViewSwitcher({ currentUserId, compact = false }: { currentUserId
             <span className="block truncate text-sm font-bold">{currentUser ? viewTitle(currentUser) : "Lade ..."}</span>
           </span>
         </summary>
-        <div className={`${compact ? "absolute right-0 z-50 mt-2 max-h-[70vh] w-[min(22rem,90vw)] overflow-auto" : "mt-2"} rounded-md border border-line bg-white p-2 shadow-xl`}>
+        <div className={`${compact ? "fixed left-3 right-3 top-16 z-[1000] max-h-[70vh] overflow-auto sm:left-auto sm:w-[min(24rem,calc(100vw-1.5rem))]" : "mt-2"} rounded-md border border-line bg-white p-2 shadow-xl`}>
           {groupedUsers.map((group) => (
             <div className="border-b border-line py-2 last:border-b-0" key={group.label}>
               <div className="px-2 text-xs font-bold uppercase text-muted">{group.label}</div>

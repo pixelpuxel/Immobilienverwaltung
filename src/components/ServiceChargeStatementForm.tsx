@@ -59,6 +59,27 @@ export function ServiceChargeStatementForm({
     if (response.ok) router.refresh();
   }
 
+  async function update(id: string, formData: FormData) {
+    setBusy(true);
+    setMessage("");
+    const amount = Number(String(formData.get("amount") || "0").replace(",", "."));
+    const response = await fetch(`/api/service-charge-lines?id=${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        unitId: String(formData.get("unitId") || "") || null,
+        description: String(formData.get("description") || ""),
+        amount,
+        treatment: String(formData.get("treatment") || "ALLOCABLE"),
+        sourceReference: String(formData.get("sourceReference") || "")
+      })
+    });
+    const body = await response.json().catch(() => ({}));
+    setMessage(response.ok ? "Kostenposition geaendert." : body.error || "Speichern fehlgeschlagen.");
+    setBusy(false);
+    if (response.ok) router.refresh();
+  }
+
   const labels: Record<string, string> = {
     ALLOCABLE: "Umlagefaehig",
     NON_ALLOCABLE: "Nicht umlagefaehig",
@@ -92,14 +113,46 @@ export function ServiceChargeStatementForm({
         <Metric label="Erhaltungsruecklage" value={totals.RESERVE} />
         <Metric label="Gesamtsumme" value={totals.total} />
       </div>
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-sm">
-          <thead className="bg-panel text-left"><tr><th className="p-3">Position</th><th className="p-3">Behandlung</th><th className="p-3">Einheit</th><th className="p-3 text-right">Betrag</th><th className="p-3" /></tr></thead>
-          <tbody className="divide-y divide-line">
-            {lines.map((line) => <tr key={line.id}><td className="p-3"><div className="font-semibold">{line.description}</div><div className="text-muted">{line.sourceReference || "-"}</div>{line.note ? <div className="mt-1 text-xs text-muted">{line.note}</div> : null}</td><td className="p-3">{labels[line.treatment] || line.treatment}</td><td className="p-3">{units.find((unit) => unit.id === line.unitId)?.name || "Gesamtobjekt"}</td><td className="p-3 text-right font-bold">{line.amount.toLocaleString("de-DE", { style: "currency", currency: "EUR" })}</td><td className="p-3 text-right"><button className="button button-secondary" disabled={busy} onClick={() => remove(line.id)} type="button">Loeschen</button></td></tr>)}
-            {!lines.length ? <tr><td className="p-4 text-muted" colSpan={5}>Noch keine Positionen erfasst.</td></tr> : null}
-          </tbody>
-        </table>
+      <div className="grid gap-3 p-4">
+        {lines.map((line) => {
+          const unitName = units.find((unit) => unit.id === line.unitId)?.name || "Gesamtobjekt";
+          return (
+            <article key={line.id} className="rounded-lg border border-line bg-panel p-4">
+              <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-start">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-base font-bold">{line.description}</h3>
+                    <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-muted">{labels[line.treatment] || line.treatment}</span>
+                    <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-muted">{unitName}</span>
+                  </div>
+                  {readableSource(line.sourceReference) ? (
+                    <p className="mt-2 text-sm text-muted">Quelle: {readableSource(line.sourceReference)}</p>
+                  ) : null}
+                  {line.note ? <p className="mt-2 text-sm text-muted">Notiz: {line.note}</p> : null}
+                </div>
+                <div className="text-left md:text-right">
+                  <div className="text-lg font-bold">{line.amount.toLocaleString("de-DE", { style: "currency", currency: "EUR" })}</div>
+                  <div className="mt-2 flex flex-wrap gap-2 md:justify-end">
+                    <button className="button button-secondary" disabled={busy} onClick={() => remove(line.id)} type="button">Loeschen</button>
+                  </div>
+                </div>
+              </div>
+              <details className="mt-3 rounded-md border border-line bg-white p-3">
+                <summary className="cursor-pointer font-semibold">Kostenposition bearbeiten</summary>
+                <form action={update.bind(null, line.id)} className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                  <label className="grid gap-1 text-sm font-semibold xl:col-span-2">Bezeichnung<input name="description" required defaultValue={line.description} /></label>
+                  <label className="grid gap-1 text-sm font-semibold">Betrag<input name="amount" inputMode="decimal" required defaultValue={String(line.amount).replace(".", ",")} /></label>
+                  <label className="grid gap-1 text-sm font-semibold">Behandlung<select name="treatment" defaultValue={line.treatment}><option value="ALLOCABLE">Umlagefaehig</option><option value="NON_ALLOCABLE">Nicht umlagefaehig</option><option value="RESERVE">Erhaltungsruecklage</option></select></label>
+                  <label className="grid gap-1 text-sm font-semibold">Einheit<select name="unitId" defaultValue={line.unitId || ""}><option value="">Gesamtobjekt</option>{units.map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)}</select></label>
+                  <label className="grid gap-1 text-sm font-semibold md:col-span-2 xl:col-span-4">Quelle / Seite<input name="sourceReference" defaultValue={readableSource(line.sourceReference)} placeholder="z. B. WEG-Abrechnung Seite 4" /></label>
+                  <label className="grid gap-1 text-sm font-semibold md:col-span-2 xl:col-span-5">Notiz der Hausverwaltung<textarea name="note" rows={2} defaultValue={line.note || ""} placeholder="Optionale Erlaeuterung zur Position" /></label>
+                  <button disabled={busy} type="submit">{busy ? "Speichere..." : "Aenderung speichern"}</button>
+                </form>
+              </details>
+            </article>
+          );
+        })}
+        {!lines.length ? <div className="rounded-lg border border-dashed border-line p-4 text-muted">Noch keine Positionen erfasst.</div> : null}
       </div>
     </section>
   );
@@ -112,4 +165,13 @@ function Metric({ label, value }: { label: string; value: number }) {
       <div className="mt-1 text-lg font-bold">{value.toLocaleString("de-DE", { style: "currency", currency: "EUR" })}</div>
     </div>
   );
+}
+
+function readableSource(value: string | null) {
+  if (!value) return "";
+  const withoutTechnicalPrefix = value.replace(/^cm[a-z0-9]{10,}:/i, "");
+  return withoutTechnicalPrefix
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }

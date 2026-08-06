@@ -944,6 +944,21 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
   );
 
   server.registerTool(
+    "get_transaction_details",
+    {
+      title: "Angereicherte Banking-Buchung abrufen",
+      description: "Liest eine Banking-Buchung ueber das Immobilienportal inklusive Kategorie, Unterkategorie, Immobilie, Einheit, Mieter, Vertrag, Notizen, OCR-/KI-Daten, verknuepften Dokumenten, Historie, Benutzerkommentaren und kompletter Split-Struktur.",
+      inputSchema: {
+        transaction_id: z.number().int().positive().describe("Interne Banking-Transaktions-ID.")
+      },
+      outputSchema: genericToolOutputSchema
+    },
+    async ({ transaction_id }) => jsonContent(await portal.json({
+      path: `/api/integrations/v1/banking/transactions/${encodeURIComponent(String(transaction_id))}/details`
+    }))
+  );
+
+  server.registerTool(
     "get_service_charge_workspace",
     {
       title: "Nebenkostenabrechnung laden",
@@ -953,7 +968,8 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
         year: z.number().int().min(2000).max(2100),
         unitId: optionalId,
         tenantId: optionalId
-      }
+      },
+      outputSchema: genericToolOutputSchema
     },
     async (args) => jsonContent(await portal.json({
       path: "/api/integrations/v1/service-charges",
@@ -973,7 +989,8 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
         totalDistributionValue: z.number().positive().optional().nullable(),
         note: optionalString,
         unitValues: z.record(z.number().finite().min(0))
-      }
+      },
+      outputSchema: genericToolOutputSchema
     },
     async (args) => jsonContent(await portal.json({
       method: "PUT",
@@ -996,7 +1013,8 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
         treatment: z.enum(["ALLOCABLE", "NON_ALLOCABLE", "RESERVE"]),
         sourceReference: z.string().trim().max(300).optional(),
         note: z.string().trim().max(2000).optional()
-      }
+      },
+      outputSchema: genericToolOutputSchema
     },
     async (args) => jsonContent(await portal.json({
       method: "POST",
@@ -1010,7 +1028,8 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
     {
       title: "Nebenkostenposition loeschen",
       description: "Loescht eine noch nicht in einem unveraenderlichen Snapshot festgeschriebene Hausverwaltungsposition.",
-      inputSchema: { id: z.string().trim().min(1) }
+      inputSchema: { id: z.string().trim().min(1) },
+      outputSchema: genericToolOutputSchema
     },
     async ({ id }) => jsonContent(await portal.json({
       method: "DELETE",
@@ -1028,7 +1047,8 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
         propertyId: optionalId,
         year: z.number().int().min(2000).max(2100).optional(),
         limit: z.number().int().min(1).max(100).optional()
-      }
+      },
+      outputSchema: genericToolOutputSchema
     },
     async (args) => jsonContent(await portal.json({
       path: "/api/integrations/v1/service-charge-statements",
@@ -1044,7 +1064,8 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
       inputSchema: {
         propertyId: z.string().trim().min(1),
         year: z.number().int().min(2000).max(2100)
-      }
+      },
+      outputSchema: genericToolOutputSchema
     },
     async (args) => jsonContent(await portal.json({
       method: "POST",
@@ -1058,7 +1079,8 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
     {
       title: "Nebenkostenabrechnungs-Protokoll laden",
       description: "Laedt den vollstaendigen eingefrorenen Snapshot mit Pruefsumme, Berechnung, Quellbuchungen und Vertragsdaten.",
-      inputSchema: { id: z.string().trim().min(1) }
+      inputSchema: { id: z.string().trim().min(1) },
+      outputSchema: genericToolOutputSchema
     },
     async ({ id }) => jsonContent(await portal.json({
       path: `/api/integrations/v1/service-charge-statements/${encodeURIComponent(id)}`
@@ -1070,7 +1092,8 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
     {
       title: "Nebenkostenabrechnung festschreiben",
       description: "Schreibt eine Abrechnung fest. Der Server verweigert dies bei blockierenden Pruefhinweisen.",
-      inputSchema: { id: z.string().trim().min(1) }
+      inputSchema: { id: z.string().trim().min(1) },
+      outputSchema: genericToolOutputSchema
     },
     async ({ id }) => jsonContent(await portal.json({
       method: "PATCH",
@@ -1087,7 +1110,8 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
       inputSchema: {
         id: z.string().trim().min(1),
         confirmFinal: z.boolean().optional()
-      }
+      },
+      outputSchema: genericToolOutputSchema
     },
     async ({ id, confirmFinal }) => jsonContent(await portal.json({
       method: "DELETE",
@@ -1104,7 +1128,8 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
       inputSchema: {
         id: z.string().trim().min(1),
         tenantId: optionalId
-      }
+      },
+      outputSchema: genericToolOutputSchema
     },
     async ({ id, tenantId }) => textContent([
       tenantId ? "Mieter-PDF:" : "Gesamt-PDF:",
@@ -1302,7 +1327,8 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
     {
       title: "Portalinstanzen listen",
       description: "Listet Portalinstanzen, sofern der Token die noetigen Rechte hat.",
-      inputSchema: {}
+      inputSchema: {},
+      outputSchema: genericToolOutputSchema
     },
     async () => jsonContent(await portal.json({ path: "/api/integrations/v1/portal-instances" }))
   );
@@ -1314,12 +1340,13 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
       description: "Wechselt die Sicht/Instanz fuer den Integrationstoken, wenn erlaubt.",
       inputSchema: {
         portalInstanceId: z.string().trim().min(1)
-      }
+      },
+      outputSchema: genericToolOutputSchema
     },
-    async (args) => jsonContent(await portal.json({
+    async ({ portalInstanceId }) => jsonContent(await portal.json({
       method: "POST",
       path: "/api/integrations/v1/portal-instances/switch",
-      body: args
+      body: { instanceId: portalInstanceId }
     }))
   );
 

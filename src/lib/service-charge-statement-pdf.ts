@@ -1,25 +1,12 @@
 import { safeFilename } from "./files";
-import type { ServiceChargeLine } from "./banking-integration";
 import type { ServiceChargeStatementSnapshot } from "./service-charge-statement";
 
 const pageWidth = 595;
 const pageHeight = 842;
-const margin = 36;
+const margin = 42;
 const contentWidth = pageWidth - margin * 2;
 
-type PdfOptions = { size?: number; bold?: boolean; indent?: number; gap?: number };
-type TableColumn = { label: string; width: number; align?: "left" | "right" | "center" };
-type TableCell = string | number;
-
-type PdfContext = {
-  pages: string[][];
-  y: number;
-  current: () => string[];
-  newPage: () => void;
-  ensure: (height?: number) => void;
-  write: (value: string, options?: PdfOptions) => void;
-  table: (title: string, columns: TableColumn[], rows: TableCell[][], options?: { footerRows?: TableCell[][]; emptyText?: string }) => void;
-};
+type Cell = string | number | null | undefined;
 
 export function serviceChargeStatementPdfFilename(snapshot: ServiceChargeStatementSnapshot, version: number, tenantName?: string) {
   return safeFilename(`Nebenkostenabrechnung_${snapshot.property.name}_${tenantName || "Gesamt"}_${snapshot.year}_V${version}.pdf`);
@@ -32,343 +19,206 @@ export function renderServiceChargeStatementPdf(input: {
   checksum: string;
   tenantId?: string;
 }) {
-  const ctx = createPdfContext();
+  const pages: string[][] = [[]];
+  let y = 790;
+  const current = () => pages[pages.length - 1];
+  const newPage = () => {
+    pages.push([]);
+    y = 790;
+  };
+  const ensure = (height = 24) => {
+    if (y - height < 58) newPage();
+  };
+  const drawText = (value: Cell, x: number, lineY: number, size = 9, bold = false) => {
+    current().push(text(String(value ?? ""), x, lineY, size, bold));
+  };
+  const paragraph = (value: string, options: { size?: number; bold?: boolean; gap?: number; width?: number } = {}) => {
+    const size = options.size || 9;
+    const gap = options.gap || size + 4;
+    const width = options.width || contentWidth;
+    for (const line of wrap(value, width, size)) {
+      ensure(gap);
+      drawText(line, margin, y, size, Boolean(options.bold));
+      y -= gap;
+    }
+  };
+  const section = (title: string) => {
+    y -= 6;
+    ensure(24);
+    drawText(title, margin, y, 12, true);
+    y -= 17;
+  };
+  const summaryTable = (rows: Array<[string, string]>) => {
+    table(["Kennzahl", "Wert"], rows, [310, 185]);
+  };
+
   const rule = input.snapshot.rule;
   const allocation = input.snapshot.allocation;
   const selectedTenant = input.tenantId
     ? allocation.tenantResults.find((tenant) => tenant.tenantId === input.tenantId)
     : null;
   const tenantResults = selectedTenant ? [selectedTenant] : allocation.tenantResults;
-  const details = input.snapshot.source.bankingDetails;
-  const unitNames = new Map((details?.units || []).map((unit) => [unit.external_id, unit.name]));
-  const unitName = (id: string) => unitNames.get(id) || "Einheit ohne Bezeichnung";
-
-  drawHeader(ctx, selectedTenant ? `Nebenkostenabrechnung - ${selectedTenant.tenantName}` : "Nebenkostenabrechnung", input);
-
-  ctx.write("Abrechnungsgrundlage", { size: 12, bold: true, gap: 18 });
-  ctx.table("", [
-    { label: "Position", width: 190 },
-    { label: "Wert", width: contentWidth - 190 }
-  ], [
-    ["Objekt", `${input.snapshot.property.name} - ${input.snapshot.property.address}`],
-    ["Abrechnungsjahr", String(input.snapshot.year)],
-    ["Status", input.status === "FINAL" ? "Festgeschrieben" : "Entwurf"],
-    ["Methode", methodLabel(input.snapshot.method)],
-    ["Verteilerwert gesamt", number(rule.totalDistributionValue)],
-    ["Verteiler je Einheit", Object.entries(rule.unitValues).map(([unit, value]) => `${unitName(unit)}: ${number(value)}`).join("; ") || "-"],
-    ["Hinweis", rule.note || "-"]
-  ]);
-
-  renderSummary(ctx, input, selectedTenant || null);
-  renderCalculationDetails(ctx, input, tenantResults, unitName);
-  renderCostPositions(ctx, input, selectedTenant?.unitId || null, unitName);
-  renderTenancies(ctx, details, tenantResults, unitName);
-  renderBankingDetails(ctx, details, selectedTenant || null, unitName);
-  renderWarnings(ctx, allocation.warnings, allocation.blockingWarnings || []);
-
-  ctx.pages.forEach((page, index) => {
-    page.push(text(`Seite ${index + 1} von ${ctx.pages.length}`, 482, 24, 7));
-    page.push(text(`Pruefsumme ${input.checksum.slice(0, 16)}`, margin, 24, 7));
-  });
-  return buildPdf(ctx.pages.map((page) => page.join("\n")));
-}
-
-function createPdfContext(): PdfContext {
-  const pages: string[][] = [[]];
-  const ctx: PdfContext = {
-    pages,
-    y: 790,
-    current: () => pages[pages.length - 1],
-    newPage: () => {
-      pages.push([]);
-      ctx.y = 790;
-    },
-    ensure: (height = 20) => {
-      if (ctx.y - height < 48) ctx.newPage();
-    },
-    write: (value: string, options: PdfOptions = {}) => {
-      const size = options.size || 9;
-      const gap = options.gap || size + 4;
-      const width = Math.max(25, Math.floor((contentWidth - (options.indent || 0)) / (size * 0.52)));
-      for (const line of wrap(String(value), width)) {
-        ctx.ensure(gap);
-        ctx.current().push(text(line, margin + (options.indent || 0), ctx.y, size, Boolean(options.bold)));
-        ctx.y -= gap;
-      }
-    },
-    table: (title, columns, rows, options = {}) => {
-      drawTable(ctx, title, columns, rows, options);
-    }
-  };
-  return ctx;
-}
-
-function drawHeader(ctx: PdfContext, titleValue: string, input: { snapshot: ServiceChargeStatementSnapshot; version: number; status: string }) {
-  ctx.current().push(fillRect(margin, 764, contentWidth, 46, "0.93 0.98 0.96"));
-  ctx.current().push(text(titleValue, margin + 14, 792, 18, true));
-  ctx.current().push(text(`${input.snapshot.property.name} | ${input.snapshot.year} | Version ${input.version}`, margin + 14, 774, 9));
-  ctx.y = 744;
-  ctx.write("Diese Abrechnung zeigt die Berechnungsschritte, die beruecksichtigten Mietzeitraeume, die umlagefaehigen Kosten und die tatsaechlich gebuchten Nebenkostenvorauszahlungen. Betragsbasis sind die im Portal gespeicherten Regeln und die geladenen Bank-/Buchungsdaten.", { size: 8.5, gap: 12 });
-  ctx.y -= 8;
-}
-
-function renderSummary(ctx: PdfContext, input: { snapshot: ServiceChargeStatementSnapshot }, selectedTenant: ServiceChargeStatementSnapshot["allocation"]["tenantResults"][number] | null) {
-  const allocation = input.snapshot.allocation;
-  ctx.table("Zusammenfassung", [
-    { label: "Kennzahl", width: 235 },
-    { label: "Betrag", width: 115, align: "right" },
-    { label: "Erlaeuterung", width: contentWidth - 350 }
-  ], selectedTenant ? [
-    ["Ihr Kostenanteil", money(selectedTenant.allocatedCosts), "Anteil gemaess Verteilschluessel und Belegungstagen"],
-    ["Ihre Vorauszahlungen", money(selectedTenant.actualPrepayments), "Tatsaechlich kontierte Nebenkostenvorauszahlungen"],
-    [selectedTenant.result >= 0 ? "Nachzahlung" : "Guthaben", money(Math.abs(selectedTenant.result)), selectedTenant.result >= 0 ? "Von Mieter zu zahlen" : "An Mieter zu erstatten"]
-  ] : [
-    ["Umlagefaehige Kosten", money(allocation.allocableCosts), "Kostenbasis fuer alle Mietverhaeltnisse"],
-    ["Mietern zugeordnet", money(allocation.allocatedToTenants), "Summe der berechneten Mieteranteile"],
-    ["Eigentuemer / Leerstand", money(allocation.ownerShare), "Nicht auf Mieter entfallender Anteil"],
-    ["Vorauszahlungen", money(allocation.totalPrepayments), "Tatsaechlich kontierte NK-Vorauszahlungen"],
-    ["Saldo aller Mieter", money(allocation.tenantResults.reduce((sum, item) => sum + item.result, 0)), "Positive Werte sind Nachzahlungen"]
-  ]);
-}
-
-function renderCalculationDetails(
-  ctx: PdfContext,
-  input: { snapshot: ServiceChargeStatementSnapshot },
-  tenants: ServiceChargeStatementSnapshot["allocation"]["tenantResults"],
-  unitName: (id: string) => string
-) {
-  const allocation = input.snapshot.allocation;
-  const rows = tenants.map((tenant) => [
-    tenant.tenantName,
-    unitName(tenant.unitId),
-    `${tenant.occupiedDays}/${tenant.yearDays}`,
-    number(tenant.unitValue),
-    percent(tenant.share),
-    money(tenant.allocatedCosts),
-    money(tenant.actualPrepayments),
-    tenant.result >= 0 ? `Nachzahlung ${money(tenant.result)}` : `Guthaben ${money(Math.abs(tenant.result))}`
-  ]);
-  ctx.table("Abrechnung je Mietverhaeltnis", [
-    { label: "Mieter", width: 96 },
-    { label: "Einheit", width: 70 },
-    { label: "Tage", width: 43, align: "right" },
-    { label: "Verteiler", width: 48, align: "right" },
-    { label: "Anteil", width: 50, align: "right" },
-    { label: "Kosten", width: 64, align: "right" },
-    { label: "Vorausz.", width: 64, align: "right" },
-    { label: "Ergebnis", width: contentWidth - 435, align: "right" }
-  ], rows, {
-    footerRows: [["Summe", "", "", "", "", money(allocation.allocatedToTenants), money(allocation.totalPrepayments), money(allocation.tenantResults.reduce((sum, item) => sum + item.result, 0))]],
-    emptyText: "Keine Mietverhaeltnisse mit berechenbarem Anteil vorhanden."
-  });
-}
-
-function renderCostPositions(
-  ctx: PdfContext,
-  input: { snapshot: ServiceChargeStatementSnapshot },
-  selectedUnitId: string | null,
-  unitName: (id: string) => string
-) {
-  const statementLines = selectedUnitId
-    ? input.snapshot.statementLines.filter((line) => !line.unitId || line.unitId === selectedUnitId)
+  const statementLines = selectedTenant
+    ? input.snapshot.statementLines.filter((line) => !line.unitId || line.unitId === selectedTenant.unitId)
     : input.snapshot.statementLines;
-  ctx.table("Kostenpositionen aus Abrechnungsregel", [
-    { label: "Behandlung", width: 82 },
-    { label: "Beschreibung", width: 190 },
-    { label: "Einheit", width: 90 },
-    { label: "Referenz", width: 86 },
-    { label: "Betrag", width: contentWidth - 448, align: "right" }
-  ], statementLines.map((line) => [
-    treatmentLabel(line.treatment),
-    [line.description, line.note].filter(Boolean).join(" - "),
-    line.unitName || (line.unitId ? unitName(line.unitId) : "Gesamtobjekt"),
-    line.sourceReference || "-",
-    money(line.amount)
-  ]), { emptyText: "Keine manuell erfassten Kostenpositionen. Die Bankpositionen werden unten detailliert ausgewiesen." });
-}
+  const unitNames = new Map((input.snapshot.source.bankingDetails?.units || []).map((unit) => [unit.external_id, unit.name]));
+  const unitName = (id: string | null | undefined) => id ? unitNames.get(id) || "Einheit" : "Gesamtobjekt";
 
-function renderTenancies(
-  ctx: PdfContext,
-  details: ServiceChargeStatementSnapshot["source"]["bankingDetails"] | undefined,
-  tenants: ServiceChargeStatementSnapshot["allocation"]["tenantResults"],
-  unitName: (id: string) => string
-) {
-  ctx.write("Vertrags- und Mietkontext", { size: 12, bold: true, gap: 18 });
-  if (!details) {
-    ctx.write("Keine Banking-Detaildaten im Snapshot vorhanden.");
-    return;
-  }
-  const tenantIds = new Set(tenants.map((tenant) => tenant.tenantId));
-  const rows = details.tenancies
-    .filter((tenant) => !tenantIds.size || tenantIds.has(tenant.external_id))
-    .map((tenant) => [
-      tenant.display_name,
-      unitName(tenant.unit_external_id),
-      `${date(tenant.move_in_date || tenant.lease_start_date)} bis ${tenant.move_out_date ? date(tenant.move_out_date) : "laufend"}`,
-      money(Number(tenant.rent_amount || 0)),
-      money(Number(tenant.garage_rent || 0)),
-      money(Number(tenant.service_charges || 0)),
-      money(Number(tenant.actual_service_charge_prepayments || 0))
-    ]);
-  ctx.table("", [
-    { label: "Mieter", width: 112 },
-    { label: "Einheit", width: 78 },
-    { label: "Zeitraum", width: 100 },
-    { label: "Kaltmiete", width: 62, align: "right" },
-    { label: "Garage", width: 52, align: "right" },
-    { label: "NK Soll", width: 56, align: "right" },
-    { label: "NK Ist", width: contentWidth - 460, align: "right" }
-  ], rows, { emptyText: "Keine passenden Vertragsdaten im Snapshot." });
-}
+  paragraph(selectedTenant ? `Nebenkostenabrechnung ${input.snapshot.year}` : `Nebenkostenabrechnung Gesamtuebersicht ${input.snapshot.year}`, { size: 20, bold: true, gap: 26 });
+  paragraph(`${input.snapshot.property.name} - ${input.snapshot.property.address}`, { size: 11, bold: true });
+  paragraph(`Version ${input.version} - ${input.status === "FINAL" ? "festgeschrieben" : "Entwurf"}`, { size: 9 });
+  if (selectedTenant) paragraph(`Mieter: ${selectedTenant.tenantName}`, { size: 10, bold: true });
 
-function renderBankingDetails(
-  ctx: PdfContext,
-  details: ServiceChargeStatementSnapshot["source"]["bankingDetails"] | undefined,
-  selectedTenant: ServiceChargeStatementSnapshot["allocation"]["tenantResults"][number] | null,
-  unitName: (id: string) => string
-) {
-  if (!details) return;
-  const relevant = (lines: ServiceChargeLine[], tenantOnly = false) => lines.filter((line) => {
-    if (!selectedTenant) return true;
-    if (tenantOnly) return line.tenant_external_id === selectedTenant.tenantId;
-    return !line.unit_external_id || line.unit_external_id === selectedTenant.unitId;
-  });
-  bankingTable(ctx, "Umlagefaehige Bank-Kosten", relevant(details.allocableCosts), unitName);
-  bankingTable(ctx, "Tatsaechliche Nebenkostenvorauszahlungen", relevant(details.serviceChargePrepayments, true), unitName);
-  bankingTable(ctx, "Kaltmietanteile der Zahlungen", relevant(details.coldRent, true), unitName);
-  bankingTable(ctx, "Nebenkostenabrechnungszahlungen", relevant(details.serviceChargeSettlements, true), unitName);
-}
-
-function bankingTable(ctx: PdfContext, title: string, lines: ServiceChargeLine[], unitName: (id: string) => string) {
-  const rows = lines.map((line) => [
-    date(line.value_date || line.booking_date),
-    line.applicant_name || "Ohne Gegenpartei",
-    line.purpose || line.memo || "-",
-    line.unit_external_id ? unitName(line.unit_external_id) : "Gesamtobjekt",
-    line.bank_reference || line.customer_reference || `TX ${line.transaction_id}`,
-    money(Number(line.amount || 0))
+  section("Zusammenfassung");
+  summaryTable([
+    [selectedTenant ? "Kostenanteil" : "Umlagefaehige Kosten", money(selectedTenant?.allocatedCosts ?? allocation.allocableCosts)],
+    ["Vorauszahlungen", money(selectedTenant?.actualPrepayments ?? allocation.totalPrepayments)],
+    [
+      selectedTenant ? (selectedTenant.result >= 0 ? "Nachzahlung" : "Guthaben") : "Mietern zugeordnet",
+      money(selectedTenant ? Math.abs(selectedTenant.result) : allocation.allocatedToTenants)
+    ],
+    ...(!selectedTenant ? [["Eigentuemer / Leerstand", money(allocation.ownerShare)] as [string, string]] : [])
   ]);
-  ctx.table(title, [
-    { label: "Datum", width: 58 },
-    { label: "Gegenpartei", width: 92 },
-    { label: "Zweck", width: 166 },
-    { label: "Einheit", width: 70 },
-    { label: "Referenz", width: 78 },
-    { label: "Betrag", width: contentWidth - 464, align: "right" }
-  ], rows, {
-    footerRows: lines.length ? [["Summe", "", "", "", "", money(lines.reduce((sum, line) => sum + Number(line.amount || 0), 0))]] : [],
-    emptyText: "Keine Positionen."
-  });
-}
 
-function renderWarnings(ctx: PdfContext, warnings: string[], blockingWarnings: string[]) {
+  section("Abrechnungsgrundlage");
+  paragraph(methodLabel(input.snapshot.method));
+  if (rule.note) paragraph(`Hinweis: ${rule.note}`);
+  paragraph(`Verteilerwert gesamt: ${number(rule.totalDistributionValue)}`);
+
+  section("Kostenpositionen");
+  if (statementLines.length) {
+    table(
+      ["Bezeichnung", "Behandlung", "Einheit", "Betrag"],
+      statementLines.map((line) => [
+        readableLineTitle(line.description, line.sourceReference),
+        treatmentLabel(line.treatment),
+        line.unitName || unitName(line.unitId),
+        money(line.amount)
+      ]),
+      [220, 105, 95, 75],
+      [false, false, false, true]
+    );
+  } else {
+    paragraph("Noch keine Kostenpositionen erfasst.");
+  }
+
+  section("Abrechnung je Mietverhaeltnis");
+  if (tenantResults.length) {
+    table(
+      ["Mieter", "Einheit", "Zeitraum", "Ergebnis"],
+      tenantResults.map((tenant) => [
+        tenant.tenantName,
+        unitName(tenant.unitId),
+        `${tenant.occupiedDays}/${tenant.yearDays} Tage`,
+        `${tenant.result >= 0 ? "Nachzahlung" : "Guthaben"} ${money(Math.abs(tenant.result))}`
+      ]),
+      [155, 135, 90, 115],
+      [false, false, false, true]
+    );
+  } else {
+    paragraph("Keine Mietverhaeltnisse mit berechenbarem Anteil vorhanden. Diese Version ist noch nicht verschickfertig.");
+  }
+
+  const warnings = [...allocation.warnings, ...(allocation.blockingWarnings || [])].filter((warning) => {
+    if (allocation.allocableCosts > 0 && /weder umlagefaehige Kosten noch Nebenkostenvorauszahlungen/i.test(warning)) return false;
+    return true;
+  });
   if (warnings.length) {
-    ctx.write("Pruefhinweise", { size: 12, bold: true, gap: 18 });
-    warnings.forEach((warning) => ctx.write(`- ${warning}`));
+    section("Pruefhinweise");
+    warnings.forEach((warning) => paragraph(`- ${warning}`));
   }
-  if (blockingWarnings.length) {
-    ctx.write("Abschluss blockiert", { size: 12, bold: true, gap: 18 });
-    blockingWarnings.forEach((warning) => ctx.write(`- ${warning}`));
-  }
-}
 
-function drawTable(ctx: PdfContext, title: string, columns: TableColumn[], rows: TableCell[][], options: { footerRows?: TableCell[][]; emptyText?: string } = {}) {
-  if (title) ctx.write(title, { size: 12, bold: true, gap: 18 });
-  if (!rows.length && !(options.footerRows || []).length) {
-    ctx.write(options.emptyText || "Keine Daten.", { size: 8.5, gap: 12 });
-    ctx.y -= 4;
-    return;
-  }
-  const drawHeader = () => {
-    const height = 18;
-    ctx.ensure(height + 10);
-    ctx.current().push(fillRect(margin, ctx.y - height + 5, contentWidth, height, "0.90 0.95 0.94"));
-    let x = margin;
-    columns.forEach((column) => {
-      ctx.current().push(text(column.label, x + 4, ctx.y - 7, 7.5, true));
-      x += column.width;
-    });
-    ctx.current().push(rect(margin, ctx.y - height + 5, contentWidth, height));
-    ctx.y -= height;
-  };
-  drawHeader();
-  [...rows, ...(options.footerRows || [])].forEach((row, index) => {
-    const footer = index >= rows.length;
-    const wrapped = row.map((cell, cellIndex) => wrapCell(String(cell ?? ""), columns[cellIndex]?.width || 60, footer ? 7.3 : 7));
-    const rowHeight = Math.max(18, Math.max(...wrapped.map((lines) => lines.length)) * 9 + 8);
-    if (ctx.y - rowHeight < 48) {
-      ctx.newPage();
-      drawHeader();
-    }
-    if (footer) ctx.current().push(fillRect(margin, ctx.y - rowHeight + 4, contentWidth, rowHeight, "0.96 0.96 0.96"));
-    let x = margin;
-    row.forEach((cell, cellIndex) => {
-      const column = columns[cellIndex];
-      const lines = wrapped[cellIndex];
-      const cellWidth = column.width;
-      const textX = column.align === "right" ? x + cellWidth - 5 : column.align === "center" ? x + cellWidth / 2 : x + 4;
-      lines.forEach((line, lineIndex) => {
-        const renderedX = column.align === "right" ? textX - Math.min(cellWidth - 8, line.length * 3.6) : column.align === "center" ? textX - Math.min(cellWidth - 8, line.length * 3.2) / 2 : textX;
-        ctx.current().push(text(line, renderedX, ctx.y - 7 - lineIndex * 9, footer ? 7.3 : 7, footer));
-      });
-      if (cellIndex > 0) ctx.current().push(lineCommand(x, ctx.y + 4, x, ctx.y - rowHeight + 4));
-      x += cellWidth;
-    });
-    ctx.current().push(rect(margin, ctx.y - rowHeight + 4, contentWidth, rowHeight));
-    ctx.y -= rowHeight;
+  pages.forEach((page, index) => {
+    page.push(text(`Seite ${index + 1} von ${pages.length}`, 480, 28, 7));
+    page.push(text(`Pruefcode ${input.checksum.slice(0, 10)}`, margin, 28, 7));
   });
-  ctx.y -= 10;
-}
+  return buildPdf(pages.map((page) => page.join("\n")));
 
-function fillRect(x: number, y: number, w: number, h: number, rgb: string) {
-  return `${rgb} rg ${x} ${y} ${w} ${h} re f 0 0 0 rg`;
-}
-
-function rect(x: number, y: number, w: number, h: number) {
-  return `0.78 0.82 0.80 RG ${x} ${y} ${w} ${h} re S 0 0 0 RG`;
-}
-
-function lineCommand(x1: number, y1: number, x2: number, y2: number) {
-  return `0.86 0.88 0.87 RG ${x1} ${y1} m ${x2} ${y2} l S 0 0 0 RG`;
+  function table(headers: string[], rows: Cell[][], widths: number[], rightAlign: boolean[] = []) {
+    const headerSize = 8;
+    const cellSize = 8;
+    const lineHeight = 10;
+    const drawHeader = () => {
+      ensure(28);
+      current().push(rect(margin, y - 18, widths.reduce((sum, width) => sum + width, 0), 22, "0.92 0.97 0.95"));
+      let x = margin;
+      headers.forEach((header, index) => {
+        drawText(header, x + 5, y - 11, headerSize, true);
+        x += widths[index];
+      });
+      y -= 24;
+    };
+    drawHeader();
+    rows.forEach((row) => {
+      const wrapped = row.map((cell, index) => wrap(String(cell ?? "-"), widths[index] - 10, cellSize));
+      const rowHeight = Math.max(24, Math.max(...wrapped.map((lines) => lines.length)) * lineHeight + 10);
+      if (y - rowHeight < 58) {
+        newPage();
+        drawHeader();
+      }
+      current().push(rect(margin, y - rowHeight + 3, widths.reduce((sum, width) => sum + width, 0), rowHeight));
+      let x = margin;
+      wrapped.forEach((lines, index) => {
+        lines.forEach((line, lineIndex) => {
+          const lineX = rightAlign[index] ? x + widths[index] - 5 - approximateWidth(line, cellSize) : x + 5;
+          drawText(line, Math.max(x + 5, lineX), y - 11 - lineIndex * lineHeight, cellSize, rightAlign[index]);
+        });
+        x += widths[index];
+      });
+      y -= rowHeight;
+    });
+    y -= 8;
+  }
 }
 
 function methodLabel(method: string) {
   if (method === "AREA") return "Verteilung nach Flaeche und Belegungstagen.";
   if (method === "FIXED_SHARE") return "Verteilung nach festen Anteilen und Belegungstagen.";
-  return "Umlagefaehige Einzelkosten aus der Hausverwaltungsabrechnung; Hausgeldzahlungen wurden nicht verteilt.";
+  return "Umlagefaehige Einzelkosten aus der Hausverwaltungsabrechnung; Hausgeldzahlungen wurden nicht als Kosten verteilt.";
 }
 
 function treatmentLabel(value: string) {
-  if (value === "ALLOCABLE") return "Umlagefaehig";
-  if (value === "NON_ALLOCABLE") return "Nicht umlagefaehig";
-  if (value === "RESERVE") return "Erhaltungsruecklage";
-  return value;
+  const normalized = value.toUpperCase();
+  if (normalized === "ALLOCABLE" || normalized === "UMLAGEFAEHIG_MIETER") return "Umlagefaehig";
+  if (normalized === "NON_ALLOCABLE" || normalized === "NICHT_UMLAGEFAEHIG_MIETER") return "Nicht umlagefaehig";
+  if (normalized === "RESERVE" || normalized === "RUECKLAGE" || normalized === "ERHALTUNGSRUECKLAGE") return "Ruecklage";
+  return "Pruefen";
+}
+
+function readableLineTitle(description: string, sourceReference: string | null) {
+  const source = readableSource(sourceReference);
+  if (!source || source.toLowerCase() === description.toLowerCase()) return description;
+  return `${description} (${source})`;
+}
+
+function readableSource(value: string | null) {
+  if (!value) return "";
+  return value
+    .replace(/^cm[a-z0-9]{10,}:/i, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function money(value: number) {
-  return `${value.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR`;
+  return `${Number(value || 0).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR`;
 }
 
 function number(value: number | null) {
   return value === null ? "-" : value.toLocaleString("de-DE", { maximumFractionDigits: 3 });
 }
 
-function percent(value: number) {
-  return `${(value * 100).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} %`;
-}
-
-function date(value: string) {
-  if (!value) return "-";
-  const match = value.slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  return match ? `${match[3]}.${match[2]}.${match[1]}` : value;
-}
-
-function wrap(value: string, width: number) {
-  const words = value.replace(/\s+/g, " ").trim().split(" ");
+function wrap(value: string, width: number, size = 9) {
+  const maxChars = Math.max(8, Math.floor(width / (size * 0.48)));
+  const words = String(value || "").replace(/\s+/g, " ").trim().split(" ");
   const lines: string[] = [];
   let line = "";
   for (const word of words) {
-    if (`${line} ${word}`.trim().length > width && line) {
+    if (word.length > maxChars) {
+      if (line) lines.push(line);
+      for (let index = 0; index < word.length; index += maxChars) lines.push(word.slice(index, index + maxChars));
+      line = "";
+    } else if (`${line} ${word}`.trim().length > maxChars && line) {
       lines.push(line);
       line = word;
     } else {
@@ -379,8 +229,8 @@ function wrap(value: string, width: number) {
   return lines.length ? lines : [""];
 }
 
-function wrapCell(value: string, width: number, size: number) {
-  return wrap(value, Math.max(5, Math.floor(width / (size * 0.55))));
+function approximateWidth(value: string, size: number) {
+  return value.length * size * 0.48;
 }
 
 function buildPdf(pageStreams: string[]) {
@@ -413,6 +263,11 @@ function buildPdf(pageStreams: string[]) {
 
 function text(value: string, x: number, y: number, size = 9, bold = false) {
   return `BT /F1 ${bold ? size + 0.8 : size} Tf ${x} ${y} Td (${pdfText(value)}) Tj ET`;
+}
+
+function rect(x: number, y: number, width: number, height: number, fill?: string) {
+  if (fill) return `q ${fill} rg ${x} ${y} ${width} ${height} re f Q`;
+  return `q 0.82 0.86 0.84 RG 0.6 w ${x} ${y} ${width} ${height} re S Q`;
 }
 
 function pdfText(value: string) {

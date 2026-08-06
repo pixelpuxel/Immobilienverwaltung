@@ -31,6 +31,7 @@
 - Mieterdokumente gezielt mit Kategorie-Name hochladen, z. B. Kuendigungen.
 - Vertragsvorlagen lesen und ableiten.
 - Mietvertraege erzeugen, suchen, loeschen und Links erzeugen.
+- Angereicherte Banking-Buchungen ueber `get_transaction_details` lesen. Der MCP ruft dafuer nur die Immoportal-Integrations-API auf; das Portal nutzt den dort administrierten Banking-Token und liefert Splits, Kategorie, Objekt-/Einheiten-/Mieterbezug, Dokumente, Historie, OCR-/KI-Daten und Kommentare.
 - Mieteinnahmen lesen und Zahlungen setzen/korrigieren.
 - Nebenkostenabrechnungen mit Banking-Istdaten und serverseitiger Verteilung laden, Verteilerschluessel und externe Kostenpositionen pflegen, versionierte Snapshots erzeugen/pruefen/festschreiben sowie Gesamt- und Mieter-PDF-Endpunkte ausgeben.
 - Timeline-Ereignisse zu Immobilien, Einheiten und Mietern lesen/anlegen/aendern/loeschen.

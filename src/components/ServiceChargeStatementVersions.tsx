@@ -78,7 +78,9 @@ export function ServiceChargeStatementVersions({
           <div className="grid gap-3 p-4 md:grid-cols-[110px_140px_minmax(0,1fr)_auto] md:items-center" key={statement.id}>
             <div><div className="font-bold">Version {statement.version}</div><div className="text-xs text-muted">{new Date(statement.createdAt).toLocaleString("de-DE")}</div></div>
             <div className={`text-sm font-bold ${statement.status === "FINAL" ? "text-emerald-700" : "text-amber-700"}`}>{statement.status === "FINAL" ? "Festgeschrieben" : "Entwurf"}</div>
-            <div className="truncate font-mono text-xs text-muted" title={statement.checksum}>SHA-256 {statement.checksum}</div>
+            <div className="text-sm text-muted" title={`Technische Pruefsumme: ${statement.checksum}`}>
+              Datenstand eingefroren · Pruefcode {statement.checksum.slice(0, 8)}
+            </div>
             <div className="flex flex-wrap gap-2">
               <a className="button button-secondary" href={`/api/service-charge-statements/${statement.id}`} target="_blank" rel="noreferrer">Protokoll</a>
               <a className="button button-secondary" href={`/api/service-charge-statements/${statement.id}/pdf`} target="_blank" rel="noreferrer">PDF</a>

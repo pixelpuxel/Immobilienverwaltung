@@ -17,6 +17,15 @@ const createSchema = z.object({
   note: z.string().trim().max(2000).optional()
 });
 
+const updateSchema = z.object({
+  unitId: z.string().min(1).nullable().optional(),
+  description: z.string().trim().min(1).max(300).optional(),
+  amount: z.number().finite().min(0).optional(),
+  treatment: z.enum(TREATMENTS).optional(),
+  sourceReference: z.string().trim().max(300).nullable().optional(),
+  note: z.string().trim().max(2000).nullable().optional()
+});
+
 export async function POST(request: NextRequest) {
   if (!assertSameOrigin(request)) {
     return NextResponse.json({ error: "CSRF-Schutz: ungueltiger Ursprung." }, { status: 403 });
@@ -66,4 +75,35 @@ export async function DELETE(request: NextRequest) {
   if (!line) return NextResponse.json({ error: "Kostenposition nicht gefunden." }, { status: 404 });
   await prisma.serviceChargeStatementLine.delete({ where: { id: line.id } });
   return NextResponse.json({ deleted: true });
+}
+
+export async function PATCH(request: NextRequest) {
+  if (!assertSameOrigin(request)) {
+    return NextResponse.json({ error: "CSRF-Schutz: ungueltiger Ursprung." }, { status: 403 });
+  }
+  const user = await requireApiUser(request, [Role.ADMIN]);
+  if (!user) return NextResponse.json({ error: "Nicht angemeldet." }, { status: 401 });
+  const id = request.nextUrl.searchParams.get("id") || "";
+  const parsed = updateSchema.safeParse(await request.json().catch(() => ({})));
+  if (!parsed.success) return NextResponse.json({ error: "Bitte Kostenposition pruefen." }, { status: 400 });
+  const line = await prisma.serviceChargeStatementLine.findFirst({
+    where: { id, rule: { property: portalWhere(user) } },
+    include: { rule: { include: { property: { include: { units: { select: { id: true } } } } } } }
+  });
+  if (!line) return NextResponse.json({ error: "Kostenposition nicht gefunden." }, { status: 404 });
+  if (parsed.data.unitId && !line.rule.property.units.some((unit) => unit.id === parsed.data.unitId)) {
+    return NextResponse.json({ error: "Einheit gehoert nicht zur Immobilie." }, { status: 422 });
+  }
+  const updated = await prisma.serviceChargeStatementLine.update({
+    where: { id: line.id },
+    data: {
+      ...(parsed.data.unitId !== undefined ? { unitId: parsed.data.unitId || null } : {}),
+      ...(parsed.data.description !== undefined ? { description: parsed.data.description } : {}),
+      ...(parsed.data.amount !== undefined ? { amount: parsed.data.amount } : {}),
+      ...(parsed.data.treatment !== undefined ? { treatment: parsed.data.treatment } : {}),
+      ...(parsed.data.sourceReference !== undefined ? { sourceReference: parsed.data.sourceReference || null } : {}),
+      ...(parsed.data.note !== undefined ? { note: parsed.data.note || null } : {})
+    }
+  });
+  return NextResponse.json(updated);
 }

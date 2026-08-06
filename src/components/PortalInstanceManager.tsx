@@ -53,19 +53,31 @@ export function PortalInstanceManager() {
       return;
     }
     setLoading(true);
-    setMessage("");
-    const response = await fetch("/api/auth/switch-view", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, instanceSwitch: true })
-    });
-    setLoading(false);
-    if (!response.ok) {
-      const data = await response.json().catch(() => ({}));
-      setMessage(data.error || "Ansicht konnte nicht gewechselt werden.");
-      return;
+    setMessage("Wechsle in die Instanz...");
+    try {
+      const response = await fetch("/api/auth/switch-view", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ userId, instanceSwitch: true })
+      });
+      const text = await response.text();
+      let data: { error?: string } = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = {};
+      }
+      if (!response.ok) {
+        setMessage(data.error || "Ansicht konnte nicht gewechselt werden.");
+        return;
+      }
+      window.location.assign("/dashboard");
+    } catch (error) {
+      setMessage(error instanceof Error ? `Ansicht konnte nicht gewechselt werden: ${error.message}` : "Ansicht konnte nicht gewechselt werden.");
+    } finally {
+      setLoading(false);
     }
-    window.location.href = "/dashboard";
   }
 
   return (
