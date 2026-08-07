@@ -10,6 +10,8 @@
 - Derselbe Portal-API-Token wird fuer die interne Integrations-API verwendet.
 - Tokens werden im Portal unter Einstellungen -> API-Zugaenge administriert, nicht in `.env`.
 - ChatGPT-OAuth wird vom Portal bereitgestellt. Der OAuth-Code-Flow erzeugt am Ende ebenfalls normale Portal-API-Tokens.
+- MCP-Routen koennen optional benutzergebunden sein: `/mcp` fuer Standard-OAuth und `/mcp/<benutzer>` fuer einen konkreten Portalbenutzer wie `maren`. OAuth erzeugt dann einen Token fuer diesen Zielbenutzer, sofern der eingeloggte Nutzer der Zielbenutzer oder ein Plattform-Admin ist.
+- Der MCP-Server erzwingt die Bindung serverseitig: Ein Token muss bei `/api/integrations/v1/me` zu Benutzer-ID, Benutzername oder E-Mail des Routenprofils passen, sonst wird `/mcp/<benutzer>` mit `403 FORBIDDEN` abgelehnt.
 - Der MCP-Server sendet bei fehlendem/ungueltigem Token eine `WWW-Authenticate`-Challenge mit Protected-Resource-Metadata.
 - Der Container bindet standardmaessig nur an `127.0.0.1`, damit die Veroeffentlichung bewusst ueber Reverse Proxy erfolgt.
 

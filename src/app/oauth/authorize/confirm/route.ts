@@ -4,10 +4,12 @@ import { prisma } from "@/lib/prisma";
 import {
   createOAuthSecret,
   hashOAuthSecret,
+  isAllowedOAuthResource,
   normalizeScopes,
   oauthResource,
   redirectWithOAuthError
 } from "@/lib/oauth";
+import { resolveOAuthResourceTarget } from "@/lib/oauth-resource";
 
 export async function POST(request: NextRequest) {
   if (!assertSameOrigin(request)) {
@@ -30,8 +32,12 @@ export async function POST(request: NextRequest) {
   if (!client || !client.redirectUris.includes(redirectUri)) {
     return NextResponse.json({ error: "invalid_client", error_description: "OAuth-Client ist ungueltig." }, { status: 400 });
   }
-  if (resource !== oauthResource()) {
+  if (!isAllowedOAuthResource(resource)) {
     return redirectWithOAuthError(redirectUri, state, "invalid_target", "resource passt nicht zu diesem MCP-Server.");
+  }
+  const resourceTarget = await resolveOAuthResourceTarget(resource, user);
+  if (!resourceTarget.ok) {
+    return redirectWithOAuthError(redirectUri, state, "access_denied", resourceTarget.error);
   }
   if (codeChallengeMethod !== "S256" || !codeChallenge) {
     return redirectWithOAuthError(redirectUri, state, "invalid_request", "PKCE S256 ist erforderlich.");
@@ -44,14 +50,14 @@ export async function POST(request: NextRequest) {
   await prisma.oAuthAuthorizationCode.create({
     data: {
       codeHash: hashOAuthSecret(code),
-      userId: user.id,
-      portalInstanceId: user.portalInstanceId,
+      userId: resourceTarget.user.id,
+      portalInstanceId: resourceTarget.user.portalInstanceId,
       clientId,
       redirectUri,
       scopes,
       codeChallenge,
       codeChallengeMethod,
-      resource,
+      resource: resourceTarget.resource,
       expiresAt: new Date(Date.now() + 10 * 60 * 1000)
     }
   });

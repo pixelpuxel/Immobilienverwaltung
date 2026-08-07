@@ -48,8 +48,36 @@ export function oauthIssuer() {
   return stripTrailingSlash(env.appUrl);
 }
 
-export function oauthResource() {
-  return `${oauthIssuer()}/mcp`;
+export function oauthResource(profile?: string | null) {
+  const suffix = normalizeResourceProfile(profile);
+  return suffix ? `${oauthIssuer()}/mcp/${encodeURIComponent(suffix)}` : `${oauthIssuer()}/mcp`;
+}
+
+export function normalizeResourceProfile(profile?: string | null) {
+  const value = String(profile || "").trim().replace(/^@+/, "").toLowerCase();
+  if (!value) return "";
+  return /^[a-z0-9._-]{1,80}$/.test(value) ? value : "";
+}
+
+export function parseOAuthResource(resource: string) {
+  try {
+    const issuer = new URL(oauthIssuer());
+    const url = new URL(resource);
+    if (url.origin !== issuer.origin) return null;
+    const path = url.pathname.replace(/\/+$/, "");
+    if (path === "/mcp") return { resource: oauthResource(), profile: "" };
+    const match = path.match(/^\/mcp\/([^/]+)$/);
+    if (!match) return null;
+    const decodedProfile = normalizeResourceProfile(decodeURIComponent(match[1]));
+    if (!decodedProfile) return null;
+    return { resource: oauthResource(decodedProfile), profile: decodedProfile };
+  } catch {
+    return null;
+  }
+}
+
+export function isAllowedOAuthResource(resource: string) {
+  return Boolean(parseOAuthResource(resource));
 }
 
 export function stripTrailingSlash(value: string) {

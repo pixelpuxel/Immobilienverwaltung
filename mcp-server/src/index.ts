@@ -8,6 +8,7 @@ import { registerPortalTools } from "./tools.js";
 
 const config = readConfig();
 const app = express();
+const MCP_ROUTES = ["/mcp", "/mcp/:profile"];
 
 app.disable("x-powered-by");
 app.use(express.json({ limit: "8mb" }));
@@ -31,36 +32,20 @@ app.get("/health", async (_request, response) => {
   }
 });
 
-app.get("/.well-known/oauth-protected-resource", (_request, response) => {
-  response.json({
-    resource: `${config.publicBaseUrl}/mcp`,
-    authorization_servers: [config.publicBaseUrl],
-    scopes_supported: [
-      "read:properties",
-      "write:properties",
-      "read:units",
-      "write:units",
-      "read:documents",
-      "write:documents",
-      "download:documents",
-      "read:tenants",
-      "write:tenants",
-      "read:contracts",
-      "write:contracts",
-      "read:timeline",
-      "write:timeline",
-      "write:landlord-confirmations",
-      "write:settings",
-      "backup:export",
-      "backup:import",
-      "read:audit"
-    ],
-    bearer_methods_supported: ["header"],
-    resource_documentation: `${config.publicBaseUrl}/settings`
-  });
+app.get("/.well-known/oauth-protected-resource", (request, response) => {
+  response.json(oauthProtectedResourceMetadata(routeProfile(request)));
 });
 
-app.post("/mcp", requireMcpClientToken, async (request, response) => {
+app.get("/.well-known/oauth-protected-resource/:profile", (request, response) => {
+  const profile = routeProfile(request);
+  if (!profile) {
+    response.status(404).json({ error: "invalid_resource" });
+    return;
+  }
+  response.json(oauthProtectedResourceMetadata(profile));
+});
+
+app.post(MCP_ROUTES, requireMcpClientToken, async (request, response) => {
   const requestId = request.headers["x-request-id"]?.toString() || randomUUID();
   response.setHeader("X-Request-Id", requestId);
 
@@ -91,13 +76,13 @@ app.post("/mcp", requireMcpClientToken, async (request, response) => {
   }
 });
 
-app.get("/mcp", requireMcpClientToken, (_request, response) => {
+app.get(MCP_ROUTES, requireMcpClientToken, (request, response) => {
   response.status(405).json({
-    error: "This MCP server uses stateless Streamable HTTP. Send JSON-RPC requests with POST /mcp."
+    error: `This MCP server uses stateless Streamable HTTP. Send JSON-RPC requests with POST ${mcpPath(routeProfile(request))}.`
   });
 });
 
-app.delete("/mcp", requireMcpClientToken, (_request, response) => {
+app.delete(MCP_ROUTES, requireMcpClientToken, (_request, response) => {
   response.status(204).end();
 });
 
@@ -123,9 +108,10 @@ function createMcpServer(portal: PortalClient) {
 }
 
 async function requireMcpClientToken(request: Request, response: Response, next: NextFunction) {
+  const profile = routeProfile(request);
   const token = bearerToken(request);
   if (!token) {
-    setOAuthChallenge(response);
+    setOAuthChallenge(response, profile);
     response.status(401).json({
       error: "UNAUTHORIZED",
       message: "Bearer token missing. Start the OAuth flow or use a Portal API token created in the backend."
@@ -133,10 +119,18 @@ async function requireMcpClientToken(request: Request, response: Response, next:
     return;
   }
   try {
-    await new PortalClient(config, token).json({ path: "/api/integrations/v1/me" });
+    const me = await new PortalClient(config, token).json({ path: "/api/integrations/v1/me" });
+    if (profile && !profileMatchesUser(profile, me)) {
+      setOAuthChallenge(response, profile);
+      response.status(403).json({
+        error: "FORBIDDEN",
+        message: `Bearer token does not belong to the MCP route /mcp/${profile}. Reconnect this endpoint with the matching portal user.`
+      });
+      return;
+    }
     next();
   } catch (error) {
-    setOAuthChallenge(response);
+    setOAuthChallenge(response, profile);
     response.status(401).json({
       error: "UNAUTHORIZED",
       message: error instanceof Error ? error.message : "Portal API token is invalid."
@@ -150,7 +144,74 @@ function bearerToken(request: Request) {
   return match?.[1]?.trim() || null;
 }
 
-function setOAuthChallenge(response: Response) {
-  const resourceMetadata = `${config.publicBaseUrl}/.well-known/oauth-protected-resource`;
-  response.setHeader("WWW-Authenticate", `Bearer resource_metadata="${resourceMetadata}"`);
+function setOAuthChallenge(response: Response, profile?: string) {
+  response.setHeader("WWW-Authenticate", `Bearer resource_metadata="${resourceMetadataUrl(profile)}"`);
+}
+
+function oauthProtectedResourceMetadata(profile?: string) {
+  return {
+    resource: resourceUrl(profile),
+    authorization_servers: [config.publicBaseUrl],
+    scopes_supported: [
+      "read:properties",
+      "write:properties",
+      "read:units",
+      "write:units",
+      "read:documents",
+      "write:documents",
+      "download:documents",
+      "read:tenants",
+      "write:tenants",
+      "read:contracts",
+      "write:contracts",
+      "read:timeline",
+      "write:timeline",
+      "write:landlord-confirmations",
+      "write:settings",
+      "backup:export",
+      "backup:import",
+      "read:audit"
+    ],
+    bearer_methods_supported: ["header"],
+    resource_documentation: `${config.publicBaseUrl}/settings`
+  };
+}
+
+function routeProfile(request: Request) {
+  const raw = typeof request.params.profile === "string" ? request.params.profile : "";
+  return normalizeProfile(raw);
+}
+
+function normalizeProfile(profile?: string | null) {
+  const value = String(profile || "").trim().replace(/^@+/, "").toLowerCase();
+  if (!value) return "";
+  return /^[a-z0-9._-]{1,80}$/.test(value) ? value : "";
+}
+
+function mcpPath(profile?: string) {
+  return profile ? `/mcp/${encodeURIComponent(profile)}` : "/mcp";
+}
+
+function resourceUrl(profile?: string) {
+  return `${config.publicBaseUrl}${mcpPath(profile)}`;
+}
+
+function resourceMetadataUrl(profile?: string) {
+  return profile ? `${config.publicBaseUrl}/.well-known/oauth-protected-resource/${encodeURIComponent(profile)}` : `${config.publicBaseUrl}/.well-known/oauth-protected-resource`;
+}
+
+function profileMatchesUser(profile: string, me: unknown) {
+  const normalized = normalizeProfile(profile);
+  if (!normalized) return false;
+  const user = extractUser(me);
+  return [user?.id, user?.username, user?.email]
+    .filter((value): value is string => typeof value === "string" && value.length > 0)
+    .some((value) => normalizeProfile(value) === normalized || String(value).trim().toLowerCase() === normalized);
+}
+
+function extractUser(value: unknown) {
+  if (!value || typeof value !== "object") return null;
+  const objectValue = value as { user?: unknown };
+  const candidate = objectValue.user && typeof objectValue.user === "object" ? objectValue.user : value;
+  return candidate as { id?: string; username?: string | null; email?: string | null };
 }

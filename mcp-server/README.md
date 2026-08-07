@@ -71,6 +71,26 @@ Flow:
 
 Die erzeugten OAuth-Tokens erscheinen im Portal unter **Einstellungen -> API-Zugaenge** und koennen dort widerrufen werden.
 
+### Benutzergebundene MCP-Routen
+
+Neben der Standardroute kann ein Connector gezielt an einen Portalbenutzer gebunden werden:
+
+```text
+https://portal.example.com/mcp
+https://portal.example.com/mcp/maren
+```
+
+`/mcp` nutzt den Benutzer, der den OAuth-Flow bestaetigt. `/mcp/<benutzer>` erwartet, dass der OAuth-Flow vom passenden Zielbenutzer oder von einem Plattform-Admin bestaetigt wird. Der erzeugte API-Token gehoert dann zu diesem Zielbenutzer und sieht nur dessen Portalinstanz und Rechte.
+
+Der Pfadbestandteil `<benutzer>` kann Benutzername, Benutzer-ID oder E-Mail ohne Sonderzeichen sein; fuer ChatGPT-Connectoren ist ein kurzer eindeutiger Benutzername wie `maren` vorgesehen. Der MCP-Server prueft bei jedem Request zusaetzlich `/api/integrations/v1/me`: Ein Token fuer Gabriel wird auf `/mcp/maren` mit `403 FORBIDDEN` abgelehnt.
+
+Discovery fuer eine profilgebundene Route:
+
+```text
+GET https://portal.example.com/.well-known/oauth-protected-resource/maren
+POST https://portal.example.com/mcp/maren
+```
+
 ## ENV
 
 ```env

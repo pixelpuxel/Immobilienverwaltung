@@ -9,6 +9,7 @@ import {
   oauthResource,
   safeInternalNextPath
 } from "@/lib/oauth";
+import { resolveOAuthResourceTarget } from "@/lib/oauth-resource";
 
 type AuthorizePageProps = {
   searchParams: Record<string, string | string[] | undefined>;
@@ -32,6 +33,8 @@ export default async function OAuthAuthorizePage({ searchParams }: AuthorizePage
   if (validationError) {
     return <OAuthError message={validationError} />;
   }
+  const resourceTarget = await resolveOAuthResourceTarget(resource, user);
+  if (!resourceTarget.ok) return <OAuthError message={resourceTarget.error} />;
 
   let client = await prisma.oAuthClient.findUnique({ where: { clientId } });
   if (!client && isChatGptClientUrl(clientId) && isAllowedChatGptRedirect(redirectUri)) {
@@ -56,8 +59,13 @@ export default async function OAuthAuthorizePage({ searchParams }: AuthorizePage
         <p className="text-sm font-black uppercase tracking-normal text-accent">OAuth-Verbindung</p>
         <h1 className="mt-2 text-3xl font-black">{clientName} verbinden</h1>
         <p className="mt-3 text-sm leading-6 text-muted">
-          Diese Verbindung erstellt einen widerrufbaren Portal-API-Token fuer den MCP-Zugriff. Der Zugriff laeuft mit deinen aktuellen Portalrechten.
+          Diese Verbindung erstellt einen widerrufbaren Portal-API-Token fuer den MCP-Zugriff. Der Zugriff laeuft mit den Rechten des unten angezeigten Portalbenutzers.
         </p>
+        <div className="mt-5 rounded-md bg-panel p-4">
+          <div className="text-sm font-bold">Portalbenutzer</div>
+          <p className="mt-2 text-sm text-muted">{resourceTarget.user.name || resourceTarget.user.username || resourceTarget.user.email} ({resourceTarget.user.email})</p>
+          <p className="mt-1 text-xs text-muted">MCP-Route: {resourceTarget.resource}</p>
+        </div>
         <div className="mt-5 rounded-md bg-panel p-4">
           <div className="text-sm font-bold">Angeforderte Rechte</div>
           <ul className="mt-3 grid gap-2 text-sm text-muted">
@@ -73,7 +81,7 @@ export default async function OAuthAuthorizePage({ searchParams }: AuthorizePage
           <input name="scope" type="hidden" value={scopes.join(" ")} />
           <input name="code_challenge" type="hidden" value={codeChallenge} />
           <input name="code_challenge_method" type="hidden" value={codeChallengeMethod} />
-          <input name="resource" type="hidden" value={resource} />
+          <input name="resource" type="hidden" value={resourceTarget.resource} />
           <button className="button px-5 py-3" name="decision" type="submit" value="allow">Zugriff erlauben</button>
           <button className="button-secondary px-5 py-3" name="decision" type="submit" value="deny">Ablehnen</button>
         </form>
@@ -100,7 +108,7 @@ function validateAuthorizeRequest(input: Record<string, string>) {
   if (!input.redirectUri) return "redirect_uri fehlt.";
   if (!input.codeChallenge) return "code_challenge fehlt.";
   if (input.codeChallengeMethod !== "S256") return "code_challenge_method=S256 ist erforderlich.";
-  if (input.resource !== oauthResource()) return "resource passt nicht zu diesem MCP-Server.";
+  if (!input.resource) return "resource fehlt.";
   return null;
 }
 

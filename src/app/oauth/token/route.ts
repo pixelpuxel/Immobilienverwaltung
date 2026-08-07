@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createPlainApiToken, hashApiToken } from "@/lib/integration-auth";
-import { hashOAuthSecret, oauthError, oauthResource, verifyPkce } from "@/lib/oauth";
+import { hashOAuthSecret, isAllowedOAuthResource, oauthError, verifyPkce } from "@/lib/oauth";
 import { prisma } from "@/lib/prisma";
 
 const ACCESS_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30;
@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
   if (redirectUri && authorizationCode.redirectUri !== redirectUri) {
     return logAndReturnTokenError("invalid_grant", "Authorization Code passt nicht zur Redirect-URI.");
   }
-  if (authorizationCode.resource !== resource || resource !== oauthResource()) {
+  if (authorizationCode.resource !== resource || !isAllowedOAuthResource(resource)) {
     return logAndReturnTokenError("invalid_target", "resource passt nicht zu diesem MCP-Server.");
   }
   if (!verifyPkce(codeVerifier, authorizationCode.codeChallenge, authorizationCode.codeChallengeMethod)) {
