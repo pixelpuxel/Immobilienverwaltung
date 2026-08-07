@@ -65,8 +65,8 @@ export function parseOAuthResource(resource: string) {
     const url = new URL(resource);
     if (url.origin !== issuer.origin) return null;
     const path = url.pathname.replace(/\/+$/, "");
-    if (path === "/mcp") return { resource: oauthResource(), profile: "" };
-    const match = path.match(/^\/mcp\/([^/]+)$/);
+    if (path.toLowerCase() === "/mcp") return { resource: oauthResource(), profile: "" };
+    const match = path.match(/^\/mcp\/([^/]+)$/i);
     if (!match) return null;
     const decodedProfile = normalizeResourceProfile(decodeURIComponent(match[1]));
     if (!decodedProfile) return null;

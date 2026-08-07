@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createPlainApiToken, hashApiToken } from "@/lib/integration-auth";
-import { hashOAuthSecret, isAllowedOAuthResource, oauthError, verifyPkce } from "@/lib/oauth";
+import { hashOAuthSecret, oauthError, parseOAuthResource, verifyPkce } from "@/lib/oauth";
 import { prisma } from "@/lib/prisma";
 
 const ACCESS_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30;
@@ -30,16 +30,18 @@ export async function POST(request: NextRequest) {
   }
 
   const clientId = requestedClientId || authorizationCode.clientId;
-  const resource = requestedResource || authorizationCode.resource;
+  const authorizationResource = parseOAuthResource(authorizationCode.resource);
+  const requestedResourceTarget = requestedResource ? parseOAuthResource(requestedResource) : authorizationResource;
   if (authorizationCode.clientId !== clientId) {
     return logAndReturnTokenError("invalid_grant", "Authorization Code passt nicht zum Client.");
   }
   if (redirectUri && authorizationCode.redirectUri !== redirectUri) {
     return logAndReturnTokenError("invalid_grant", "Authorization Code passt nicht zur Redirect-URI.");
   }
-  if (authorizationCode.resource !== resource || !isAllowedOAuthResource(resource)) {
+  if (!authorizationResource || !requestedResourceTarget || authorizationResource.resource !== requestedResourceTarget.resource) {
     return logAndReturnTokenError("invalid_target", "resource passt nicht zu diesem MCP-Server.");
   }
+  const resource = authorizationResource.resource;
   if (!verifyPkce(codeVerifier, authorizationCode.codeChallenge, authorizationCode.codeChallengeMethod)) {
     return logAndReturnTokenError("invalid_grant", "PKCE-Verifizierung fehlgeschlagen.");
   }
