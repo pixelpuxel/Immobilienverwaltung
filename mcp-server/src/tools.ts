@@ -269,6 +269,25 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
   );
 
   server.registerTool(
+    "search_units",
+    {
+      title: "Einheiten suchen",
+      description: "Sucht gezielt nach Einheiten/Wohnungen/Gewerbeeinheiten ueber freie Texte wie 'Minden DG Mitte', 'Ladengeschaeft Tirolergasse' oder Objekt- und Einheitenkuerzel. Nutze dieses Tool vor update_unit_rent_details, wenn nur Name/Adresse bekannt sind.",
+      inputSchema: {
+        q: z.string().trim().min(2).describe("Suchtext fuer Immobilie, Adresse oder Einheit, z. B. 'Minden DG Mitte'."),
+        limit: z.number().int().min(1).max(50).optional()
+      }
+    },
+    async ({ q, limit }) => {
+      const result = await portal.json<{ items?: Array<Record<string, unknown>>; nextCursor?: string | null }>({
+        path: "/api/integrations/v1/units",
+        query: { q }
+      });
+      return jsonContent({ items: (result.items || []).slice(0, limit || 20), nextCursor: result.nextCursor || null });
+    }
+  );
+
+  server.registerTool(
     "create_unit",
     {
       title: "Einheit anlegen",
@@ -297,6 +316,34 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
       path: `/api/integrations/v1/units/${encodeURIComponent(id)}`,
       body: data
     }))
+  );
+
+  server.registerTool(
+    "update_unit_rent_details",
+    {
+      title: "Mietdaten einer Einheit aktualisieren",
+      description: "Setzt konkrete Mietdaten einer Einheit, z. B. Wohnflaeche, Zimmer, Kaltmiete, Tiefgarage/Stellplatzkosten, Nebenkosten und Status. Warmmiete wird automatisch aus Kaltmiete + Tiefgarage + Nebenkosten berechnet. Nutze vorher search_units oder list_units, um die eindeutige unitId zu finden.",
+      inputSchema: {
+        unitId: z.string().trim().min(1).describe("ID der Einheit aus search_units/list_units."),
+        livingArea: money.describe("Wohnflaeche in Quadratmetern."),
+        rooms: money.describe("Zimmeranzahl."),
+        rentAmount: money.describe("Kaltmiete ohne Nebenkosten; Tiefgarage separat in garageRent erfassen, wenn getrennt ausgewiesen."),
+        garageRent: money.describe("Kosten fuer Tiefgarage/Stellplatz. Wird zur Kaltmiete und Warmmiete addiert."),
+        serviceCharges: money.describe("Nebenkosten/Betriebskosten-Vorauszahlung."),
+        status: optionalString.describe("Vermietungsstatus der Einheit, z. B. vermietet, frei, gekuendigt."),
+        floor: optionalString.describe("Etage/Lage der Einheit, z. B. DG Mitte."),
+        unitNumber: optionalString.describe("Bezeichnung der Einheit, z. B. DG Mitte."),
+        isSharedHousing: z.boolean().optional().describe("WG/Mehrmieter-Einheit.")
+      }
+    },
+    async ({ unitId, ...data }) => {
+      const cleanData = Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined));
+      return jsonContent(await portal.json({
+        method: "PATCH",
+        path: `/api/integrations/v1/units/${encodeURIComponent(unitId)}`,
+        body: cleanData
+      }));
+    }
   );
 
   server.registerTool(

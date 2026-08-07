@@ -186,8 +186,10 @@ Der Server stellt fachliche Tools bereit, z. B.:
 - `create_property`
 - `update_property`
 - `list_units`
+- `search_units`
 - `create_unit`
 - `update_unit`
+- `update_unit_rent_details`
 - `delete_unit`
 - `list_tenants`
 - `get_tenant`

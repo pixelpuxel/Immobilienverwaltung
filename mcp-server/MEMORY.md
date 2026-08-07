@@ -21,7 +21,7 @@
 - Portalweite Suche.
 - Portal-Agent-Fragen und Konversationskontext.
 - Immobilien lesen/anlegen/aendern.
-- Einheiten lesen/anlegen/aendern/loeschen.
+- Einheiten lesen/anlegen/aendern/loeschen. Fuer Mietdaten gibt es zusaetzlich `search_units` und `update_unit_rent_details`, damit externe Connectoren konkrete Wohnflaeche, Kaltmiete, Tiefgarage, Nebenkosten und Status direkt setzen koennen.
 - Mieter lesen/anlegen/aendern.
 - Mieterdokumente lesen.
 - Wohnungsgeberbestaetigung erzeugen.
