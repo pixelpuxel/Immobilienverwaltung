@@ -44,19 +44,61 @@ const supportedDocumentMimeTypes = new Set([
   "application/csv"
 ]);
 const supportedDocumentExtensions = new Set(["pdf", "docx", "doc", "xlsx", "xls", "jpg", "jpeg", "png", "txt", "md", "csv"]);
+const documentResourceOutputSchema = {
+  documentId: z.string(),
+  filename: z.string(),
+  mimeType: z.string(),
+  size: z.number(),
+  file: z.string(),
+  extractionStatus: z.string().optional(),
+  text: z.string().optional(),
+  textTruncated: z.boolean().optional(),
+  note: z.string().nullable().optional()
+};
+
+type DocumentContentResponse = {
+  documentId: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  extractionStatus: string;
+  text: string;
+  textTruncated: boolean;
+  note: string | null;
+  returnedFile: {
+    filename: string;
+    mimeType: string;
+    encoding: "base64";
+    base64: string;
+  } | null;
+};
 
 function extensionOf(filename: string) {
   const match = filename.toLowerCase().match(/\.([a-z0-9]+)$/);
   return match?.[1] || "";
 }
 
-function mcpDocumentResource(input: { documentId: string; filename: string; mimeType: string; size: number; buffer: Buffer }) {
+function mcpDocumentResource(input: {
+  documentId: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  buffer: Buffer;
+  extractionStatus?: string;
+  text?: string;
+  textTruncated?: boolean;
+  note?: string | null;
+}) {
   const metadata = {
     documentId: input.documentId,
     filename: input.filename,
     mimeType: input.mimeType,
     size: input.size,
-    file: `mcp-resource://documents/${encodeURIComponent(input.documentId)}/${encodeURIComponent(input.filename)}`
+    file: `mcp-resource://documents/${encodeURIComponent(input.documentId)}/${encodeURIComponent(input.filename)}`,
+    ...(input.extractionStatus ? { extractionStatus: input.extractionStatus } : {}),
+    ...(input.text !== undefined ? { text: input.text } : {}),
+    ...(input.textTruncated !== undefined ? { textTruncated: input.textTruncated } : {}),
+    ...(input.note !== undefined ? { note: input.note } : {})
   };
   return {
     content: [
@@ -799,10 +841,11 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
     "download_document",
     {
       title: "Dokument direkt herunterladen",
-      description: "Laedt die Originaldatei eines Dokuments aus dem Portal und gibt sie direkt als eingebettete MCP-Datei/Resource zurueck. Nutzt keine signierte URL und keine frei uebergebenen Dateipfade. Unterstuetzt PDF, DOCX, DOC, XLSX, XLS, JPG, PNG, TXT und CSV bis 25 MB.",
+      description: "Laedt die Originaldatei eines Dokuments aus dem Portal und gibt sie direkt als eingebettete MCP-Datei/Resource zurueck. Nutze dieses Tool insbesondere fuer Scan-PDFs ohne maschinenlesbaren Text; verwende dafuer keinen signierten Portal-Link. Unterstuetzt PDF, DOCX, DOC, XLSX, XLS, JPG, PNG, TXT und CSV bis 25 MB.",
       inputSchema: {
         documentId: z.string().trim().min(1)
-      }
+      },
+      outputSchema: documentResourceOutputSchema
     },
     async ({ documentId }) => {
       const file = await portal.file({
@@ -860,14 +903,33 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
         maxChars: z.number().int().min(1000).max(500000).optional()
       }
     },
-    async ({ id, includeFile, preferPdf, maxChars }) => jsonContent(await portal.json({
-      path: `/api/integrations/v1/documents/${encodeURIComponent(id)}/content`,
-      query: {
-        includeFile: includeFile === undefined ? undefined : String(includeFile),
-        preferPdf: preferPdf === undefined ? undefined : (preferPdf ? "1" : "0"),
-        maxChars
+    async ({ id, includeFile, preferPdf, maxChars }) => {
+      const result = await portal.json<DocumentContentResponse>({
+        path: `/api/integrations/v1/documents/${encodeURIComponent(id)}/content`,
+        query: {
+          includeFile: includeFile === undefined ? undefined : String(includeFile),
+          preferPdf: preferPdf === undefined ? undefined : (preferPdf ? "1" : "0"),
+          maxChars
+        }
+      });
+      if (!result.returnedFile?.base64) return jsonContent(result);
+
+      const buffer = Buffer.from(result.returnedFile.base64, "base64");
+      if (buffer.length > maxMcpDocumentBytes) {
+        throw new Error(`FILE_TOO_LARGE: Datei ist ${buffer.length} Bytes gross. Limit: ${maxMcpDocumentBytes} Bytes.`);
       }
-    }))
+      return mcpDocumentResource({
+        documentId: result.documentId,
+        filename: result.returnedFile.filename,
+        mimeType: result.returnedFile.mimeType,
+        size: buffer.length,
+        buffer,
+        extractionStatus: result.extractionStatus,
+        text: result.text,
+        textTruncated: result.textTruncated,
+        note: result.note
+      });
+    }
   );
 
   server.registerTool(
