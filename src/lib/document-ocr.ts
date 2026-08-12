@@ -89,7 +89,7 @@ async function ocrPdf(storagePath: string) {
 async function ocrImage(storagePath: string) {
   const { stdout } = await execFileAsync(
     "tesseract",
-    [storagePath, "stdout", "-l", "deu+eng", "--psm", "3", "preserve_interword_spaces=1"],
+    [storagePath, "stdout", "-l", "deu+eng", "--psm", "3", "-c", "preserve_interword_spaces=1"],
     { timeout: 300_000, maxBuffer: MAX_OCR_BUFFER }
   );
   return stdout;
