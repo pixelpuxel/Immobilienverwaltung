@@ -5,7 +5,7 @@ import { requireIntegrationUser } from "@/lib/integration-auth";
 import { canAccessDocument } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 
-const LINK_TTL_SECONDS = 60 * 60;
+const LINK_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   const { user, response } = await requireIntegrationUser(request, ["read:documents"]);

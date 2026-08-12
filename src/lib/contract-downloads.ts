@@ -6,8 +6,10 @@ import { env } from "./env";
 
 export type ContractDownloadFormat = "docx" | "pdf";
 
-export function buildContractDownloadUrl(contractId: string, format: ContractDownloadFormat, options?: { absolute?: boolean; signed?: boolean; expiresInSeconds?: number }) {
-  const base = options?.absolute ? env.appUrl.replace(/\/$/, "") : "";
+type ContractLinkOptions = { absolute?: boolean; signed?: boolean; expiresInSeconds?: number; baseUrl?: string };
+
+export function buildContractDownloadUrl(contractId: string, format: ContractDownloadFormat, options?: ContractLinkOptions) {
+  const base = options?.absolute ? (options.baseUrl || env.appUrl).replace(/\/$/, "") : "";
   const url = new URL(`${base || "http://local"}/api/contracts/${contractId}/download`);
   url.searchParams.set("format", format);
   if (options?.signed) {
@@ -19,8 +21,8 @@ export function buildContractDownloadUrl(contractId: string, format: ContractDow
   return options?.absolute ? `${base}${value}` : value;
 }
 
-export function buildContractPreviewUrl(contractId: string, options?: { absolute?: boolean; signed?: boolean; expiresInSeconds?: number }) {
-  const base = options?.absolute ? env.appUrl.replace(/\/$/, "") : "";
+export function buildContractPreviewUrl(contractId: string, options?: ContractLinkOptions) {
+  const base = options?.absolute ? (options.baseUrl || env.appUrl).replace(/\/$/, "") : "";
   const url = new URL(`${base || "http://local"}/api/contracts/${contractId}/preview`);
   if (options?.signed) {
     const expiresAt = Math.floor(Date.now() / 1000) + (options.expiresInSeconds || 3600);
@@ -47,7 +49,7 @@ export async function checkedContractFiles(paths: { docxPath: string; pdfPath?: 
   return { docxPath: docx, pdfPath: pdf };
 }
 
-export function contractPublicLinks(contractId: string, hasPdf: boolean, options?: { absolute?: boolean; signed?: boolean; expiresInSeconds?: number }) {
+export function contractPublicLinks(contractId: string, hasPdf: boolean, options?: ContractLinkOptions) {
   return {
     preview: buildContractPreviewUrl(contractId, options),
     docx: buildContractDownloadUrl(contractId, "docx", options),
