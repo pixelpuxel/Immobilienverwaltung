@@ -895,7 +895,7 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
     "read_document_content",
     {
       title: "Dokumentinhalt lesen",
-      description: "Liest den Inhalt eines Dokuments. PDF, DOCX, DOC, TXT und Markdown werden als Text extrahiert, soweit maschinenlesbar. Es wird keine serverseitige OCR ausgefuehrt. Bei gescannten PDFs/Bildern oder nicht extrahierbarem Inhalt wird die Originaldatei bzw. bei Word-Dokumenten optional ein PDF als Base64 zur Analyse durch den MCP-Client/LLM zurueckgegeben.",
+      description: "Liest Dokumenttext im Portal. Bei Scan-PDFs und Bildern fuehrt das Portal automatisch OCR aus, speichert den erkannten Text dauerhaft am Dokument und liefert ihn zurueck.",
       inputSchema: {
         id: z.string().trim().min(1),
         includeFile: z.boolean().optional().describe("Wenn true, gibt das Tool die Datei bis 15 MB als Base64 mit zurueck. Bei nicht extrahierbaren Dokumenten passiert das automatisch."),
@@ -930,6 +930,35 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
         note: result.note
       });
     }
+  );
+
+  server.registerTool(
+    "get_document_ocr",
+    {
+      title: "Dokument-OCR lesen",
+      description: "Liest OCR-Status, Verarbeitungszeitpunkt, Fehler und dauerhaft gespeicherten OCR-Text eines Portal-Dokuments.",
+      inputSchema: {
+        id: z.string().trim().min(1)
+      }
+    },
+    async ({ id }) => jsonContent(await portal.json({
+      path: `/api/integrations/v1/documents/${encodeURIComponent(id)}/ocr`
+    }))
+  );
+
+  server.registerTool(
+    "run_document_ocr",
+    {
+      title: "Dokument-OCR ausfuehren",
+      description: "Fuehrt OCR fuer ein vorhandenes PDF- oder Bilddokument im Portal aus und speichert den erkannten Text dauerhaft am Dokument.",
+      inputSchema: {
+        id: z.string().trim().min(1)
+      }
+    },
+    async ({ id }) => jsonContent(await portal.json({
+      method: "POST",
+      path: `/api/integrations/v1/documents/${encodeURIComponent(id)}/ocr`
+    }))
   );
 
   server.registerTool(
