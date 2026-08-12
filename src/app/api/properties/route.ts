@@ -7,6 +7,7 @@ import { portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 import { propertySchema } from "@/lib/property-schema";
 import { normalizePropertyAddressInput } from "@/lib/property-address";
+import { withPropertyFinance } from "@/lib/property-finance";
 
 export async function GET(request: NextRequest) {
   const user = await requireApiUser(request);
@@ -15,15 +16,15 @@ export async function GET(request: NextRequest) {
   if (user.role === Role.BROKER) {
     const ids = await brokerPropertyIds(user.id);
     const data = await prisma.property.findMany({ where: { id: { in: ids }, ...portalWhere(user) }, include: { units: true } });
-    return NextResponse.json(data);
+    return NextResponse.json(data.map(withPropertyFinance));
   }
 
   if (user.role === Role.TENANT) {
     const profile = await prisma.tenantProfile.findUnique({ where: { userId: user.id }, include: { unit: { include: { property: true } } } });
-    return NextResponse.json(profile?.unit?.property ? [profile.unit.property] : []);
+    return NextResponse.json(profile?.unit?.property ? [withPropertyFinance(profile.unit.property)] : []);
   }
 
-  return NextResponse.json(await prisma.property.findMany({ where: portalWhere(user), include: { units: true, documents: true } }));
+  return NextResponse.json((await prisma.property.findMany({ where: portalWhere(user), include: { units: true, documents: true } })).map(withPropertyFinance));
 }
 
 export async function POST(request: NextRequest) {
@@ -35,5 +36,5 @@ export async function POST(request: NextRequest) {
   const propertyData = normalizePropertyAddressInput(body.data);
   const property = await prisma.property.create({ data: { ...propertyData, address: propertyData.address || "", portalInstanceId: user.portalInstanceId } });
   await auditLog({ userId: user.id, action: AuditAction.PROPERTY_CHANGED, entity: "Property", entityId: property.id, ipAddress: clientIp(request) });
-  return NextResponse.json(property, { status: 201 });
+  return NextResponse.json(withPropertyFinance(property), { status: 201 });
 }

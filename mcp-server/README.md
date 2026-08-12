@@ -262,6 +262,8 @@ Die Antwort enthaelt die Rohbuchung, Kategorie/Unterkategorie, zugeordnete Immob
 
 Der MCP-Server liest Datei-Anhaenge serverseitig. Unterstuetzt werden Dateiobjekte mit `path`, `filename`/`name`, `mimeType`/`type`, `data`/`base64` oder sichere HTTPS-URLs. Automatische Dubletten-Zusaetze wie `(1)`, `(2)` und `Kopie` werden aus Dateinamen entfernt. Erlaubt sind PDF, DOCX, XLSX, JPG und PNG bis 25 MB.
 
+Immobilien liefern die Finanzfelder `purchasePrice` (tatsaechlicher historischer Kaufpreis in EUR), `expectedPurchasePrice` (Kaufpreisvorstellung), `outstandingLoan` (valutiertes Darlehen) sowie die serverseitig berechneten Felder `valueGain` und `equity`. Schreibbar sind nur die drei Ausgangswerte; die abgeleiteten Werte werden nicht redundant gespeichert.
+
 ## Sicherheitsmodell
 
 - MCP-Clients bekommen keinen direkten Datenbankzugriff.

@@ -20,7 +20,7 @@
 - Healthcheck und Benutzer-/Scope-Pruefung.
 - Portalweite Suche.
 - Portal-Agent-Fragen und Konversationskontext.
-- Immobilien lesen/anlegen/aendern.
+- Immobilien lesen/anlegen/aendern, inklusive tatsaechlichem Kaufpreis. Die Integrations-API liefert zusaetzlich die berechnete Wertdifferenz (Kaufpreisvorstellung minus Kaufpreis) und das Eigenkapital (Kaufpreisvorstellung minus valutiertes Darlehen).
 - Einheiten lesen/anlegen/aendern/loeschen. Fuer Mietdaten gibt es zusaetzlich `search_units` und `update_unit_rent_details`, damit externe Connectoren konkrete Wohnflaeche, Kaltmiete, Tiefgarage, Nebenkosten und Status direkt setzen koennen.
 - Mieter lesen/anlegen/aendern.
 - Mieterdokumente lesen.

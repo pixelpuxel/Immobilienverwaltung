@@ -399,7 +399,7 @@ async function planNextAgentStep(input: {
     "- Smalltalk, Begruessungen, Dank, Testnachrichten oder sehr kurze unklare Chat-Nachrichten sind final_answer ohne Tool Calls. Starte dafuer keine Suche.",
     "- Starte Portal-Tools nur, wenn die Nutzeranfrage klar Daten, Dokumente, Immobilien, Mieter, Verträge, Einstellungen oder eine Portal-Aktion betrifft.",
     "- Formuliere final_answer wie einen hilfreichen Chat, nicht wie einen Daten-Dump: erst Ergebnis, dann bei Bedarf kompakte Details, dann naechster sinnvoller Schritt.",
-    "- Wenn nach Summe, Gesamtwert, Kaufpreis, Darlehen, Eigenkapital, Anzahl, Durchschnitt, Leerstand oder Vermietungsquote des Bestands gefragt wird: nutze portfolio_summary. Antworte nicht mit einer reinen Liste.",
+    "- Wenn nach Summe, Gesamtwert, tatsaechlichem Kaufpreis, Kaufpreisvorstellung, Wertdifferenz, Darlehen, Eigenkapital, Anzahl, Durchschnitt, Leerstand oder Vermietungsquote des Bestands gefragt wird: nutze portfolio_summary. Antworte nicht mit einer reinen Liste.",
     "- Nutze Markdown sparsam: kurze Abschnitte oder Bulletpoints nur, wenn sie das Ergebnis lesbarer machen. Keine JSON-Blöcke, keine rohen Tool-Ergebnisse, keine internen IDs, ausser der Nutzer fragt explizit danach.",
     "- Bei Listen: maximal die wichtigsten Treffer mit sprechendem Namen, Bezug und Aktion. Wenn mehr vorhanden ist, erwaehne die Anzahl und biete Eingrenzung an.",
     "- Pruefe zuerst, ob die Nutzeranfrage mit den vorhandenen Tools beantwortbar ist. Wenn ja, plane Tool Calls. Wenn nein, sage klar, welches Tool fehlt.",
@@ -478,7 +478,7 @@ async function finalAnswer(input: {
     "Bei Summen, Gesamtwerten und Kennzahlen: rechne aus den numerischen Tooldaten. Ignoriere fehlende Werte nicht still, sondern nenne wie viele Datensaetze ohne verwertbaren Wert waren.",
     "Bei Geldbetraegen: formatiere in Euro mit Tausenderpunkten und ohne unnoetige Nachkommastellen, z.B. 1.250.000 Euro.",
     "Wenn eine Anfrage wie 'Wie viel sind alle Immobilien wert?' gestellt wird, antworte mit der Gesamtsumme der vorhandenen Kaufpreis-/Wertfelder und nicht mit einer Immobilienliste.",
-    "Wenn die Tool-Ergebnisse Immobilien mit expectedPurchasePrice, outstandingLoan oder anderen Wertfeldern enthalten, behandle diese Felder als Rechengrundlage. Zaehle nur verwertbare Zahlen, rechne transparent und nenne fehlende Werte als Einschraenkung.",
+    "Unterscheide Finanzfelder sauber: purchasePrice ist der tatsaechliche historische Kaufpreis in EUR, expectedPurchasePrice die heutige Kaufpreisvorstellung, valueGain deren Differenz und equity die Kaufpreisvorstellung minus outstandingLoan. Zaehle nur verwertbare Zahlen, rechne transparent und nenne fehlende Werte als Einschraenkung.",
     "Wenn die Tool-Ergebnisse Dokumente, Mieter oder Immobilien enthalten und der Nutzer keine Liste verlangt, fasse sie fachlich zusammen statt jeden Datensatz auszugeben.",
     "Wenn der Nutzer nach 'alle', 'gesamt', 'wie viel', 'Summe', 'Wert', 'Darlehen', 'Eigenkapital' oder 'Quote' fragt, ist das eine Auswertung. Eine reine Liste ist dann falsch.",
     "Wenn der Nutzer nach einem konkreten Objekt fragt, nenne zuerst die konkrete Antwort zu diesem Objekt und danach nur relevante Metadaten.",
@@ -843,18 +843,30 @@ function fallbackPropertyAnalysis(message: string, tools: AgentToolResult[]) {
   if (!/(gesamtwert|wert|kaufpreis|darlehen|eigenkapital|summe|zusammen|gesamt|portfolio|bestand)/i.test(normalized)) return null;
   const portfolio = tools.find((tool) => tool.name === "portfolio_summary" && tool.data && typeof tool.data === "object")?.data as Record<string, unknown> | undefined;
   if (portfolio) {
+    const totalPurchasePrice = numericValue(portfolio.totalPurchasePrice);
     const totalValue = numericValue(portfolio.totalValue);
+    const totalValueGain = numericValue(portfolio.totalValueGain);
     const totalLoans = numericValue(portfolio.totalLoans);
     const equity = numericValue(portfolio.equity);
+    const purchasePriceCount = numericValue(portfolio.purchasePriceCount) ?? 0;
+    const comparableValueCount = numericValue(portfolio.comparableValueCount) ?? 0;
     const valueCount = numericValue(portfolio.valueCount) ?? 0;
     const propertyCount = numericValue(portfolio.propertyCount) ?? 0;
     const missingValueCount = numericValue(portfolio.missingValueCount) ?? Math.max(0, propertyCount - valueCount);
+    const missingPurchasePriceCount = Math.max(0, propertyCount - purchasePriceCount);
     const lines = [
+      totalPurchasePrice !== null && purchasePriceCount > 0
+        ? `**Historische Kaufpreise:** ${formatEuro(totalPurchasePrice)} auf Basis von ${purchasePriceCount} Immobilien.`
+        : "**Historische Kaufpreise:** Es ist noch kein tatsächlicher Kaufpreis hinterlegt.",
       totalValue !== null
-        ? `**Gesamtwert:** ${formatEuro(totalValue)} auf Basis von ${valueCount} Immobilien mit hinterlegtem Kaufpreis/Wert.`
-        : "**Gesamtwert:** In den gefundenen Immobilien ist kein Kaufpreis/Wert hinterlegt.",
+        ? `**Kaufpreisvorstellungen:** ${formatEuro(totalValue)} auf Basis von ${valueCount} Immobilien.`
+        : "**Kaufpreisvorstellungen:** In den gefundenen Immobilien ist kein Wert hinterlegt.",
+      totalValueGain !== null && comparableValueCount > 0
+        ? `**Wertdifferenz:** ${formatEuro(totalValueGain)} (Kaufpreisvorstellung minus Kaufpreis) für ${comparableValueCount} Immobilien.`
+        : "**Wertdifferenz:** Mangels vergleichbarer Kaufpreise und Kaufpreisvorstellungen nicht berechenbar.",
       totalLoans !== null && equity !== null ? `**Darlehen:** ${formatEuro(totalLoans)} hinterlegt; rechnerisches Eigenkapital: ${formatEuro(equity)}.` : null,
-      missingValueCount ? `**Einschränkung:** Bei ${missingValueCount} von ${propertyCount} Immobilien fehlt ein verwertbarer Wert.` : null,
+      missingPurchasePriceCount ? `**Offen:** Bei ${missingPurchasePriceCount} von ${propertyCount} Immobilien fehlt der tatsächliche Kaufpreis.` : null,
+      missingValueCount ? `**Einschränkung:** Bei ${missingValueCount} von ${propertyCount} Immobilien fehlt eine Kaufpreisvorstellung.` : null,
       "",
       "Hinweis: Das ist die Notfallauswertung ohne aktive KI-Antwort. Sobald der AI-Key neu gespeichert ist, formuliere ich solche Ergebnisse wieder frei und kontextbezogen."
     ].filter(Boolean);
@@ -865,17 +877,26 @@ function fallbackPropertyAnalysis(message: string, tools: AgentToolResult[]) {
     .flatMap((tool) => tool.data as Array<Record<string, unknown>>);
   if (!properties.length) return null;
 
+  const purchasePrices = properties.map((property) => numericValue(property.purchasePrice)).filter((value): value is number => value !== null);
   const prices = properties.map((property) => numericValue(property.expectedPurchasePrice)).filter((value): value is number => value !== null);
+  const valueGains = properties.map((property) => numericValue(property.valueGain)).filter((value): value is number => value !== null);
   const loans = properties.map((property) => numericValue(property.outstandingLoan)).filter((value): value is number => value !== null);
   const missingPrices = properties.length - prices.length;
   const totalPrice = prices.reduce((sum, value) => sum + value, 0);
   const totalLoan = loans.reduce((sum, value) => sum + value, 0);
   const equity = totalPrice - totalLoan;
   const lines = [
+    purchasePrices.length
+      ? `**Historische Kaufpreise:** ${formatEuro(purchasePrices.reduce((sum, value) => sum + value, 0))} auf Basis von ${purchasePrices.length} Immobilien.`
+      : "**Historische Kaufpreise:** Es ist noch kein tatsächlicher Kaufpreis hinterlegt.",
     prices.length
-      ? `**Gesamtwert:** ${formatEuro(totalPrice)} auf Basis von ${prices.length} Immobilien mit hinterlegtem Kaufpreis/Wert.`
-      : "**Gesamtwert:** In den gefundenen Immobilien ist kein Kaufpreis/Wert hinterlegt.",
+      ? `**Kaufpreisvorstellungen:** ${formatEuro(totalPrice)} auf Basis von ${prices.length} Immobilien.`
+      : "**Kaufpreisvorstellungen:** In den gefundenen Immobilien ist kein Wert hinterlegt.",
+    valueGains.length
+      ? `**Wertdifferenz:** ${formatEuro(valueGains.reduce((sum, value) => sum + value, 0))} (Kaufpreisvorstellung minus Kaufpreis) für ${valueGains.length} Immobilien.`
+      : null,
     loans.length ? `**Darlehen:** ${formatEuro(totalLoan)} hinterlegt; rechnerisches Eigenkapital: ${formatEuro(equity)}.` : null,
+    purchasePrices.length < properties.length ? `**Offen:** Bei ${properties.length - purchasePrices.length} von ${properties.length} Immobilien fehlt der tatsächliche Kaufpreis.` : null,
     missingPrices ? `**Einschränkung:** Bei ${missingPrices} von ${properties.length} Immobilien fehlt ein verwertbarer Wert.` : null,
     "",
     "Hinweis: Das ist die Notfallauswertung ohne aktive KI-Antwort. Sobald der AI-Key neu gespeichert ist, formuliere ich solche Ergebnisse wieder frei und kontextbezogen."

@@ -62,9 +62,11 @@ export default async function PropertyDetailPage({ params }: { params: { id: str
       })))).filter((item) => item.allowed).map((item) => item.document);
   const totalRent = property.units.reduce((sum, unit) => sum + Number(unit.rentAmount || 0) + Number(unit.garageRent || 0), 0);
   const annualColdRent = totalRent * 12;
+  const purchasePrice = Number(property.purchasePrice || 0);
   const expectedPrice = Number(property.expectedPurchasePrice || 0);
   const outstandingLoan = Number(property.outstandingLoan || 0);
-  const netValue = expectedPrice - outstandingLoan;
+  const valueGain = expectedPrice - purchasePrice;
+  const equity = expectedPrice - outstandingLoan;
   const totalArea = property.units.reduce((sum, unit) => sum + Number(unit.livingArea || 0), 0);
   const occupiedUnits = property.units.filter((unit) => unit.status === "vermietet").length;
   const averageBrokerValuation = average(property.brokerValuations.map((valuation) => Number(valuation.amount || 0)).filter(Boolean));
@@ -99,12 +101,14 @@ export default async function PropertyDetailPage({ params }: { params: { id: str
         </div>
       </div>
 
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {canEdit ? <Metric label="Kaufpreisvorstellung" value={property.expectedPurchasePrice ? formatCurrency(Number(property.expectedPurchasePrice)) : "offen"} /> : null}
-        {canEdit ? <Metric label="Valutiertes Darlehen" value={property.outstandingLoan ? formatCurrency(Number(property.outstandingLoan)) : "offen"} /> : null}
-        {canEdit ? <Metric label="Nettowert" value={expectedPrice ? formatCurrency(netValue) : "offen"} /> : null}
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        {canEdit ? <Metric label="Tatsächlicher Kaufpreis" value={property.purchasePrice !== null ? formatCurrency(purchasePrice) : "offen"} /> : null}
+        {canEdit ? <Metric label="Kaufpreisvorstellung" value={property.expectedPurchasePrice !== null ? formatCurrency(Number(property.expectedPurchasePrice)) : "offen"} /> : null}
+        {canEdit ? <Metric label="Valutiertes Darlehen" value={property.outstandingLoan !== null ? formatCurrency(Number(property.outstandingLoan)) : "offen"} /> : null}
+        {canEdit ? <Metric label="Wertdifferenz" value={property.purchasePrice !== null && property.expectedPurchasePrice !== null ? formatCurrency(valueGain) : "offen"} /> : null}
+        {canEdit ? <Metric label="Eigenkapital" value={property.expectedPurchasePrice !== null && property.outstandingLoan !== null ? formatCurrency(equity) : "offen"} /> : null}
         {canEdit ? <Metric label="Rendite" value={expectedPrice ? formatPercent(annualColdRent / expectedPrice) : "offen"} /> : null}
-        {canEdit ? <Metric label="Gehebelte Rendite" value={netValue > 0 ? formatPercent(annualColdRent / netValue) : "offen"} /> : null}
+        {canEdit ? <Metric label="Gehebelte Rendite" value={equity > 0 ? formatPercent(annualColdRent / equity) : "offen"} /> : null}
         {canEdit ? <Metric label="Maklerschätzung Ø" value={averageBrokerValuation ? formatCurrency(averageBrokerValuation) : "offen"} /> : null}
         <Metric label="Einheiten" value={property.units.length} />
         <Metric label="Vermietet" value={`${occupiedUnits} / ${property.units.length}`} />
@@ -160,8 +164,9 @@ export default async function PropertyDetailPage({ params }: { params: { id: str
               <EditableField canEdit={canEdit} endpoint={propertyEndpoint} field="heatingType" label="Heizungsart" value={property.heatingType || ""} />
               <EditableField canEdit={canEdit} endpoint={propertyEndpoint} field="condition" label="Zustand" value={property.condition || ""} />
               <EditableField canEdit={canEdit} endpoint={propertyEndpoint} field="rentalStatus" label="Vermietungsstatus" value={property.rentalStatus || ""} options={["frei", "teilvermietet", "voll vermietet"]} type="select" />
-              {canEdit ? <EditableField canEdit={canEdit} endpoint={propertyEndpoint} field="expectedPurchasePrice" label="Kaufpreisvorstellung" type="number" value={property.expectedPurchasePrice?.toString() || ""} displayValue={property.expectedPurchasePrice ? formatCurrency(Number(property.expectedPurchasePrice)) : ""} /> : null}
-              {canEdit ? <EditableField canEdit={canEdit} endpoint={propertyEndpoint} field="outstandingLoan" label="Valutiertes Darlehen" type="number" value={property.outstandingLoan?.toString() || ""} displayValue={property.outstandingLoan ? formatCurrency(Number(property.outstandingLoan)) : ""} /> : null}
+              {canEdit ? <EditableField canEdit={canEdit} endpoint={propertyEndpoint} field="purchasePrice" label="Tatsächlicher Kaufpreis (EUR)" type="number" value={property.purchasePrice?.toString() || ""} displayValue={property.purchasePrice !== null ? formatCurrency(Number(property.purchasePrice)) : ""} /> : null}
+              {canEdit ? <EditableField canEdit={canEdit} endpoint={propertyEndpoint} field="expectedPurchasePrice" label="Kaufpreisvorstellung" type="number" value={property.expectedPurchasePrice?.toString() || ""} displayValue={property.expectedPurchasePrice !== null ? formatCurrency(Number(property.expectedPurchasePrice)) : ""} /> : null}
+              {canEdit ? <EditableField canEdit={canEdit} endpoint={propertyEndpoint} field="outstandingLoan" label="Valutiertes Darlehen" type="number" value={property.outstandingLoan?.toString() || ""} displayValue={property.outstandingLoan !== null ? formatCurrency(Number(property.outstandingLoan)) : ""} /> : null}
             </div>
             <div className="mt-4 grid gap-3 text-sm">
               <EditableField canEdit={canEdit} endpoint={propertyEndpoint} field="modernizations" label="Modernisierungen" type="textarea" value={property.modernizations || ""} />

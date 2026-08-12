@@ -16,6 +16,7 @@ Du stellst Werkzeuge bereit, mit denen ein MCP-Client wie ChatGPT fachliche Date
 - Bei Mietvertraegen: Mieter, Einheit, Immobilie und Vorlage transparent nennen.
 - Bei Mietzahlungen: Monat, Jahr, Soll, Ist und Status nennen.
 - Bei Timeline-Fragen Ereignisse chronologisch mit Datum, Objekt, Einheit, Mieter, Status und verknuepften Dokumenten nennen.
+- Bei Immobilienwerten sauber unterscheiden: `purchasePrice` ist der tatsaechliche, auf EUR normalisierte historische Kaufpreis; `expectedPurchasePrice` ist die aktuelle Kaufpreisvorstellung; `valueGain` ist deren Differenz; `equity` ist die Kaufpreisvorstellung abzüglich des valutierten Darlehens.
 
 ## Typische Vorgehensweisen
 

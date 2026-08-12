@@ -8,6 +8,7 @@ import { env } from "./env";
 import { integrationDocumentInclude, integrationDocumentVisibilityWhere, tenantPersonalDocumentWhere } from "./integration-document-access";
 import { canAccessDocument } from "./permissions";
 import { portalWhere, type ScopedUser } from "./portal-instance";
+import { propertyFinance } from "./property-finance";
 import { prisma } from "./prisma";
 import { globalSearch } from "./search";
 import { generateWohnungsgeberbestaetigung } from "./wohnungsgeber";
@@ -126,7 +127,7 @@ export const agentToolRegistry = {
   }),
   portfolio_summary: tool({
     name: "portfolio_summary",
-    description: "Liefert aggregierte Kennzahlen ueber den Immobilienbestand: Gesamtwert/Kaufpreise, Darlehen, Eigenkapital, Einheiten, Vermietung und fehlende Werte.",
+    description: "Liefert aggregierte Kennzahlen ueber den Immobilienbestand: tatsaechliche Kaufpreise, Kaufpreisvorstellungen, Wertdifferenz, Darlehen, Eigenkapital, Einheiten, Vermietung und fehlende Werte.",
     parameters: "{}",
     schema: emptySchema,
     kind: "read",
@@ -140,9 +141,13 @@ export const agentToolRegistry = {
         }
       });
       const values = properties.map((property) => decimalNumber(property.expectedPurchasePrice)).filter((value): value is number => value !== null);
+      const purchasePrices = properties.map((property) => decimalNumber(property.purchasePrice)).filter((value): value is number => value !== null);
       const loans = properties.map((property) => decimalNumber(property.outstandingLoan)).filter((value): value is number => value !== null);
       const totalValue = values.reduce((sum, value) => sum + value, 0);
+      const totalPurchasePrice = purchasePrices.reduce((sum, value) => sum + value, 0);
       const totalLoans = loans.reduce((sum, value) => sum + value, 0);
+      const comparable = properties.map(propertyFinance).filter((finance) => finance.valueGain !== null);
+      const totalValueGain = comparable.reduce((sum, finance) => sum + (finance.valueGain || 0), 0);
       const totalUnits = properties.reduce((sum, property) => sum + property.units.length, 0);
       const rentedUnits = properties.reduce((sum, property) => sum + property.units.filter((unit) => unit.tenants.length > 0).length, 0);
       const vacantUnits = totalUnits - rentedUnits;
@@ -152,7 +157,9 @@ export const agentToolRegistry = {
         ok: true,
         summary: [
           `Portfolio: ${properties.length} Immobilien, ${totalUnits} Einheiten.`,
-          values.length ? `Gesamtwert/Kaufpreise: ${formatEuro(totalValue)}.` : "Kein verwertbarer Kaufpreis/Wert hinterlegt.",
+          purchasePrices.length ? `Historische Kaufpreise: ${formatEuro(totalPurchasePrice)}.` : "Keine historischen Kaufpreise hinterlegt.",
+          values.length ? `Kaufpreisvorstellungen: ${formatEuro(totalValue)}.` : "Keine Kaufpreisvorstellungen hinterlegt.",
+          comparable.length ? `Wertdifferenz: ${formatEuro(totalValueGain)} auf Basis von ${comparable.length} vergleichbaren Immobilien.` : "Keine Wertdifferenz berechenbar.",
           loans.length ? `Darlehen: ${formatEuro(totalLoans)}. Rechnerisches Eigenkapital: ${formatEuro(totalValue - totalLoans)}.` : "Keine Darlehenssumme hinterlegt.",
           `Vermietete Einheiten: ${rentedUnits}; freie Einheiten: ${vacantUnits}.`,
           missingValues ? `Bei ${missingValues} Immobilien fehlt ein verwertbarer Wert.` : "Alle Immobilien haben einen verwertbaren Wert."
@@ -163,17 +170,20 @@ export const agentToolRegistry = {
           rentedUnits,
           vacantUnits,
           valueCount: values.length,
+          purchasePriceCount: purchasePrices.length,
+          comparableValueCount: comparable.length,
           missingValueCount: missingValues,
           loanCount: loans.length,
           totalValue,
+          totalPurchasePrice,
+          totalValueGain,
           totalLoans,
           equity: totalValue - totalLoans,
           properties: properties.map((property) => ({
+            ...propertyFinance(property),
             id: property.id,
             name: property.name,
             address: property.address,
-            expectedPurchasePrice: decimalNumber(property.expectedPurchasePrice),
-            outstandingLoan: decimalNumber(property.outstandingLoan),
             units: property.units.length,
             rentedUnits: property.units.filter((unit) => unit.tenants.length > 0).length,
             href: publicPortalUrl(`/properties/${property.id}`)
@@ -232,12 +242,11 @@ export const agentToolRegistry = {
           ? ["Immobilien:", ...properties.map((p) => `- ${p.name}\n  ${p.address || "keine Adresse"} · ${p.units.length} Einheiten · ${p.documents.length} Dokumente\n  ${publicPortalUrl(`/properties/${p.id}`)}`)].join("\n")
           : "Keine Immobilien gefunden.",
         data: properties.map((p) => ({
+          ...propertyFinance(p),
           id: p.id,
           name: p.name,
           address: p.address,
           rentalStatus: p.rentalStatus,
-          expectedPurchasePrice: p.expectedPurchasePrice?.toString() ?? null,
-          outstandingLoan: p.outstandingLoan?.toString() ?? null,
           livingArea: p.livingArea?.toString() ?? null,
           unitCount: p.unitCount,
           href: publicPortalUrl(`/properties/${p.id}`)
@@ -268,7 +277,7 @@ export const agentToolRegistry = {
         ok: true,
         summary: [`Immobilie: ${property.name}`, property.address, `${property.units.length} Einheiten`, `${property.documents.length} Dokumente`, `Link: /properties/${property.id}`].filter(Boolean).join("\n"),
         href: `/properties/${property.id}`,
-        data: property,
+        data: { ...property, ...propertyFinance(property) },
         artifacts: [{ type: "link", label: property.name, url: `/properties/${property.id}` }]
       };
     }
@@ -726,7 +735,7 @@ function capabilityList(role: Role, topic = "") {
   ];
   const available = [
     "Portalweit suchen: Immobilien, Einheiten, Dokumente, Mieter, Benutzer und Vertraege.",
-    "Portfolio-Kennzahlen berechnen: Gesamtwert, Darlehen, Eigenkapital, Einheiten und Leerstand.",
+    "Portfolio-Kennzahlen berechnen: historische Kaufpreise, Kaufpreisvorstellungen, Wertdifferenz, Darlehen, Eigenkapital, Einheiten und Leerstand.",
     "Immobilien suchen, auflisten und Details direkt verlinken.",
     "Einheiten suchen, inklusive Einheiten ohne aktuellen Mieter.",
     "Aktuelle oder ehemalige Mieter suchen und Mietdaten wie Einzug, Mietbeginn und Auszug anzeigen.",
@@ -1239,7 +1248,7 @@ function isToolAvailableForRole(toolName: string, role?: Role) {
 function toolExamples(toolName: string) {
   const examples: Record<string, string[]> = {
     agent_capabilities: ["Was kannst du?", "Welche Portal-Funktionen kannst du ausfuehren?"],
-    portfolio_summary: ["Wie viel sind alle Immobilien wert?", "Wie hoch sind Darlehen und Eigenkapital im Portfolio?"],
+    portfolio_summary: ["Wie hoch sind Kaufpreise und Wertdifferenz aller Immobilien?", "Wie hoch sind Darlehen und Eigenkapital im Portfolio?"],
     global_search: ["Suche Grundbuch Musterstraße", "Finde Dokumente zu Nebenkosten 2023"],
     search_properties: ["Welche Immobilien gibt es?", "Zeige Beispielweg 7"],
     get_property: ["Oeffne diese Immobilie", "Details zur ausgewaehlten Immobilie"],

@@ -204,6 +204,7 @@ model Property {
   condition             String?
   modernizations        String?
   rentalStatus          String?
+  purchasePrice         Decimal?        @db.Decimal(14, 2)
   expectedPurchasePrice Decimal?        @db.Decimal(14, 2)
   outstandingLoan       Decimal?        @db.Decimal(14, 2)
   internalNotes         String?

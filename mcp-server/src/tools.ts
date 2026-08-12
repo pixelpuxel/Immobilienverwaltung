@@ -1766,6 +1766,7 @@ function propertyInputShape() {
     condition: optionalString,
     modernizations: optionalString,
     rentalStatus: optionalString,
+    purchasePrice: money.describe("Tatsaechlicher historischer Kaufpreis der Immobilie, in EUR. Bei mehreren Erwerbsvorgaengen Summe der auf EUR normalisierten Kaufpreise."),
     expectedPurchasePrice: money,
     outstandingLoan: money,
     internalNotes: optionalString

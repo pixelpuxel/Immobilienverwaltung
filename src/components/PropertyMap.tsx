@@ -11,6 +11,9 @@ type MapProperty = {
   rentalStatus?: string | null;
   unitCount?: number;
   primaryImageId?: string;
+  purchasePrice?: string | null;
+  expectedPurchasePrice?: string | null;
+  outstandingLoan?: string | null;
 };
 
 const TILE_SIZE = 256;
@@ -214,6 +217,14 @@ export function PropertyMap({ properties }: { properties: MapProperty[] }) {
                 {selectedProperty.rentalStatus ? <span className="rounded-full bg-panel px-3 py-1">{selectedProperty.rentalStatus}</span> : null}
                 {typeof selectedProperty.unitCount === "number" ? <span className="rounded-full bg-panel px-3 py-1">{selectedProperty.unitCount} Einheiten</span> : null}
               </div>
+              {selectedProperty.purchasePrice !== undefined ? (
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                  <MapMetric label="Kaufpreis" value={moneyOrOpen(selectedProperty.purchasePrice)} />
+                  <MapMetric label="Wertdifferenz" value={differenceOrOpen(selectedProperty.expectedPurchasePrice, selectedProperty.purchasePrice)} />
+                  <MapMetric label="Kaufpreisvorstellung" value={moneyOrOpen(selectedProperty.expectedPurchasePrice)} />
+                  <MapMetric label="Eigenkapital" value={differenceOrOpen(selectedProperty.expectedPurchasePrice, selectedProperty.outstandingLoan)} />
+                </div>
+              ) : null}
               <a className="button mt-4 block text-center" href={`/properties/${selectedProperty.id}`}>Details öffnen</a>
             </div>
           </article>
@@ -221,6 +232,20 @@ export function PropertyMap({ properties }: { properties: MapProperty[] }) {
       </div>
     </div>
   );
+}
+
+function MapMetric({ label, value }: { label: string; value: string }) {
+  return <div className="rounded-md bg-panel p-2"><div className="text-muted">{label}</div><div className="mt-1 font-bold text-foreground">{value}</div></div>;
+}
+
+function moneyOrOpen(value?: string | null) {
+  if (value === null || value === undefined || value === "") return "offen";
+  return new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(Number(value));
+}
+
+function differenceOrOpen(left?: string | null, right?: string | null) {
+  if (left === null || left === undefined || left === "" || right === null || right === undefined || right === "") return "offen";
+  return new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(Number(left) - Number(right));
 }
 
 function centerOf(properties: MapProperty[]) {
