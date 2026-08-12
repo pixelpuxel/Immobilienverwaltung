@@ -112,6 +112,89 @@ describe("service charge allocation", () => {
     expect(result.warnings[0]).toContain("Folgemieters");
   });
 
+
+
+  it("ignores archived tenancies without a move-out date instead of treating them as open-ended", () => {
+    const data = fixture();
+    data.tenancies = [
+      {
+        ...data.tenancies[0],
+        external_id: "archived-without-end",
+        lease_start_date: "2024-10-18",
+        move_in_date: "",
+        move_out_date: "",
+        actual_service_charge_prepayments: "220",
+        is_current: false
+      },
+      {
+        ...data.tenancies[0],
+        external_id: "current",
+        lease_start_date: "2025-06-25",
+        move_in_date: "2025-06-25",
+        move_out_date: "",
+        actual_service_charge_prepayments: "0",
+        is_current: true
+      }
+    ];
+    const result = calculateServiceChargeAllocation(data, {
+      method: "AREA",
+      totalDistributionValue: 20,
+      unitValues: { "unit-1": 20 }
+    });
+    expect(result.tenantResults.map((item) => item.tenantId)).toEqual(["current"]);
+    expect(result.warnings.some((warning) => warning.includes("ohne Einzugs- oder Vertragsbeginn"))).toBe(true);
+  });
+
+  it("assigns unit-only banking prepayments to the tenant active on the booking date", () => {
+    const data = fixture();
+    data.tenancies[0].actual_service_charge_prepayments = "0";
+    data.service_charge_prepayments = {
+      total: "220",
+      items: [{
+        id: 1,
+        transaction_id: 51,
+        booking_date: "2025-05-05",
+        value_date: "2025-05-05",
+        amount: "220.00",
+        transaction_amount: "1370.00",
+        currency: "EUR",
+        bank_name: "Postbank",
+        account_name: "",
+        account_iban: "",
+        account_bic: "",
+        account_number: "",
+        applicant_name: "Testzahler",
+        applicant_iban: "",
+        applicant_bic: "",
+        purpose: "Miete Testobjekt",
+        memo: "",
+        transaction_code: "166",
+        bank_reference: "ref",
+        customer_reference: "",
+        tx_note: "",
+        tx_flag: "",
+        pending: false,
+        bank_imported: true,
+        source_type: "bank_sync",
+        source_reference: "",
+        imported_at: "2025-05-05T00:00:00Z",
+        category_path: "Vermietung:Testobjekt:Hauptwohnung:Nebenkostenvorauszahlung",
+        contractual_cold_rent: "",
+        contractual_garage_rent: "",
+        property_external_id: "property-1",
+        unit_external_id: "unit-1",
+        tenant_external_id: "",
+        accounting_role: "service_charge_prepayment"
+      }]
+    };
+    const result = calculateServiceChargeAllocation(data, {
+      method: "AREA",
+      totalDistributionValue: 60,
+      unitValues: { "unit-1": 20, "unit-2": 40 }
+    });
+    expect(result.tenantResults.find((item) => item.tenantId === "tenant-1")?.actualPrepayments).toBe(220);
+  });
+
   it("uses only allocable external statement lines and ignores bank house-money payments", () => {
     const result = calculateServiceChargeAllocation(fixture(), {
       method: "EXTERNAL_STATEMENT",

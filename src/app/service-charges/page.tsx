@@ -222,10 +222,14 @@ treatment: normalizeTreatment(line.treatment),
           bankingBaseUrl={config?.baseUrl || "https://banking.schreiber.info"}
         />
       ) : null}
-      {selectedProperty && savedRule ? (
+      {selectedProperty ? (
         <ServiceChargeStatementVersions
           propertyId={selectedProperty.id}
           year={year}
+          canCreate={Boolean(savedRule) || selectedProperty.units.length === 1}
+          missingRuleMessage={selectedProperty.units.length === 1
+            ? "Dieses Objekt hat nur eine Einheit. Die Abrechnung kann direkt aus den Bankdaten erzeugt werden; ein Verteilerschluessel ist dafuer nicht noetig."
+            : "Speichere zuerst den Verteilerschluessel fuer diese Immobilie und dieses Jahr. Danach erscheinen hier Protokoll, PDF und Einzelabrechnungen."}
           statements={statements.map((statement) => ({
             id: statement.id,
             version: statement.version,
@@ -268,6 +272,7 @@ function ServiceChargePreview({
           <Metric label="Abrechnungszahlungen" value={money(Number(data.service_charge_settlements.total || 0))} />
           <Metric label="Kaltmietanteile" value={money(Number(data.cold_rent.total || 0))} />
         </div>
+        <BankingDiagnostics data={data} />
       </section>
 
       <section className="rounded-lg border border-line bg-white p-5">
@@ -397,9 +402,11 @@ function TenancyRow({
 function tenancyOverlapsYear(tenancy: ServiceChargeData["tenancies"][number], year: number) {
   const start = (tenancy.move_in_date || tenancy.lease_start_date || "").slice(0, 10);
   const end = (tenancy.move_out_date || "").slice(0, 10);
+  if (!start) return false;
+  if (tenancy.is_current === false && !end) return false;
   const yearStart = `${year}-01-01`;
   const yearEnd = `${year}-12-31`;
-  return (!start || start <= yearEnd) && (!end || end >= yearStart);
+  return start <= yearEnd && (!end || end >= yearStart);
 }
 
 function relevantTenancies(data: ServiceChargeData) {
@@ -471,6 +478,83 @@ function serviceChargeRuleInput(
     unitValues: {},
     statementLines: []
   };
+}
+
+
+function BankingDiagnostics({ data }: { data: ServiceChargeData }) {
+  const buckets = [
+    { label: "Umlagefaehige Kosten", lines: data.allocable_costs.items, total: data.allocable_costs.total },
+    { label: "Nebenkostenvorauszahlungen", lines: data.service_charge_prepayments.items, total: data.service_charge_prepayments.total },
+    { label: "Abrechnungszahlungen", lines: data.service_charge_settlements.items, total: data.service_charge_settlements.total },
+    { label: "Kaltmietanteile", lines: data.cold_rent.items, total: data.cold_rent.total }
+  ];
+  const allLines = buckets.flatMap((bucket) => bucket.lines.map((line) => ({ ...line, bucket: bucket.label })));
+  const unitOnlyPrepayments = data.service_charge_prepayments.items.filter((line) => !line.tenant_external_id && line.unit_external_id).length;
+  return (
+    <details className="mt-5 rounded-lg border border-blue-100 bg-blue-50/60">
+      <summary className="cursor-pointer list-none p-4 text-sm font-bold text-blue-950">
+        Banking-Synchronisation anzeigen
+        <span className="ml-2 font-normal text-blue-800">
+          {allLines.length} Positionen geladen{data.generated_at ? ` · Stand ${formatDateTime(data.generated_at)}` : ""}
+        </span>
+      </summary>
+      <div className="border-t border-blue-100 p-4">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {buckets.map((bucket) => (
+            <div className="rounded-md bg-white p-3" key={bucket.label}>
+              <div className="text-xs font-bold uppercase text-muted">{bucket.label}</div>
+              <div className="mt-1 font-bold">{money(Number(bucket.total || 0))}</div>
+              <div className="text-xs text-muted">{bucket.lines.length} Position(en)</div>
+            </div>
+          ))}
+        </div>
+        {unitOnlyPrepayments ? (
+          <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            {unitOnlyPrepayments} Nebenkostenvorauszahlung(en) enthalten keine direkte Mieter-ID. Sie werden ueber Einheit und Buchungsdatum dem passenden Mietverhaeltnis zugeordnet.
+          </div>
+        ) : null}
+        <div className="mt-4 overflow-x-auto rounded-md border border-line bg-white">
+          <table className="min-w-full text-sm">
+            <thead className="bg-panel text-left">
+              <tr>
+                <th className="p-3">Datum</th>
+                <th className="p-3">Art</th>
+                <th className="p-3">Betrag</th>
+                <th className="p-3">Einheit / Mieter</th>
+                <th className="p-3">Bank-Kategorie</th>
+                <th className="p-3">Split</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {allLines.map((line) => (
+                <tr key={`${line.bucket}-${line.id}-${line.transaction_id}`}>
+                  <td className="whitespace-nowrap p-3">{formatDate(line.value_date || line.booking_date)}</td>
+                  <td className="p-3 font-semibold">{line.bucket}</td>
+                  <td className="whitespace-nowrap p-3 font-bold">{money(Number(line.amount || 0))}</td>
+                  <td className="p-3">{lineSubjectLabel(line, data)}</td>
+                  <td className="max-w-[360px] p-3 text-muted">{line.category_path || line.classification_label || "-"}</td>
+                  <td className="p-3 text-muted">{line.split_reference || splitLabel(line)}</td>
+                </tr>
+              ))}
+              {!allLines.length ? (
+                <tr><td className="p-3 text-muted" colSpan={6}>Banking hat fuer diese Auswahl keine Positionen geliefert.</td></tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </details>
+  );
+}
+
+function splitLabel(line: ServiceChargeLine) {
+  if (line.source_split_count && line.source_split_count > 1) return `Split ${line.source_split_index || "?"}/${line.source_split_count}`;
+  return "-";
+}
+
+function formatDateTime(value: string) {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString("de-DE");
 }
 
 function LineTable({

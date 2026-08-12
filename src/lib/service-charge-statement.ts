@@ -59,7 +59,7 @@ export async function buildServiceChargeStatementSnapshot(input: {
   const property = await prisma.property.findFirst({
     where: { id: input.propertyId, ...portalWhere(input.user) },
     include: {
-      units: { select: { id: true, unitNumber: true } },
+      units: { select: { id: true, unitNumber: true, livingArea: true } },
       serviceChargeRules: {
         where: { year: input.year },
         include: {
@@ -70,15 +70,14 @@ export async function buildServiceChargeStatementSnapshot(input: {
     }
   });
   if (!property) throw new Error("Immobilie wurde nicht gefunden.");
-  const rule = property.serviceChargeRules[0];
-  if (!rule) throw new Error("Zuerst Verteilerschluessel speichern.");
+  const rule = property.serviceChargeRules[0] || null;
   const data = await loadServiceChargeData({
     portalInstanceId: input.user.portalInstanceId,
     propertyId: property.id,
     year: input.year
   });
   const unitNames = new Map(property.units.map((unit) => [unit.id, unit.unitNumber]));
-  const statementLines = rule.statementLines.map((line) => ({
+  const statementLines = (rule?.statementLines || []).map((line) => ({
     id: line.id,
     unitId: line.unitId,
     unitName: line.unitId ? unitNames.get(line.unitId) || null : null,
@@ -88,10 +87,12 @@ export async function buildServiceChargeStatementSnapshot(input: {
     sourceReference: line.sourceReference,
     note: line.note
   }));
-  const ruleInput: AllocationRuleInput = {
-    method: normalizeServiceChargeMethod(rule.method),
-    totalDistributionValue: rule.totalDistributionValue === null ? null : Number(rule.totalDistributionValue),
-    unitValues: Object.fromEntries(rule.unitAllocations.map((item) => [item.unitId, Number(item.value)])),
+  const shouldUseDirectSingleUnitRule = property.units.length === 1
+    && (!rule || (normalizeServiceChargeMethod(rule.method) === "EXTERNAL_STATEMENT" && statementLines.length === 0));
+  const ruleInput: AllocationRuleInput = shouldUseDirectSingleUnitRule ? defaultSingleUnitRule(property) : {
+    method: normalizeServiceChargeMethod(rule!.method),
+    totalDistributionValue: rule!.totalDistributionValue === null ? null : Number(rule!.totalDistributionValue),
+    unitValues: Object.fromEntries(rule!.unitAllocations.map((item) => [item.unitId, Number(item.value)])),
     statementLines: statementLines.map((line) => ({
       unitId: line.unitId,
       amount: line.amount,
@@ -106,7 +107,7 @@ export async function buildServiceChargeStatementSnapshot(input: {
     method: ruleInput.method,
     rule: {
       totalDistributionValue: ruleInput.totalDistributionValue,
-      note: rule.note || "",
+      note: rule?.note || (shouldUseDirectSingleUnitRule ? "Ein-Einheiten-Abrechnung direkt aus Bankdaten." : ""),
       unitValues: ruleInput.unitValues
     },
     statementLines,
@@ -151,4 +152,21 @@ export function serviceChargeTenantResult(
 ) {
   const allowedIds = new Set(tenantProfileIds);
   return snapshot.allocation.tenantResults.find((result) => allowedIds.has(result.tenantId)) || null;
+}
+
+
+function defaultSingleUnitRule(property: {
+  units: Array<{ id: string; livingArea: unknown }>;
+}): AllocationRuleInput {
+  if (property.units.length !== 1) {
+    throw new Error("Bei mehreren Einheiten zuerst Verteilerschluessel speichern.");
+  }
+  const unit = property.units[0];
+  const value = Number(unit.livingArea || 1) || 1;
+  return {
+    method: "AREA",
+    totalDistributionValue: value,
+    unitValues: { [unit.id]: value },
+    statementLines: []
+  };
 }

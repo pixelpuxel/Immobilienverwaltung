@@ -36,9 +36,20 @@ export type ServiceChargeLine = {
   unit_external_id: string;
   tenant_external_id: string;
   accounting_role: string;
+  source_split_count?: number;
+  source_split_index?: number;
+  split_reference?: string;
+  classification_label?: string;
+  property_name?: string;
+  unit_name?: string;
+  tenant_name?: string | null;
+  created_at?: string;
+  updated_at?: string;
 };
 
 export type ServiceChargeData = {
+  schema_version?: number;
+  generated_at?: string;
   property: { external_id: string; name: string; address: string };
   year: number;
   units: Array<{
@@ -55,6 +66,7 @@ export type ServiceChargeData = {
     lease_start_date: string;
     move_in_date: string;
     move_out_date: string;
+    is_current?: boolean;
     rent_amount: string;
     garage_rent: string;
     service_charges: string;
