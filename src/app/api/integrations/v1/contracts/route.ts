@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { auditLog } from "@/lib/audit";
 import { clientIp } from "@/lib/auth";
+import { contractPublicLinks } from "@/lib/contract-downloads";
 import { ensureContractDocument, generateContract } from "@/lib/contracts";
 import { integrationError, requireAdminIntegration, requireIntegrationUser } from "@/lib/integration-auth";
 import { brokerPropertyIds } from "@/lib/permissions";
@@ -15,27 +16,21 @@ const createSchema = z.object({
   templateId: z.string().optional().nullable().transform((value) => value || null)
 });
 
+const CONTRACT_LINK_TTL_SECONDS = 30 * 24 * 60 * 60;
+
 export async function GET(request: NextRequest) {
   const { user, response } = await requireIntegrationUser(request, ["read:contracts"]);
   if (!user) return response;
-  const q = request.nextUrl.searchParams.get("q")?.trim();
-  const tenantId = request.nextUrl.searchParams.get("tenantId") || request.nextUrl.searchParams.get("tenantProfileId");
-  const propertyId = request.nextUrl.searchParams.get("propertyId");
-  const unitId = request.nextUrl.searchParams.get("unitId");
-  const current = request.nextUrl.searchParams.get("current");
+  const tenantId = request.nextUrl.searchParams.get("tenantId");
   const where: Prisma.LeaseContractWhereInput = {
     AND: [
       await contractAccessWhere(user),
-      tenantId ? { tenantProfileId: tenantId } : {},
-      propertyId ? { unit: { propertyId } } : {},
-      unitId ? { unitId } : {},
-      current === "true" ? { tenantProfile: { isCurrent: true } } : current === "false" ? { tenantProfile: { isCurrent: false } } : {},
-      q ? contractSearchWhere(q) : {}
+      tenantId ? { tenantProfileId: tenantId } : {}
     ]
   };
   const contracts = await prisma.leaseContract.findMany({
     where,
-    include: { tenantProfile: true, unit: { include: { property: { select: { id: true, name: true, address: true } } } }, template: { select: { id: true, name: true, propertyId: true, unitId: true, isGlobalTemplate: true } } },
+    include: { tenantProfile: true, unit: { include: { property: { select: { id: true, name: true } } } }, template: { select: { id: true, name: true } } },
     orderBy: { createdAt: "desc" }
   });
   return NextResponse.json({
@@ -44,15 +39,10 @@ export async function GET(request: NextRequest) {
       tenantProfileId: contract.tenantProfileId,
       unitId: contract.unitId,
       template: contract.template,
-      tenantProfile: serializeTenantContractData(contract.tenantProfile),
-      unit: serializeContractUnit(contract.unit),
-      propertyId: contract.unit.property.id,
-      property: contract.unit.property,
+      tenantProfile: contract.tenantProfile,
+      unit: contract.unit,
       createdAt: contract.createdAt,
-      previewUrl: `/api/contracts/${contract.id}/preview`,
-      docxDownloadUrl: `/api/integrations/v1/contracts/${contract.id}/download?format=docx`,
-      pdfDownloadUrl: `/api/integrations/v1/contracts/${contract.id}/download?format=pdf`,
-      downloadUrl: `/api/integrations/v1/contracts/${contract.id}/download?format=pdf`
+      ...contractLinkFields(request, contract.id, Boolean(contract.pdfPath))
     })),
     nextCursor: null
   });
@@ -99,62 +89,42 @@ export async function POST(request: NextRequest) {
     tenantProfile: contract.tenantProfile,
     unit: contract.unit,
     createdAt: contract.createdAt,
-    previewUrl: `/api/contracts/${contract.id}/preview`,
-    docxDownloadUrl: `/api/contracts/${contract.id}/download?format=docx`,
-    pdfDownloadUrl: `/api/contracts/${contract.id}/download?format=pdf`,
+    ...contractLinkFields(request, contract.id, Boolean(contract.pdfPath)),
     documentId: document.id
   }, { status: 201 });
-}
-
-function contractSearchWhere(q: string): Prisma.LeaseContractWhereInput {
-  return {
-    OR: [
-      { tenantProfile: { firstName: { contains: q, mode: "insensitive" } } },
-      { tenantProfile: { lastName: { contains: q, mode: "insensitive" } } },
-      { tenantProfile: { email: { contains: q, mode: "insensitive" } } },
-      { tenantProfile: { user: { username: { contains: q, mode: "insensitive" } } } },
-      { unit: { unitNumber: { contains: q, mode: "insensitive" } } },
-      { unit: { property: { name: { contains: q, mode: "insensitive" } } } },
-      { unit: { property: { address: { contains: q, mode: "insensitive" } } } },
-      { template: { name: { contains: q, mode: "insensitive" } } }
-    ]
-  };
-}
-
-function serializeTenantContractData(tenant: {
-  rentAmount?: { toString(): string } | null;
-  garageRent?: { toString(): string } | null;
-  serviceCharges?: { toString(): string } | null;
-  deposit?: { toString(): string } | null;
-  [key: string]: unknown;
-}) {
-  return {
-    ...tenant,
-    rentAmount: tenant.rentAmount?.toString() ?? null,
-    garageRent: tenant.garageRent?.toString() ?? null,
-    serviceCharges: tenant.serviceCharges?.toString() ?? null,
-    deposit: tenant.deposit?.toString() ?? null
-  };
-}
-
-function serializeContractUnit(unit: {
-  rentAmount?: { toString(): string } | null;
-  garageRent?: { toString(): string } | null;
-  serviceCharges?: { toString(): string } | null;
-  warmRent?: { toString(): string } | null;
-  [key: string]: unknown;
-}) {
-  return {
-    ...unit,
-    rentAmount: unit.rentAmount?.toString() ?? null,
-    garageRent: unit.garageRent?.toString() ?? null,
-    serviceCharges: unit.serviceCharges?.toString() ?? null,
-    warmRent: unit.warmRent?.toString() ?? null
-  };
 }
 
 async function contractAccessWhere(user: { id: string; role: Role; portalInstanceId: string | null }) {
   if (user.role === Role.ADMIN) return { unit: { property: portalWhere(user) } };
   if (user.role === Role.BROKER) return { unit: { propertyId: { in: await brokerPropertyIds(user.id) } } };
   return { tenantProfile: { userId: user.id } };
+}
+
+function contractLinkFields(request: NextRequest, contractId: string, hasPdf: boolean) {
+  const links = contractPublicLinks(contractId, hasPdf, {
+    absolute: true,
+    signed: true,
+    expiresInSeconds: CONTRACT_LINK_TTL_SECONDS,
+    baseUrl: publicBaseUrl(request)
+  });
+  return {
+    previewUrl: links.preview,
+    downloadUrl: links.pdf || links.docx,
+    docxDownloadUrl: links.docx,
+    pdfDownloadUrl: links.pdf,
+    signedLinksExpireInSeconds: CONTRACT_LINK_TTL_SECONDS
+  };
+}
+
+function publicBaseUrl(request: NextRequest) {
+  const configured = process.env.APP_URL?.trim();
+  if (configured && !/localhost|127\.0\.0\.1|portal\.local|^http:\/\/app(?::|\/|$)/i.test(configured)) {
+    return configured;
+  }
+  const forwardedHost = request.headers.get("x-forwarded-host") || request.headers.get("host");
+  if (forwardedHost && !/^app(?::|$)/i.test(forwardedHost)) {
+    const protocol = request.headers.get("x-forwarded-proto") || request.nextUrl.protocol.replace(":", "") || "https";
+    return `${protocol}://${forwardedHost}`;
+  }
+  return configured || request.nextUrl.origin;
 }

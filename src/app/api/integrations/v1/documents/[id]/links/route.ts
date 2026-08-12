@@ -5,7 +5,7 @@ import { requireIntegrationUser } from "@/lib/integration-auth";
 import { canAccessDocument } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 
-const LINK_TTL_SECONDS = 60 * 60;
+const LINK_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   const { user, response } = await requireIntegrationUser(request, ["read:documents"]);
@@ -23,18 +23,14 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   }
 
   const canDownload = user.tokenScopes.includes("download:documents") && await canAccessDocument(user, document.id, true);
-  const issuedAtSeconds = Math.floor(Date.now() / 1000);
-  const expiresAtSeconds = issuedAtSeconds + LINK_TTL_SECONDS;
-  const links = documentPublicLinks(document.id, { absolute: true, signed: true, expiresAtSeconds });
-  const expiresAt = new Date(expiresAtSeconds * 1000).toISOString();
+  const links = documentPublicLinks(document.id, { absolute: true, signed: true, expiresInSeconds: LINK_TTL_SECONDS });
+  const expiresAt = new Date(Date.now() + LINK_TTL_SECONDS * 1000).toISOString();
 
   return NextResponse.json({
     id: document.id,
     title: document.title,
     filename: document.filename,
-    issuedAt: new Date(issuedAtSeconds * 1000).toISOString(),
     expiresAt,
-    expiresInSeconds: LINK_TTL_SECONDS,
     links: {
       preview: links.preview,
       thumbnail: links.thumbnail,
