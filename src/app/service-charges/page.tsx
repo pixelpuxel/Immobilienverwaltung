@@ -3,7 +3,6 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { AppShell } from "@/components/AppShell";
 import { ServiceChargeRuleForm } from "@/components/ServiceChargeRuleForm";
-import { ServiceChargeSourceDocuments } from "@/components/ServiceChargeSourceDocuments";
 import { ServiceChargeStatementForm } from "@/components/ServiceChargeStatementForm";
 import { ServiceChargeStatementVersions } from "@/components/ServiceChargeStatementVersions";
 import {
@@ -49,7 +48,7 @@ export default async function ServiceChargesPage({
   const selectedTenant = selectedProperty?.units
     .flatMap((unit) => unit.tenants)
     .find((tenant) => tenant.id === searchParams?.tenantId) || null;
-  const [config, savedRule, statements, sourceCategoryCandidates, sourceDocuments] = await Promise.all([
+  const [config, savedRule, statements] = await Promise.all([
     getBankingIntegration(user.portalInstanceId),
     selectedProperty
       ? prisma.serviceChargeRule.findFirst({
@@ -62,44 +61,8 @@ export default async function ServiceChargesPage({
           where: { propertyId: selectedProperty.id, year, deletedAt: null, property: portalWhere(user) },
           orderBy: { version: "desc" }
         })
-      : [],
-    prisma.documentCategory.findMany({
-      where: {
-        name: "Hausgeldabrechnungen",
-        OR: [
-          { portalInstanceId: user.portalInstanceId },
-          { portalInstanceId: null }
-        ]
-      },
-      select: { id: true, portalInstanceId: true }
-    }),
-    selectedProperty
-      ? prisma.document.findMany({
-          where: {
-            propertyId: selectedProperty.id,
-            ...portalWhere(user),
-            category: { name: "Hausgeldabrechnungen" },
-            OR: [
-              { documentYear: year },
-              { documentYear: null, title: { contains: String(year), mode: "insensitive" } },
-              { documentYear: null, filename: { contains: String(year), mode: "insensitive" } }
-            ]
-          },
-          select: {
-            id: true,
-            title: true,
-            filename: true,
-            mimeType: true,
-            storagePath: true,
-            createdAt: true
-          },
-          orderBy: { createdAt: "desc" }
-        })
       : []
   ]);
-  const sourceCategory = sourceCategoryCandidates.find((category) => category.portalInstanceId === user.portalInstanceId)
-    || sourceCategoryCandidates.find((category) => category.portalInstanceId === null)
-    || null;
   const ruleInput = selectedProperty
     ? serviceChargeRuleInput(selectedProperty, savedRule)
     : null;
@@ -170,21 +133,7 @@ export default async function ServiceChargesPage({
             <div className="text-sm font-bold uppercase text-accent">Verteilerschluessel {year}</div>
             <h2 className="mt-1 text-xl font-bold">{selectedProperty.name}</h2>
           </div>
-          <ServiceChargeSourceDocuments
-            propertyId={selectedProperty.id}
-            year={year}
-            categoryId={sourceCategory?.id || null}
-            documents={sourceDocuments.map((document) => ({
-              id: document.id,
-              title: document.title,
-              filename: document.filename,
-              mimeType: document.mimeType,
-              hasFile: Boolean(document.storagePath),
-              createdAt: document.createdAt.toISOString()
-            }))}
-          />
           <ServiceChargeRuleForm
-            key={`${selectedProperty.id}-${year}-${savedRule?.updatedAt.toISOString() || "new"}`}
             propertyId={selectedProperty.id}
             year={year}
             initialMethod={ruleInput.method}
@@ -194,7 +143,7 @@ export default async function ServiceChargesPage({
               id: unit.id,
               name: unit.unitNumber,
               livingArea: Number(unit.livingArea || 0),
-              value: ruleInput.unitValues[unit.id] ?? 0
+              value: ruleInput.unitValues[unit.id] || 0
             }))}
           />
           {ruleInput.method === "EXTERNAL_STATEMENT" && savedRule ? (
@@ -207,9 +156,8 @@ export default async function ServiceChargesPage({
                 unitId: line.unitId,
                 description: line.description,
                 amount: Number(line.amount),
-treatment: normalizeTreatment(line.treatment),
-                sourceReference: line.sourceReference,
-                note: line.note
+                treatment: normalizeTreatment(line.treatment),
+                sourceReference: line.sourceReference
               }))}
             />
           ) : null}
@@ -448,11 +396,10 @@ function serviceChargeRuleInput(
   }
   const normalizedName = property.name.toLocaleLowerCase("de-DE");
   if (normalizedName.includes("tirol")) {
-    const unitValues = Object.fromEntries(property.units.map((unit) => [unit.id, Number(unit.livingArea || 0)]));
     return {
       method: "AREA",
-      totalDistributionValue: Object.values(unitValues).reduce((total, value) => total + value, 0),
-      unitValues,
+      totalDistributionValue: 60.6,
+      unitValues: Object.fromEntries(property.units.map((unit) => [unit.id, Number(unit.livingArea || 0)])),
       statementLines: []
     };
   }

@@ -3,15 +3,13 @@ import { readFile } from "node:fs/promises";
 import { isIP } from "node:net";
 import { z } from "zod";
 import { PortalClient } from "./portal-client.js";
-import { asText, jsonContent, structuredJsonContent, textContent } from "./format.js";
+import { jsonContent, structuredJsonContent, textContent } from "./format.js";
 
 const optionalString = z.string().trim().optional();
 const optionalId = z.string().trim().min(1).optional();
 const money = z.union([z.string(), z.number()]).optional().nullable();
 const uploadedFileInput = z.unknown().optional().describe("Bevorzugt: Datei-Referenz des MCP-/Chat-Clients. Unterstuetzt Objekte mit path, filename/name, mimeType/type, data/base64 oder url.");
 const optionalFileBase64 = z.string().trim().min(1).optional().describe("Rueckfall: Dateiinhalt als Base64 oder Data-URL.");
-const genericToolOutputSchema = z.object({}).passthrough();
-
 const documentToolOutputSchema = {
   success: z.boolean(),
   documentId: z.string(),
@@ -26,62 +24,12 @@ const documentToolOutputSchema = {
   status: z.string().nullable(),
   previewUrl: z.string().nullable(),
   downloadUrl: z.string().nullable(),
+  ocrStatus: z.string().nullable().optional(),
+  ocrProcessedAt: z.string().nullable().optional(),
+  ocrError: z.string().nullable().optional(),
   message: z.string(),
   document: z.unknown()
 };
-const maxMcpDocumentBytes = 25 * 1024 * 1024;
-const supportedDocumentMimeTypes = new Set([
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/msword",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "application/vnd.ms-excel",
-  "image/jpeg",
-  "image/png",
-  "text/plain",
-  "text/markdown",
-  "text/csv",
-  "application/csv"
-]);
-const supportedDocumentExtensions = new Set(["pdf", "docx", "doc", "xlsx", "xls", "jpg", "jpeg", "png", "txt", "md", "csv"]);
-
-function extensionOf(filename: string) {
-  const match = filename.toLowerCase().match(/\.([a-z0-9]+)$/);
-  return match?.[1] || "";
-}
-
-function mcpDocumentResource(input: { documentId: string; filename: string; mimeType: string; size: number; buffer: Buffer }) {
-  const metadata = {
-    documentId: input.documentId,
-    filename: input.filename,
-    mimeType: input.mimeType,
-    size: input.size,
-    file: `mcp-resource://documents/${encodeURIComponent(input.documentId)}/${encodeURIComponent(input.filename)}`
-  };
-  return {
-    content: [
-      {
-        type: "text" as const,
-        text: asText(metadata)
-      },
-      {
-        type: "resource" as const,
-        resource: {
-          uri: metadata.file,
-          mimeType: input.mimeType,
-          blob: input.buffer.toString("base64"),
-          _meta: {
-            documentId: input.documentId,
-            filename: input.filename,
-            size: input.size
-          }
-        }
-      }
-    ],
-    structuredContent: metadata
-  };
-}
-
 const classifyDocumentOutputSchema = {
   ...documentToolOutputSchema,
   relatedDocumentIds: z.array(z.string()),
@@ -90,13 +38,6 @@ const classifyDocumentOutputSchema = {
 };
 
 export function registerPortalTools(server: McpServer, portal: PortalClient) {
-  const originalRegisterTool = server.registerTool.bind(server);
-  server.registerTool = ((name: string, config: Record<string, unknown>, callback: unknown) => originalRegisterTool(
-    name,
-    { outputSchema: genericToolOutputSchema, ...config } as Parameters<McpServer["registerTool"]>[1],
-    callback as Parameters<McpServer["registerTool"]>[2]
-  )) as McpServer["registerTool"];
-
   server.registerTool(
     "portal_health",
     {
@@ -223,6 +164,135 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
   );
 
   server.registerTool(
+    "list_banking_accounts",
+    {
+      title: "Bankkonten aus Banking listen",
+      description: "Listet die in banking.schreiber.info sichtbaren Bankkonten mit Saldo. Grundlage fuer Darlehens- und Vermoegensmapping.",
+      inputSchema: {}
+    },
+    async () => jsonContent(await portal.json({ path: "/api/integrations/v1/net-worth/accounts" }))
+  );
+
+  server.registerTool(
+    "get_net_worth_summary",
+    {
+      title: "Nettowert und Vermoegen abrufen",
+      description: "Berechnet Immobilienwerte, valutierte Darlehen, sonstige Vermoegenswerte und Gesamt-Nettowert.",
+      inputSchema: {}
+    },
+    async () => jsonContent(await portal.json({ path: "/api/integrations/v1/net-worth" }))
+  );
+
+  server.registerTool(
+    "list_net_worth_assets",
+    {
+      title: "Sonstige Vermoegenswerte listen",
+      description: "Listet sonstige Vermoegenswerte und Verbindlichkeiten, inklusive optional gemappter Bankkonten.",
+      inputSchema: {}
+    },
+    async () => jsonContent(await portal.json({ path: "/api/integrations/v1/net-worth/assets" }))
+  );
+
+  server.registerTool(
+    "create_net_worth_asset",
+    {
+      title: "Sonstigen Vermoegenswert anlegen",
+      description: "Legt einen Vermoegenswert oder eine Verbindlichkeit an. Kann manuell oder per Banking-Konto gemappt sein.",
+      inputSchema: netWorthAssetInputShape()
+    },
+    async (args) => jsonContent(await portal.json({
+      method: "POST",
+      path: "/api/integrations/v1/net-worth/assets",
+      body: args
+    }))
+  );
+
+  server.registerTool(
+    "update_net_worth_asset",
+    {
+      title: "Sonstigen Vermoegenswert aktualisieren",
+      description: "Aendert einen Vermoegenswert oder eine Verbindlichkeit.",
+      inputSchema: {
+        id: z.string().trim().min(1),
+        data: z.object(netWorthAssetInputShape()).partial()
+      }
+    },
+    async ({ id, data }) => jsonContent(await portal.json({
+      method: "PATCH",
+      path: `/api/integrations/v1/net-worth/assets/${encodeURIComponent(id)}`,
+      body: data
+    }))
+  );
+
+  server.registerTool(
+    "delete_net_worth_asset",
+    {
+      title: "Sonstigen Vermoegenswert loeschen",
+      description: "Loescht einen Vermoegenswert oder eine Verbindlichkeit.",
+      inputSchema: { id: z.string().trim().min(1) }
+    },
+    async ({ id }) => jsonContent(await portal.json({
+      method: "DELETE",
+      path: `/api/integrations/v1/net-worth/assets/${encodeURIComponent(id)}`
+    }))
+  );
+
+  server.registerTool(
+    "list_property_loan_account_mappings",
+    {
+      title: "Darlehenskonto-Mappings listen",
+      description: "Listet, welche Banking-Konten als valutierte Darlehen welchen Immobilien zugeordnet sind.",
+      inputSchema: {}
+    },
+    async () => jsonContent(await portal.json({ path: "/api/integrations/v1/net-worth/property-loans" }))
+  );
+
+  server.registerTool(
+    "map_property_loan_account",
+    {
+      title: "Darlehenskonto einer Immobilie zuordnen",
+      description: "Ordnet einer Immobilie ein Banking-Konto als Darlehenskonto zu. Danach sync_net_worth_from_banking ausfuehren.",
+      inputSchema: {
+        propertyId: z.string().trim().min(1),
+        bankingAccountId: z.number().int(),
+        label: optionalString
+      }
+    },
+    async (args) => jsonContent(await portal.json({
+      method: "POST",
+      path: "/api/integrations/v1/net-worth/property-loans",
+      body: args
+    }))
+  );
+
+  server.registerTool(
+    "unmap_property_loan_account",
+    {
+      title: "Darlehenskonto-Zuordnung entfernen",
+      description: "Entfernt eine Darlehenskonto-Zuordnung anhand der Mapping-ID.",
+      inputSchema: { id: z.string().trim().min(1) }
+    },
+    async ({ id }) => jsonContent(await portal.json({
+      method: "DELETE",
+      path: `/api/integrations/v1/net-worth/property-loans/${encodeURIComponent(id)}`
+    }))
+  );
+
+  server.registerTool(
+    "sync_net_worth_from_banking",
+    {
+      title: "Vermoegenswerte aus Banking synchronisieren",
+      description: "Liest Banking-Salden ein, aktualisiert gemappte Immobilien-Darlehen und gemappte sonstige Vermoegenswerte.",
+      inputSchema: {}
+    },
+    async () => jsonContent(await portal.json({
+      method: "POST",
+      path: "/api/integrations/v1/net-worth/sync",
+      body: {}
+    }))
+  );
+
+  server.registerTool(
     "create_property",
     {
       title: "Immobilie anlegen",
@@ -269,25 +339,6 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
   );
 
   server.registerTool(
-    "search_units",
-    {
-      title: "Einheiten suchen",
-      description: "Sucht gezielt nach Einheiten/Wohnungen/Gewerbeeinheiten ueber freie Texte wie 'Minden DG Mitte', 'Ladengeschaeft Tirolergasse' oder Objekt- und Einheitenkuerzel. Nutze dieses Tool vor update_unit_rent_details, wenn nur Name/Adresse bekannt sind.",
-      inputSchema: {
-        q: z.string().trim().min(2).describe("Suchtext fuer Immobilie, Adresse oder Einheit, z. B. 'Minden DG Mitte'."),
-        limit: z.number().int().min(1).max(50).optional()
-      }
-    },
-    async ({ q, limit }) => {
-      const result = await portal.json<{ items?: Array<Record<string, unknown>>; nextCursor?: string | null }>({
-        path: "/api/integrations/v1/units",
-        query: { q }
-      });
-      return jsonContent({ items: (result.items || []).slice(0, limit || 20), nextCursor: result.nextCursor || null });
-    }
-  );
-
-  server.registerTool(
     "create_unit",
     {
       title: "Einheit anlegen",
@@ -319,34 +370,6 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
   );
 
   server.registerTool(
-    "update_unit_rent_details",
-    {
-      title: "Mietdaten einer Einheit aktualisieren",
-      description: "Setzt konkrete Mietdaten einer Einheit, z. B. Wohnflaeche, Zimmer, Kaltmiete, Tiefgarage/Stellplatzkosten, Nebenkosten und Status. Warmmiete wird automatisch aus Kaltmiete + Tiefgarage + Nebenkosten berechnet. Nutze vorher search_units oder list_units, um die eindeutige unitId zu finden.",
-      inputSchema: {
-        unitId: z.string().trim().min(1).describe("ID der Einheit aus search_units/list_units."),
-        livingArea: money.describe("Wohnflaeche in Quadratmetern."),
-        rooms: money.describe("Zimmeranzahl."),
-        rentAmount: money.describe("Kaltmiete ohne Nebenkosten; Tiefgarage separat in garageRent erfassen, wenn getrennt ausgewiesen."),
-        garageRent: money.describe("Kosten fuer Tiefgarage/Stellplatz. Wird zur Kaltmiete und Warmmiete addiert."),
-        serviceCharges: money.describe("Nebenkosten/Betriebskosten-Vorauszahlung."),
-        status: optionalString.describe("Vermietungsstatus der Einheit, z. B. vermietet, frei, gekuendigt."),
-        floor: optionalString.describe("Etage/Lage der Einheit, z. B. DG Mitte."),
-        unitNumber: optionalString.describe("Bezeichnung der Einheit, z. B. DG Mitte."),
-        isSharedHousing: z.boolean().optional().describe("WG/Mehrmieter-Einheit.")
-      }
-    },
-    async ({ unitId, ...data }) => {
-      const cleanData = Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined));
-      return jsonContent(await portal.json({
-        method: "PATCH",
-        path: `/api/integrations/v1/units/${encodeURIComponent(unitId)}`,
-        body: cleanData
-      }));
-    }
-  );
-
-  server.registerTool(
     "delete_unit",
     {
       title: "Einheit loeschen",
@@ -365,17 +388,15 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
     "list_tenants",
     {
       title: "Mieter listen",
-      description: "Listet Mieter, optional gefiltert nach Suchtext, Immobilie, Einheit und aktueller Belegung. Nutze q fuer Namen, Adressen, Einheiten oder Objektkuerzel wie Schreibergasse/Mainaustr.",
+      description: "Listet Mieter, optional gefiltert nach Immobilie und aktueller Belegung.",
       inputSchema: {
-        q: optionalString,
         propertyId: optionalId,
-        unitId: optionalId,
         current: z.boolean().optional()
       }
     },
-    async ({ q, propertyId, unitId, current }) => jsonContent(await portal.json({
+    async ({ propertyId, current }) => jsonContent(await portal.json({
       path: "/api/integrations/v1/tenants",
-      query: { q, propertyId, unitId, current: current === undefined ? undefined : String(current) }
+      query: { propertyId, current: current === undefined ? undefined : String(current) }
     }))
   );
 
@@ -463,10 +484,7 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
         propertyId: optionalId,
         unitId: optionalId,
         categoryId: optionalId,
-        categoryName: optionalString,
-        categoryGroup: optionalString,
         tenantProfileId: optionalId,
-        kind: z.enum(["lease_contract", "stepped_rent", "termination"]).optional().describe("Fachlicher Dokumenttyp. Nutze lease_contract fuer Mietvertraege und stepped_rent fuer Staffelmiete."),
         documentYear: z.number().int().min(1900).max(2049).optional(),
         limit: z.number().int().min(1).max(100).optional(),
         updatedSince: optionalString
@@ -475,43 +493,6 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
     async (args) => jsonContent(await portal.json({
       path: "/api/integrations/v1/documents",
       query: args
-    }))
-  );
-
-  server.registerTool(
-    "list_lease_documents",
-    {
-      title: "Mietvertragsdokumente listen",
-      description: "Findet Mietvertraege, die als Dokumente importiert sind, auch wenn kein LeaseContract-Datensatz existiert. Filtere nach Immobilie, Einheit, Mietername oder Suchtext; nutze dies fuer Fragen wie aktueller Mietvertrag der Schreibergasse oder Mietvertrag von Eleonora Rizzo.",
-      inputSchema: {
-        q: optionalString,
-        propertyId: optionalId,
-        unitId: optionalId,
-        tenantProfileId: optionalId,
-        limit: z.number().int().min(1).max(100).optional()
-      }
-    },
-    async ({ q, propertyId, unitId, tenantProfileId, limit }) => jsonContent(await portal.json({
-      path: "/api/integrations/v1/documents",
-      query: { q, propertyId, unitId, tenantProfileId, kind: "lease_contract", limit }
-    }))
-  );
-
-  server.registerTool(
-    "list_stepped_rent_documents",
-    {
-      title: "Staffelmiete-Dokumente listen",
-      description: "Findet Staffelmiete-Unterlagen als Dokumente. Kombiniere dies mit read_document_content, um vereinbarte Staffelmiete, naechste Erhoehung und aktuelle/naechste Miete zu ermitteln.",
-      inputSchema: {
-        q: optionalString,
-        propertyId: optionalId,
-        unitId: optionalId,
-        limit: z.number().int().min(1).max(100).optional()
-      }
-    },
-    async ({ q, propertyId, unitId, limit }) => jsonContent(await portal.json({
-      path: "/api/integrations/v1/documents",
-      query: { q, propertyId, unitId, kind: "stepped_rent", limit }
     }))
   );
 
@@ -545,6 +526,7 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
         summary: optionalString.describe("Optionale Kurzbeschreibung."),
         tags: z.array(z.string()).optional(),
         documentYear: z.number().int().min(1900).max(2049).optional(),
+        runOcr: z.boolean().optional().describe("Wenn true, fuehrt das Portal nach dem Upload OCR fuer PDF-/Bilddateien aus."),
         isPropertyImage: z.boolean().optional(),
         isPrimaryImage: z.boolean().optional()
       },
@@ -582,11 +564,12 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
         title: optionalString.describe("Anzeigetitel im Portal."),
         summary: optionalString.describe("Kurze vorlaeufige Beschreibung."),
         tags: z.array(z.string()).optional(),
-        documentYear: z.number().int().min(1900).max(2049).optional()
+        documentYear: z.number().int().min(1900).max(2049).optional(),
+        runOcr: z.boolean().optional().describe("Wenn true, fuehrt das Portal nach dem Upload OCR fuer PDF-/Bilddateien aus.")
       },
       outputSchema: documentToolOutputSchema
     },
-    async ({ file, fileBase64, filename, mimeType, title, summary, tags, documentYear }) => {
+    async ({ file, fileBase64, filename, mimeType, title, summary, tags, documentYear, runOcr }) => {
       const upload = await resolveUploadPayload(file, fileBase64, filename, mimeType);
       const document = await portal.json({
         method: "POST",
@@ -600,7 +583,8 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
           scope: "PROPERTY",
           summary: summary || "Ueber MCP hochgeladen; fachliche Einsortierung steht noch aus.",
           tags: ["eingang", "mcp-upload", ...(tags || [])],
-          documentYear
+          documentYear,
+          runOcr
         }
       });
       return structuredJsonContent(documentToolResult(document as IntegrationDocumentLike, {
@@ -722,11 +706,12 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
         status: z.enum(["MISSING", "REQUESTED", "AVAILABLE", "SHARED", "NOT_RELEVANT"]).optional(),
         summary: optionalString.describe("Kurze Inhaltsbeschreibung."),
         tags: z.array(z.string()).optional(),
-        documentYear: z.number().int().min(1900).max(2049).optional()
+        documentYear: z.number().int().min(1900).max(2049).optional(),
+        runOcr: z.boolean().optional().describe("Wenn true, fuehrt das Portal nach dem Upload OCR fuer PDF-/Bilddateien aus.")
       },
       outputSchema: documentToolOutputSchema
     },
-    async ({ tenantProfileId, file, fileBase64, filename, mimeType, title, categoryName, categoryGroup, createCategoryIfMissing, status, summary, tags, documentYear }) => {
+    async ({ tenantProfileId, file, fileBase64, filename, mimeType, title, categoryName, categoryGroup, createCategoryIfMissing, status, summary, tags, documentYear, runOcr }) => {
       const upload = await resolveUploadPayload(file, fileBase64, filename, mimeType);
       const tenant = await portal.json<{ id: string; unitId?: string | null; unit?: { id: string; propertyId?: string | null } | null }>({
         path: `/api/integrations/v1/tenants/${encodeURIComponent(tenantProfileId)}`
@@ -750,7 +735,8 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
           scope: "TENANT",
           summary,
           tags,
-          documentYear
+          documentYear,
+          runOcr
         }
       });
       return structuredJsonContent(documentToolResult(document, {
@@ -796,36 +782,6 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
   );
 
   server.registerTool(
-    "download_document",
-    {
-      title: "Dokument direkt herunterladen",
-      description: "Laedt die Originaldatei eines Dokuments aus dem Portal und gibt sie direkt als eingebettete MCP-Datei/Resource zurueck. Nutzt keine signierte URL und keine frei uebergebenen Dateipfade. Unterstuetzt PDF, DOCX, DOC, XLSX, XLS, JPG, PNG, TXT und CSV bis 25 MB.",
-      inputSchema: {
-        documentId: z.string().trim().min(1)
-      }
-    },
-    async ({ documentId }) => {
-      const file = await portal.file({
-        path: `/api/integrations/v1/documents/${encodeURIComponent(documentId)}/download`
-      });
-      const ext = extensionOf(file.filename);
-      if (!supportedDocumentMimeTypes.has(file.mimeType) && !supportedDocumentExtensions.has(ext)) {
-        throw new Error(`UNSUPPORTED_FILE_TYPE: Dateityp ${file.mimeType || ext || "unbekannt"} wird fuer direkte MCP-Dateien nicht unterstuetzt.`);
-      }
-      if (file.size > maxMcpDocumentBytes) {
-        throw new Error(`FILE_TOO_LARGE: Datei ist ${file.size} Bytes gross. Limit: ${maxMcpDocumentBytes} Bytes.`);
-      }
-      return mcpDocumentResource({
-        documentId,
-        filename: file.filename,
-        mimeType: file.mimeType,
-        size: file.size,
-        buffer: file.buffer
-      });
-    }
-  );
-
-  server.registerTool(
     "get_document_links",
     {
       title: "Dokument-Links erzeugen",
@@ -852,21 +808,46 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
     "read_document_content",
     {
       title: "Dokumentinhalt lesen",
-      description: "Liest den Inhalt eines Dokuments. PDF, DOCX, DOC, TXT und Markdown werden als Text extrahiert, soweit maschinenlesbar. Es wird keine serverseitige OCR ausgefuehrt. Bei gescannten PDFs/Bildern oder nicht extrahierbarem Inhalt wird die Originaldatei bzw. bei Word-Dokumenten optional ein PDF als Base64 zur Analyse durch den MCP-Client/LLM zurueckgegeben.",
+      description: "Liest maschinenlesbaren Text aus einem Dokument. Bei Scan-PDFs oder nicht extrahierbaren Dateien kann die Originaldatei als Base64 fuer eine clientseitige Bild-/Dateierkennung mitgeliefert werden. Braucht read:documents und download:documents.",
       inputSchema: {
         id: z.string().trim().min(1),
-        includeFile: z.boolean().optional().describe("Wenn true, gibt das Tool die Datei bis 15 MB als Base64 mit zurueck. Bei nicht extrahierbaren Dokumenten passiert das automatisch."),
-        preferPdf: z.boolean().optional().describe("Default true. Wandelt DOC/DOCX fuer returnedFile nach PDF, wenn moeglich."),
-        maxChars: z.number().int().min(1000).max(500000).optional()
+        includeFile: z.boolean().optional().describe("Wenn true, wird die Datei als Base64 mitgeliefert, sofern sie nicht zu gross ist."),
+        preferPdf: z.boolean().optional().describe("Wenn true, werden Office-Dateien nach Moeglichkeit als PDF zurueckgegeben."),
+        maxChars: z.number().int().min(1000).max(500000).optional().describe("Maximale Zeichenanzahl fuer extrahierten Text.")
       }
     },
     async ({ id, includeFile, preferPdf, maxChars }) => jsonContent(await portal.json({
       path: `/api/integrations/v1/documents/${encodeURIComponent(id)}/content`,
-      query: {
-        includeFile: includeFile === undefined ? undefined : String(includeFile),
-        preferPdf: preferPdf === undefined ? undefined : (preferPdf ? "1" : "0"),
-        maxChars
+      query: { includeFile, preferPdf, maxChars }
+    }))
+  );
+
+  server.registerTool(
+    "get_document_ocr",
+    {
+      title: "Dokument-OCR lesen",
+      description: "Liest OCR-Status und erkannten Text eines Dokuments. Nutze dies, wenn ein Dokument inhaltlich ausgewertet werden soll.",
+      inputSchema: {
+        id: z.string().trim().min(1)
       }
+    },
+    async ({ id }) => jsonContent(await portal.json({
+      path: `/api/integrations/v1/documents/${encodeURIComponent(id)}/ocr`
+    }))
+  );
+
+  server.registerTool(
+    "run_document_ocr",
+    {
+      title: "Dokument-OCR ausführen",
+      description: "Fuehrt OCR fuer ein bestehendes PDF-/Bilddokument aus und speichert den Text im Portal. Braucht write:documents.",
+      inputSchema: {
+        id: z.string().trim().min(1)
+      }
+    },
+    async ({ id }) => jsonContent(await portal.json({
+      method: "POST",
+      path: `/api/integrations/v1/documents/${encodeURIComponent(id)}/ocr`
     }))
   );
 
@@ -972,19 +953,14 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
     "list_contracts",
     {
       title: "Mietvertraege listen",
-      description: "Listet Mietvertraege, optional gefiltert nach Mieter, Immobilie, Einheit, Suchtext oder aktueller Belegung. Nutze q fuer Anfragen wie aktueller Mietvertrag Schreibergasse oder Mietvertrag von Eleonora Rizzo.",
+      description: "Listet Mietvertraege, optional fuer einen Mieter.",
       inputSchema: {
-        q: optionalString,
-        tenantId: optionalId,
-        tenantProfileId: optionalId,
-        propertyId: optionalId,
-        unitId: optionalId,
-        current: z.boolean().optional()
+        tenantId: optionalId
       }
     },
-    async ({ q, tenantId, tenantProfileId, propertyId, unitId, current }) => jsonContent(await portal.json({
+    async ({ tenantId }) => jsonContent(await portal.json({
       path: "/api/integrations/v1/contracts",
-      query: { q, tenantId: tenantId || tenantProfileId, propertyId, unitId, current: current === undefined ? undefined : String(current) }
+      query: { tenantId }
     }))
   );
 
@@ -1007,211 +983,14 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
     "get_contract_links",
     {
       title: "Mietvertrags-Links erzeugen",
-      description: "Erzeugt autorisierte Integrations-Downloadlinks fuer DOCX und PDF.",
+      description: "Erzeugt stabile signierte Portal-Links fuer Vorschau, DOCX und PDF. Diese Links koennen ohne Portal-Login geoeffnet werden, bis sie ablaufen.",
       inputSchema: {
         id: z.string().trim().min(1)
       }
     },
-    async ({ id }) => textContent([
-      "Autorisierte Vertragslinks:",
-      `PDF: ${portal.integrationUrl(`/api/integrations/v1/contracts/${encodeURIComponent(id)}/download`, { format: "pdf" })}`,
-      `DOCX: ${portal.integrationUrl(`/api/integrations/v1/contracts/${encodeURIComponent(id)}/download`, { format: "docx" })}`
-    ].join("\n"))
-  );
-
-  server.registerTool(
-    "get_transaction_details",
-    {
-      title: "Angereicherte Banking-Buchung abrufen",
-      description: "Liest eine Banking-Buchung ueber das Immobilienportal inklusive Kategorie, Unterkategorie, Immobilie, Einheit, Mieter, Vertrag, Notizen, OCR-/KI-Daten, verknuepften Dokumenten, Historie, Benutzerkommentaren und kompletter Split-Struktur.",
-      inputSchema: {
-        transaction_id: z.number().int().positive().describe("Interne Banking-Transaktions-ID.")
-      },
-      outputSchema: genericToolOutputSchema
-    },
-    async ({ transaction_id }) => jsonContent(await portal.json({
-      path: `/api/integrations/v1/banking/transactions/${encodeURIComponent(String(transaction_id))}/details`
-    }))
-  );
-
-  server.registerTool(
-    "get_service_charge_workspace",
-    {
-      title: "Nebenkostenabrechnung laden",
-      description: "Laedt fuer Immobilie und Jahr den vollstaendigen Abrechnungs-Workspace: Einheiten, Verteilerschluessel, Hausverwaltungspositionen, Banking-Istdaten, serverseitige Verteilung, Pruefhinweise, Quelldokumente und Versionen.",
-      inputSchema: {
-        propertyId: z.string().trim().min(1),
-        year: z.number().int().min(2000).max(2100),
-        unitId: optionalId,
-        tenantId: optionalId
-      },
-      outputSchema: genericToolOutputSchema
-    },
-    async (args) => jsonContent(await portal.json({
-      path: "/api/integrations/v1/service-charges",
-      query: args
-    }))
-  );
-
-  server.registerTool(
-    "save_service_charge_rule",
-    {
-      title: "Nebenkosten-Verteilerschluessel speichern",
-      description: "Speichert den Verteilerschluessel einer Immobilie fuer ein Abrechnungsjahr. AREA nutzt Flaechen, FIXED_SHARE feste Anteile und EXTERNAL_STATEMENT die einzeln erfassten Positionen der Hausverwaltung.",
-      inputSchema: {
-        propertyId: z.string().trim().min(1),
-        year: z.number().int().min(2000).max(2100),
-        method: z.enum(["AREA", "FIXED_SHARE", "EXTERNAL_STATEMENT"]),
-        totalDistributionValue: z.number().positive().optional().nullable(),
-        note: optionalString,
-        unitValues: z.record(z.number().finite().min(0))
-      },
-      outputSchema: genericToolOutputSchema
-    },
-    async (args) => jsonContent(await portal.json({
-      method: "PUT",
-      path: "/api/integrations/v1/service-charges/rule",
-      body: args
-    }))
-  );
-
-  server.registerTool(
-    "add_service_charge_line",
-    {
-      title: "Nebenkostenposition erfassen",
-      description: "Erfasst eine Position aus einer externen Hausverwaltungsabrechnung mit Behandlung, optionaler Einheit, Quellenangabe und Notiz.",
-      inputSchema: {
-        propertyId: z.string().trim().min(1),
-        year: z.number().int().min(2000).max(2100),
-        unitId: optionalId.nullable(),
-        description: z.string().trim().min(1).max(300),
-        amount: z.number().finite().min(0),
-        treatment: z.enum(["ALLOCABLE", "NON_ALLOCABLE", "RESERVE"]),
-        sourceReference: z.string().trim().max(300).optional(),
-        note: z.string().trim().max(2000).optional()
-      },
-      outputSchema: genericToolOutputSchema
-    },
-    async (args) => jsonContent(await portal.json({
-      method: "POST",
-      path: "/api/integrations/v1/service-charges/lines",
-      body: args
-    }))
-  );
-
-  server.registerTool(
-    "delete_service_charge_line",
-    {
-      title: "Nebenkostenposition loeschen",
-      description: "Loescht eine noch nicht in einem unveraenderlichen Snapshot festgeschriebene Hausverwaltungsposition.",
-      inputSchema: { id: z.string().trim().min(1) },
-      outputSchema: genericToolOutputSchema
-    },
     async ({ id }) => jsonContent(await portal.json({
-      method: "DELETE",
-      path: "/api/integrations/v1/service-charges/lines",
-      query: { id }
+      path: `/api/integrations/v1/contracts/${encodeURIComponent(id)}`
     }))
-  );
-
-  server.registerTool(
-    "list_service_charge_statements",
-    {
-      title: "Nebenkostenabrechnungs-Versionen listen",
-      description: "Listet gespeicherte Entwuerfe und festgeschriebene Nebenkostenabrechnungen, optional nach Immobilie und Jahr.",
-      inputSchema: {
-        propertyId: optionalId,
-        year: z.number().int().min(2000).max(2100).optional(),
-        limit: z.number().int().min(1).max(100).optional()
-      },
-      outputSchema: genericToolOutputSchema
-    },
-    async (args) => jsonContent(await portal.json({
-      path: "/api/integrations/v1/service-charge-statements",
-      query: args
-    }))
-  );
-
-  server.registerTool(
-    "create_service_charge_statement",
-    {
-      title: "Nebenkostenabrechnungs-Version erzeugen",
-      description: "Erzeugt einen unveraenderlichen Entwurfs-Snapshot aus Banking-Istdaten, Verteilerschluessel, Kostenpositionen und Mietverhaeltnissen. Vorher Workspace und Pruefhinweise kontrollieren.",
-      inputSchema: {
-        propertyId: z.string().trim().min(1),
-        year: z.number().int().min(2000).max(2100)
-      },
-      outputSchema: genericToolOutputSchema
-    },
-    async (args) => jsonContent(await portal.json({
-      method: "POST",
-      path: "/api/integrations/v1/service-charge-statements",
-      body: args
-    }))
-  );
-
-  server.registerTool(
-    "get_service_charge_statement",
-    {
-      title: "Nebenkostenabrechnungs-Protokoll laden",
-      description: "Laedt den vollstaendigen eingefrorenen Snapshot mit Pruefsumme, Berechnung, Quellbuchungen und Vertragsdaten.",
-      inputSchema: { id: z.string().trim().min(1) },
-      outputSchema: genericToolOutputSchema
-    },
-    async ({ id }) => jsonContent(await portal.json({
-      path: `/api/integrations/v1/service-charge-statements/${encodeURIComponent(id)}`
-    }))
-  );
-
-  server.registerTool(
-    "finalize_service_charge_statement",
-    {
-      title: "Nebenkostenabrechnung festschreiben",
-      description: "Schreibt eine Abrechnung fest. Der Server verweigert dies bei blockierenden Pruefhinweisen.",
-      inputSchema: { id: z.string().trim().min(1) },
-      outputSchema: genericToolOutputSchema
-    },
-    async ({ id }) => jsonContent(await portal.json({
-      method: "PATCH",
-      path: `/api/integrations/v1/service-charge-statements/${encodeURIComponent(id)}`,
-      body: { status: "FINAL" }
-    }))
-  );
-
-  server.registerTool(
-    "delete_service_charge_statement",
-    {
-      title: "Nebenkostenabrechnungs-Version ausblenden",
-      description: "Blendet einen Entwurf aus. Eine festgeschriebene Version wird nur bei explizitem confirmFinal=true entfernt.",
-      inputSchema: {
-        id: z.string().trim().min(1),
-        confirmFinal: z.boolean().optional()
-      },
-      outputSchema: genericToolOutputSchema
-    },
-    async ({ id, confirmFinal }) => jsonContent(await portal.json({
-      method: "DELETE",
-      path: `/api/integrations/v1/service-charge-statements/${encodeURIComponent(id)}`,
-      query: { confirm: confirmFinal ? "DELETE_FINAL" : undefined }
-    }))
-  );
-
-  server.registerTool(
-    "get_service_charge_statement_links",
-    {
-      title: "Nebenkostenabrechnungs-PDF-Links",
-      description: "Gibt die geschuetzten Integrations-Endpunkte fuer das Gesamt-PDF oder ein Mieter-PDF aus. Der aufrufende Client muss den Portal-Bearer-Token mitsenden.",
-      inputSchema: {
-        id: z.string().trim().min(1),
-        tenantId: optionalId
-      },
-      outputSchema: genericToolOutputSchema
-    },
-    async ({ id, tenantId }) => textContent([
-      tenantId ? "Mieter-PDF:" : "Gesamt-PDF:",
-      portal.integrationUrl(`/api/integrations/v1/service-charge-statements/${encodeURIComponent(id)}/pdf`, { tenantId }),
-      "Hinweis: Der Download braucht denselben Portal-Bearer-Token wie der MCP-Aufruf."
-    ].join("\n"))
   );
 
   server.registerTool(
@@ -1403,8 +1182,7 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
     {
       title: "Portalinstanzen listen",
       description: "Listet Portalinstanzen, sofern der Token die noetigen Rechte hat.",
-      inputSchema: {},
-      outputSchema: genericToolOutputSchema
+      inputSchema: {}
     },
     async () => jsonContent(await portal.json({ path: "/api/integrations/v1/portal-instances" }))
   );
@@ -1416,13 +1194,12 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
       description: "Wechselt die Sicht/Instanz fuer den Integrationstoken, wenn erlaubt.",
       inputSchema: {
         portalInstanceId: z.string().trim().min(1)
-      },
-      outputSchema: genericToolOutputSchema
+      }
     },
-    async ({ portalInstanceId }) => jsonContent(await portal.json({
+    async (args) => jsonContent(await portal.json({
       method: "POST",
       path: "/api/integrations/v1/portal-instances/switch",
-      body: { instanceId: portalInstanceId }
+      body: args
     }))
   );
 
@@ -1432,7 +1209,7 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
       title: "Kontrollierter Integrations-API-Aufruf",
       description: "Fallback fuer neue /api/integrations/v1-Endpunkte. Nur relative Integrationspfade sind erlaubt, keine externen URLs.",
       inputSchema: {
-        method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).default("GET"),
+        method: z.enum(["GET", "POST", "PATCH", "DELETE"]).default("GET"),
         path: z.string().trim().regex(/^\/api\/integrations\/v1\/[a-zA-Z0-9/_?=&.%:-]*$/),
         query: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
         body: z.unknown().optional()
@@ -1452,6 +1229,9 @@ type IntegrationDocumentLike = {
   categoryId?: string | null;
   scope?: string | null;
   status?: string | null;
+  ocrStatus?: string | null;
+  ocrProcessedAt?: string | null;
+  ocrError?: string | null;
   links?: {
     preview?: string | null;
     download?: string | null;
@@ -1478,6 +1258,9 @@ function documentToolResult(
     categoryName: options.categoryName ?? null,
     scope: document.scope || null,
     status: document.status || null,
+    ocrStatus: document.ocrStatus || null,
+    ocrProcessedAt: document.ocrProcessedAt || null,
+    ocrError: document.ocrError || null,
     previewUrl: document.links?.preview || null,
     downloadUrl: document.links?.download || null,
     message: options.message,
@@ -1704,6 +1487,7 @@ function propertyInputShape() {
     condition: optionalString,
     modernizations: optionalString,
     rentalStatus: optionalString,
+    purchasePrice: money,
     expectedPurchasePrice: money,
     outstandingLoan: money,
     internalNotes: optionalString
@@ -1761,6 +1545,18 @@ function tenantInputShape() {
     contractNotes: optionalString.nullable(),
     pets: optionalString.nullable(),
     specialAgreements: optionalString.nullable()
+  };
+}
+
+function netWorthAssetInputShape() {
+  return {
+    name: z.string().trim().min(1),
+    type: z.enum(["ASSET", "LIABILITY"]).optional().describe("ASSET fuer positiven Vermoegenswert, LIABILITY fuer Verbindlichkeit."),
+    manualValue: money.describe("Manueller Wert, wenn kein Bankkonto gemappt wird."),
+    bankingAccountId: z.number().int().optional().nullable().describe("ID aus list_banking_accounts, falls dieser Wert direkt aus Banking kommen soll."),
+    bankingAccountLabel: optionalString.nullable(),
+    note: optionalString.nullable(),
+    active: z.boolean().optional()
   };
 }
 

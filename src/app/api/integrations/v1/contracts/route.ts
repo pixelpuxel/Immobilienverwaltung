@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { auditLog } from "@/lib/audit";
 import { clientIp } from "@/lib/auth";
+import { contractPublicLinks } from "@/lib/contract-downloads";
 import { ensureContractDocument, generateContract } from "@/lib/contracts";
 import { integrationError, requireAdminIntegration, requireIntegrationUser } from "@/lib/integration-auth";
 import { brokerPropertyIds } from "@/lib/permissions";
@@ -14,6 +15,8 @@ const createSchema = z.object({
   unitId: z.string(),
   templateId: z.string().optional().nullable().transform((value) => value || null)
 });
+
+const CONTRACT_LINK_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 export async function GET(request: NextRequest) {
   const { user, response } = await requireIntegrationUser(request, ["read:contracts"]);
@@ -49,10 +52,7 @@ export async function GET(request: NextRequest) {
       propertyId: contract.unit.property.id,
       property: contract.unit.property,
       createdAt: contract.createdAt,
-      previewUrl: `/api/contracts/${contract.id}/preview`,
-      docxDownloadUrl: `/api/integrations/v1/contracts/${contract.id}/download?format=docx`,
-      pdfDownloadUrl: `/api/integrations/v1/contracts/${contract.id}/download?format=pdf`,
-      downloadUrl: `/api/integrations/v1/contracts/${contract.id}/download?format=pdf`
+      ...contractLinkFields(request, contract.id, Boolean(contract.pdfPath))
     })),
     nextCursor: null
   });
@@ -99,9 +99,7 @@ export async function POST(request: NextRequest) {
     tenantProfile: contract.tenantProfile,
     unit: contract.unit,
     createdAt: contract.createdAt,
-    previewUrl: `/api/contracts/${contract.id}/preview`,
-    docxDownloadUrl: `/api/contracts/${contract.id}/download?format=docx`,
-    pdfDownloadUrl: `/api/contracts/${contract.id}/download?format=pdf`,
+    ...contractLinkFields(request, contract.id, Boolean(contract.pdfPath)),
     documentId: document.id
   }, { status: 201 });
 }
@@ -157,4 +155,33 @@ async function contractAccessWhere(user: { id: string; role: Role; portalInstanc
   if (user.role === Role.ADMIN) return { unit: { property: portalWhere(user) } };
   if (user.role === Role.BROKER) return { unit: { propertyId: { in: await brokerPropertyIds(user.id) } } };
   return { tenantProfile: { userId: user.id } };
+}
+
+function contractLinkFields(request: NextRequest, contractId: string, hasPdf: boolean) {
+  const links = contractPublicLinks(contractId, hasPdf, {
+    absolute: true,
+    signed: true,
+    expiresInSeconds: CONTRACT_LINK_TTL_SECONDS,
+    baseUrl: publicBaseUrl(request)
+  });
+  return {
+    previewUrl: links.preview,
+    downloadUrl: links.pdf || links.docx,
+    docxDownloadUrl: links.docx,
+    pdfDownloadUrl: links.pdf,
+    signedLinksExpireInSeconds: CONTRACT_LINK_TTL_SECONDS
+  };
+}
+
+function publicBaseUrl(request: NextRequest) {
+  const configured = process.env.APP_URL?.trim();
+  if (configured && !/localhost|127\.0\.0\.1|portal\.local|^http:\/\/app(?::|\/|$)/i.test(configured)) {
+    return configured;
+  }
+  const forwardedHost = request.headers.get("x-forwarded-host") || request.headers.get("host");
+  if (forwardedHost && !/^app(?::|$)/i.test(forwardedHost)) {
+    const protocol = request.headers.get("x-forwarded-proto") || request.nextUrl.protocol.replace(":", "") || "https";
+    return `${protocol}://${forwardedHost}`;
+  }
+  return configured || request.nextUrl.origin;
 }

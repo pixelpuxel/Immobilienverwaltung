@@ -49,14 +49,15 @@ export function renderServiceChargeStatementPdf(input: {
     y -= 17;
   };
   const summaryTable = (rows: Array<[string, string]>) => {
-    table(["Kennzahl", "Wert"], rows, [310, 185]);
+    keyValueTable(rows, [310, 185]);
   };
 
   const rule = input.snapshot.rule;
   const allocation = input.snapshot.allocation;
   const selectedTenant = input.tenantId
-    ? allocation.tenantResults.find((tenant) => tenant.tenantId === input.tenantId)
+    ? allocation.tenantResults.find((tenant) => tenant.tenantId === input.tenantId) || null
     : null;
+  const isDirectSingleUnitStatement = Boolean(rule.note?.includes("Ein-Einheiten-Abrechnung"));
   const tenantResults = selectedTenant ? [selectedTenant] : allocation.tenantResults;
   const statementLines = selectedTenant
     ? input.snapshot.statementLines.filter((line) => !line.unitId || line.unitId === selectedTenant.unitId)
@@ -64,28 +65,40 @@ export function renderServiceChargeStatementPdf(input: {
   const unitNames = new Map((input.snapshot.source.bankingDetails?.units || []).map((unit) => [unit.external_id, unit.name]));
   const unitName = (id: string | null | undefined) => id ? unitNames.get(id) || "Einheit" : "Gesamtobjekt";
 
-  paragraph(selectedTenant ? `Nebenkostenabrechnung ${input.snapshot.year}` : `Nebenkostenabrechnung Gesamtuebersicht ${input.snapshot.year}`, { size: 20, bold: true, gap: 26 });
-  paragraph(`${input.snapshot.property.name} - ${input.snapshot.property.address}`, { size: 11, bold: true });
-  paragraph(`Version ${input.version} - ${input.status === "FINAL" ? "festgeschrieben" : "Entwurf"}`, { size: 9 });
+  paragraph(`Nebenkostenabrechnung ${input.snapshot.year}`, { size: 20, bold: true, gap: 26 });
+  paragraph(`${input.snapshot.property.name}`, { size: 11, bold: true });
+  if (input.snapshot.property.address !== input.snapshot.property.name) paragraph(input.snapshot.property.address, { size: 10 });
   if (selectedTenant) paragraph(`Mieter: ${selectedTenant.tenantName}`, { size: 10, bold: true });
 
   section("Zusammenfassung");
-  summaryTable([
-    [selectedTenant ? "Kostenanteil" : "Umlagefaehige Kosten", money(selectedTenant?.allocatedCosts ?? allocation.allocableCosts)],
-    ["Vorauszahlungen", money(selectedTenant?.actualPrepayments ?? allocation.totalPrepayments)],
-    [
-      selectedTenant ? (selectedTenant.result >= 0 ? "Nachzahlung" : "Guthaben") : "Mietern zugeordnet",
-      money(selectedTenant ? Math.abs(selectedTenant.result) : allocation.allocatedToTenants)
-    ],
-    ...(!selectedTenant ? [["Eigentuemer / Leerstand", money(allocation.ownerShare)] as [string, string]] : [])
-  ]);
+  const statementResultLabel = selectedTenant
+    ? (selectedTenant.result >= 0 ? "Nachzahlung" : "Guthaben")
+    : (allocation.totalPrepayments >= allocation.allocatedToTenants ? "Guthaben" : "Nachzahlung");
+  const statementResultAmount = selectedTenant
+    ? Math.abs(selectedTenant.result)
+    : Math.abs(allocation.totalPrepayments - allocation.allocatedToTenants);
+  summaryTable(isDirectSingleUnitStatement && !selectedTenant
+    ? [
+        ["Umlagefaehige Kosten", money(allocation.allocableCosts)],
+        ["Vorauszahlungen", money(allocation.totalPrepayments)],
+        [statementResultLabel, money(statementResultAmount)]
+      ]
+    : [
+        [selectedTenant ? "Kostenanteil" : "Umlagefaehige Kosten", money(selectedTenant?.allocatedCosts ?? allocation.allocableCosts)],
+        ["Vorauszahlungen", money(selectedTenant?.actualPrepayments ?? allocation.totalPrepayments)],
+        [
+          selectedTenant ? statementResultLabel : "Mietern zugeordnet",
+          money(selectedTenant ? statementResultAmount : allocation.allocatedToTenants)
+        ],
+        ...(!selectedTenant ? [["Saldo", `${statementResultLabel} ${money(statementResultAmount)}`] as [string, string]] : []),
+        ...(!selectedTenant ? [["Eigentuemer / Leerstand", money(allocation.ownerShare)] as [string, string]] : [])
+      ]);
 
-  section("Abrechnungsgrundlage");
-  paragraph(methodLabel(input.snapshot.method));
-  if (rule.note) paragraph(`Hinweis: ${rule.note}`);
-  paragraph(`Verteilerwert gesamt: ${number(rule.totalDistributionValue)}`);
+  section("Grundlage");
+  paragraph(methodLabel(input.snapshot.method, isDirectSingleUnitStatement));
+  if (!isDirectSingleUnitStatement) paragraph(`Verteilerwert gesamt: ${number(rule.totalDistributionValue)}`);
 
-  section("Kostenpositionen");
+  section("Kosten");
   if (statementLines.length) {
     table(
       ["Bezeichnung", "Behandlung", "Einheit", "Betrag"],
@@ -99,10 +112,28 @@ export function renderServiceChargeStatementPdf(input: {
       [false, false, false, true]
     );
   } else {
-    paragraph("Noch keine Kostenpositionen erfasst.");
+    paragraph("Die folgenden Buchungen bilden die Grundlage der Abrechnung.");
   }
 
-  section("Abrechnung je Mietverhaeltnis");
+  const bankingDetails = input.snapshot.source.bankingDetails;
+  if (bankingDetails) {
+    const costLines = bankingLinesForTenant(bankingDetails.allocableCosts, selectedTenant);
+    const prepaymentLines = bankingLinesForTenant(bankingDetails.serviceChargePrepayments, selectedTenant);
+    section("Umlagefaehige Kosten");
+    if (costLines.length) {
+      bankingList(costLines);
+    } else {
+      paragraph("Keine umlagefaehigen Kosten fuer diese Auswahl vorhanden.");
+    }
+    section("Nebenkostenvorauszahlungen");
+    if (prepaymentLines.length) {
+      bankingList(prepaymentLines);
+    } else {
+      paragraph("Keine Nebenkostenvorauszahlungen fuer diese Auswahl vorhanden.");
+    }
+  }
+
+  section("Ergebnis");
   if (tenantResults.length) {
     table(
       ["Mieter", "Einheit", "Zeitraum", "Ergebnis"],
@@ -116,23 +147,43 @@ export function renderServiceChargeStatementPdf(input: {
       [false, false, false, true]
     );
   } else {
-    paragraph("Keine Mietverhaeltnisse mit berechenbarem Anteil vorhanden. Diese Version ist noch nicht verschickfertig.");
-  }
-
-  const warnings = [...allocation.warnings, ...(allocation.blockingWarnings || [])].filter((warning) => {
-    if (allocation.allocableCosts > 0 && /weder umlagefaehige Kosten noch Nebenkostenvorauszahlungen/i.test(warning)) return false;
-    return true;
-  });
-  if (warnings.length) {
-    section("Pruefhinweise");
-    warnings.forEach((warning) => paragraph(`- ${warning}`));
+    if (allocation.allocatedToTenants > 0 || allocation.totalPrepayments > 0) {
+      paragraph(`${allocation.totalPrepayments >= allocation.allocatedToTenants ? "Guthaben" : "Nachzahlung"}: ${money(Math.abs(allocation.totalPrepayments - allocation.allocatedToTenants))}`, { size: 12, bold: true });
+    } else {
+      paragraph("Keine Mietverhaeltnisse mit berechenbarem Anteil vorhanden.");
+    }
   }
 
   pages.forEach((page, index) => {
     page.push(text(`Seite ${index + 1} von ${pages.length}`, 480, 28, 7));
-    page.push(text(`Pruefcode ${input.checksum.slice(0, 10)}`, margin, 28, 7));
   });
   return buildPdf(pages.map((page) => page.join("\n")));
+
+  function keyValueTable(rows: Array<[string, string]>, widths: number[]) {
+    rows.forEach(([label, value]) => {
+      ensure(25);
+      current().push(rect(margin, y - 21, widths[0] + widths[1], 25, "0.96 0.98 0.97"));
+      drawText(label, margin + 7, y - 14, 9);
+      drawText(value, margin + widths[0] + 7, y - 14, 9, true);
+      y -= 26;
+    });
+    y -= 6;
+  }
+
+  function bankingList(lines: NonNullable<ServiceChargeStatementSnapshot["source"]["bankingDetails"]>["allocableCosts"]) {
+    lines.forEach((line) => {
+      const amount = money(Math.abs(Number(line.amount || 0)));
+      const title = `${formatDate(line.value_date || line.booking_date)} - ${amount}`;
+      const descriptionLines = wrap(bankingDescription(line), contentWidth - 20, 8);
+      const rowHeight = Math.max(36, 24 + descriptionLines.length * 10);
+      ensure(rowHeight + 4);
+      current().push(rect(margin, y - rowHeight + 4, contentWidth, rowHeight));
+      drawText(title, margin + 8, y - 12, 9, true);
+      descriptionLines.forEach((lineText, index) => drawText(lineText, margin + 8, y - 25 - index * 10, 8));
+      y -= rowHeight + 4;
+    });
+    y -= 4;
+  }
 
   function table(headers: string[], rows: Cell[][], widths: number[], rightAlign: boolean[] = []) {
     const headerSize = 8;
@@ -171,7 +222,41 @@ export function renderServiceChargeStatementPdf(input: {
   }
 }
 
-function methodLabel(method: string) {
+function bankingLinesForTenant(
+  lines: NonNullable<ServiceChargeStatementSnapshot["source"]["bankingDetails"]>["allocableCosts"],
+  tenant: ServiceChargeStatementSnapshot["allocation"]["tenantResults"][number] | null
+) {
+  if (!tenant) return lines;
+  return lines.filter((line) => {
+    if (line.tenant_external_id) return line.tenant_external_id === tenant.tenantId;
+    if (line.unit_external_id) return line.unit_external_id === tenant.unitId;
+    return true;
+  });
+}
+
+function bankingDescription(line: NonNullable<ServiceChargeStatementSnapshot["source"]["bankingDetails"]>["allocableCosts"][number]) {
+  return [line.applicant_name, line.purpose || line.memo || line.tx_note]
+    .filter(Boolean)
+    .join(" - ")
+    .replace(/\s+/g, " ")
+    .trim() || "Bankposition";
+}
+
+function readableCategory(value: string) {
+  return String(value || "-")
+    .replace(/^.*?:/g, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim() || "-";
+}
+
+function formatDate(value: string) {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value || "-" : parsed.toLocaleDateString("de-DE");
+}
+
+function methodLabel(method: string, directSingleUnitStatement = false) {
+  if (directSingleUnitStatement) return "Direkte Einheitenabrechnung aus den zugeordneten Bankpositionen. Es wird kein Verteilerschluessel angewendet.";
   if (method === "AREA") return "Verteilung nach Flaeche und Belegungstagen.";
   if (method === "FIXED_SHARE") return "Verteilung nach festen Anteilen und Belegungstagen.";
   return "Umlagefaehige Einzelkosten aus der Hausverwaltungsabrechnung; Hausgeldzahlungen wurden nicht als Kosten verteilt.";

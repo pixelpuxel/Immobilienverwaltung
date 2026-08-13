@@ -58,22 +58,18 @@ const tenantCreateSchema = z.object({
 export async function GET(request: NextRequest) {
   const { user, response } = await requireIntegrationUser(request, ["read:tenants"]);
   if (!user) return response;
-  const q = request.nextUrl.searchParams.get("q")?.trim();
   const propertyId = request.nextUrl.searchParams.get("propertyId");
-  const unitId = request.nextUrl.searchParams.get("unitId");
   const current = request.nextUrl.searchParams.get("current");
   const where: Prisma.TenantProfileWhereInput = {
     AND: [
       await tenantAccessWhere(user),
       propertyId ? { unit: { propertyId } } : {},
-      unitId ? { unitId } : {},
-      current === "true" ? { isCurrent: true } : current === "false" ? { isCurrent: false } : {},
-      q ? tenantSearchWhere(q) : {}
+      current === "true" ? { isCurrent: true } : current === "false" ? { isCurrent: false } : {}
     ]
   };
   const tenants = await prisma.tenantProfile.findMany({
     where,
-    include: { unit: { include: { property: { select: { id: true, name: true, address: true } } } }, user: { select: { id: true, email: true, username: true, name: true, active: true } } },
+    include: { unit: { include: { property: { select: { id: true, name: true } } } }, user: { select: { id: true, email: true, username: true, active: true } } },
     orderBy: [{ isCurrent: "desc" }, { updatedAt: "desc" }]
   });
   return NextResponse.json({ items: tenants, nextCursor: null });
@@ -182,21 +178,6 @@ async function tenantAccessWhere(user: { id: string; role: Role; portalInstanceI
   if (user.role === Role.ADMIN) return { user: portalWhere(user) };
   if (user.role === Role.BROKER) return { unit: { propertyId: { in: await brokerPropertyIds(user.id) } } };
   return { userId: user.id };
-}
-
-function tenantSearchWhere(q: string): Prisma.TenantProfileWhereInput {
-  return {
-    OR: [
-      { firstName: { contains: q, mode: "insensitive" } },
-      { lastName: { contains: q, mode: "insensitive" } },
-      { email: { contains: q, mode: "insensitive" } },
-      { user: { username: { contains: q, mode: "insensitive" } } },
-      { user: { name: { contains: q, mode: "insensitive" } } },
-      { unit: { unitNumber: { contains: q, mode: "insensitive" } } },
-      { unit: { property: { name: { contains: q, mode: "insensitive" } } } },
-      { unit: { property: { address: { contains: q, mode: "insensitive" } } } }
-    ]
-  };
 }
 
 function serializeTenant(tenant: {

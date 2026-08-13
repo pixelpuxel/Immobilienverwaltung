@@ -79,7 +79,7 @@ export function ServiceChargeRuleForm({
             {units.map((unit) => (
               <label className="grid grid-cols-[minmax(0,1fr)_120px] items-center gap-3 text-sm" key={unit.id}>
                 <span>{unit.name}<span className="ml-2 text-muted">Portal: {unit.livingArea || 0}</span></span>
-                <input name={`unit_${unit.id}`} inputMode="decimal" defaultValue={unit.value} />
+                <input name={`unit_${unit.id}`} inputMode="decimal" defaultValue={unit.value || (method === "AREA" ? unit.livingArea : "")} />
               </label>
             ))}
           </div>

@@ -144,11 +144,3 @@ export function isServiceChargeStatementSnapshot(value: unknown): value is Servi
     && Boolean(item.property)
     && Boolean(item.allocation);
 }
-
-export function serviceChargeTenantResult(
-  snapshot: ServiceChargeStatementSnapshot,
-  tenantProfileIds: Iterable<string>
-) {
-  const allowedIds = new Set(tenantProfileIds);
-  return snapshot.allocation.tenantResults.find((result) => allowedIds.has(result.tenantId)) || null;
-}

@@ -2,7 +2,7 @@ import { Prisma, Role } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { assertSameOrigin, requireApiUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { asMoneyNumber, calculateColdRent } from "@/lib/rent";
+import { calculateWarmRent } from "@/lib/rent";
 import { unitUpdateSchema } from "@/lib/unit-schema";
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
@@ -15,7 +15,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   if (!existing) return NextResponse.json({ error: "Nicht gefunden." }, { status: 404 });
   const data: Prisma.UnitUpdateInput = { ...body.data };
   if (body.data.rentAmount !== undefined || body.data.garageRent !== undefined || body.data.serviceCharges !== undefined || body.data.warmRent !== undefined) {
-    data.warmRent = calculateColdRent({ ...existing, ...body.data }) + asMoneyNumber(body.data.serviceCharges ?? existing.serviceCharges);
+    data.warmRent = calculateWarmRent({ ...existing, ...body.data });
   }
   return NextResponse.json(await prisma.unit.update({ where: { id: params.id }, data }));
 }
