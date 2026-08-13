@@ -310,7 +310,7 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
     "update_property",
     {
       title: "Immobilie aktualisieren",
-      description: "Aktualisiert Stammdaten, Adresse, Kaufpreis, Darlehen oder Status einer Immobilie.",
+      description: "Aktualisiert Stammdaten, Adresse oder Status einer Immobilie. Fuer Kaufpreis, erwarteten Kaufpreis und valutiertes Darlehen bevorzugt update_property_finance nutzen.",
       inputSchema: {
         id: z.string().trim().min(1),
         data: z.object(propertyInputShape()).partial()
@@ -321,6 +321,28 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
       path: `/api/integrations/v1/properties/${encodeURIComponent(id)}`,
       body: data
     }))
+  );
+
+  server.registerTool(
+    "update_property_finance",
+    {
+      title: "Immobilien-Kaufpreise und Darlehen aktualisieren",
+      description: "Aktualisiert gezielt die Finanzfelder einer Immobilie: purchasePrice ist der echte historische Kaufpreis, expectedPurchasePrice ist die aktuelle Kaufpreisvorstellung/Markterwartung, outstandingLoan ist das valutierte Darlehen. Nutze dieses Tool fuer Kaufpreisdaten aus Kaufvertraegen, Urkunden oder Beleihungs-/Darlehensunterlagen.",
+      inputSchema: {
+        id: z.string().trim().min(1),
+        purchasePrice: money.describe("Echter historischer Kaufpreis der Immobilie. Nicht mit expectedPurchasePrice verwechseln.").optional(),
+        expectedPurchasePrice: money.describe("Aktuelle Kaufpreisvorstellung bzw. erwarteter Verkaufspreis/Marktwert. Nicht mit purchasePrice verwechseln.").optional(),
+        outstandingLoan: money.describe("Aktuell valutiertes Darlehen bzw. Restschuld.").optional()
+      }
+    },
+    async ({ id, purchasePrice, expectedPurchasePrice, outstandingLoan }) => {
+      const body = Object.fromEntries(Object.entries({ purchasePrice, expectedPurchasePrice, outstandingLoan }).filter(([, value]) => value !== undefined));
+      return jsonContent(await portal.json({
+        method: "PATCH",
+        path: `/api/integrations/v1/properties/${encodeURIComponent(id)}`,
+        body
+      }));
+    }
   );
 
   server.registerTool(

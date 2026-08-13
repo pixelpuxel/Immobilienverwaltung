@@ -18,7 +18,7 @@
 - Healthcheck und Benutzer-/Scope-Pruefung.
 - Portalweite Suche.
 - Portal-Agent-Fragen und Konversationskontext.
-- Immobilien lesen/anlegen/aendern.
+- Immobilien lesen/anlegen/aendern, inklusive getrenntem Schreibwerkzeug fuer historischen Kaufpreis, erwarteten Verkaufspreis und valutiertes Darlehen.
 - Einheiten lesen/anlegen/aendern/loeschen.
 - Mieter lesen/anlegen/aendern.
 - Mieterdokumente lesen.
