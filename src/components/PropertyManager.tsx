@@ -22,6 +22,7 @@ type PropertyItem = {
   livingArea: string;
   unitCount: string;
   rentalStatus: string;
+  purchasePrice: string;
   expectedPurchasePrice: string;
   outstandingLoan: string;
   annualColdRent: number;
@@ -93,6 +94,7 @@ export function PropertyManager({ properties }: { properties: PropertyItem[] }) 
                 <label>Wohnflaeche<input name="livingArea" type="number" step="0.01" defaultValue={property.livingArea} /></label>
                 <label>Anzahl Einheiten<input name="unitCount" type="number" defaultValue={property.unitCount} /></label>
                 <label>Vermietungsstatus<select name="rentalStatus" defaultValue={property.rentalStatus || "offen"}>{rentalStatuses.map((status) => <option key={status} value={status}>{status}</option>)}</select></label>
+                <label>Kaufpreis<input name="purchasePrice" type="number" step="0.01" defaultValue={property.purchasePrice} /></label>
                 <label>Kaufpreisvorstellung<input name="expectedPurchasePrice" type="number" step="0.01" defaultValue={property.expectedPurchasePrice} /></label>
                 <label>Valutiertes Darlehen<input name="outstandingLoan" type="number" step="0.01" defaultValue={property.outstandingLoan} /></label>
                 <label>Interne Notizen<textarea name="internalNotes" defaultValue={property.internalNotes} /></label>
@@ -129,6 +131,7 @@ export function PropertyManager({ properties }: { properties: PropertyItem[] }) 
                 <div>{property.documents} Dokumente</div>
               </div>
               <div className="mt-3 grid gap-3 text-sm md:grid-cols-2">
+                <QuickMoneyEdit endpoint={`/api/properties/${property.id}`} field="purchasePrice" label="Kaufpreis" value={property.purchasePrice} />
                 <QuickMoneyEdit endpoint={`/api/properties/${property.id}`} field="expectedPurchasePrice" label="Kaufpreisvorstellung" value={property.expectedPurchasePrice} />
                 <QuickMoneyEdit endpoint={`/api/properties/${property.id}`} field="outstandingLoan" label="Valutiertes Darlehen" value={property.outstandingLoan} />
                 <div className="rounded-md bg-panel p-3">

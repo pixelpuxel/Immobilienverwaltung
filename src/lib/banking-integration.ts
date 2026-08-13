@@ -79,6 +79,24 @@ export type BankingTransactionDetails = Record<string, unknown> & {
   splits?: unknown[];
 };
 
+export type BankingAccount = {
+  id: number;
+  bank_connection_id?: number | null;
+  iban?: string | null;
+  bic?: string | null;
+  account_number?: string | null;
+  subaccount?: string | null;
+  name?: string | null;
+  balance_amount?: string | number | null;
+  balance_currency?: string | null;
+  balance_date?: string | null;
+  balance_at?: string | null;
+  bank_name?: string | null;
+  access_type?: string | null;
+  tx_count?: number | null;
+  last_tx_date?: string | null;
+};
+
 export async function getBankingIntegration(portalInstanceId: string | null) {
   return prisma.bankingIntegrationConfig.findFirst({
     where: { portalInstanceId: portalInstanceId ?? null }
@@ -220,6 +238,14 @@ export async function bankingApiJson<T = unknown>(input: {
     }).catch(() => undefined);
     throw error;
   }
+}
+
+export async function loadBankingAccounts(portalInstanceId: string | null) {
+  const data = await bankingApiJson<{ items?: BankingAccount[] } | BankingAccount[]>({
+    portalInstanceId,
+    path: "/api/v1/accounts"
+  });
+  return Array.isArray(data) ? data : data.items || [];
 }
 
 export async function loadBankingTransactionDetails(input: {

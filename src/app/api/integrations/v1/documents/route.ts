@@ -187,6 +187,7 @@ function documentSearchWhere(q: string): Prisma.DocumentWhereInput {
       { title: { contains: q, mode: "insensitive" } },
       { filename: { contains: q, mode: "insensitive" } },
       { summary: { contains: q, mode: "insensitive" } },
+      { ocrText: { contains: q, mode: "insensitive" } },
       { category: { name: { contains: q, mode: "insensitive" } } },
       { category: { group: { contains: q, mode: "insensitive" } } },
       { property: { name: { contains: q, mode: "insensitive" } } },

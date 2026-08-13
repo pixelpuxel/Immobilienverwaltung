@@ -10,6 +10,11 @@ export const dynamic = "force-dynamic";
 
 const rentalStatuses = ["offen", "frei", "teilvermietet", "voll vermietet", "leerstehend", "reserviert", "in Sanierung"];
 const analysisLabels = {
+  kaufpreis: {
+    title: "Kaufpreise",
+    description: "Originale Kaufpreise je Immobilie und Summe ueber alle Objekte.",
+    valueLabel: "Kaufpreis"
+  },
   immobilienwert: {
     title: "Immobilienwert",
     description: "Kaufpreisvorstellung je Immobilie und Summe ueber alle Objekte.",
@@ -48,12 +53,13 @@ const analysisLabels = {
 } as const;
 
 type AnalysisKey = keyof typeof analysisLabels;
-type AnalysisSortKey = "name" | "value" | "propertyValue" | "loanValue" | "annualColdRent";
+type AnalysisSortKey = "name" | "value" | "purchasePrice" | "propertyValue" | "loanValue" | "annualColdRent";
 type SortDirection = "asc" | "desc";
 type PropertyAnalysisRow = {
   id: string;
   name: string;
   address: string;
+  purchasePrice: number;
   propertyValue: number;
   loanValue: number;
   netValue: number;
@@ -87,6 +93,7 @@ export default async function PropertiesPage({
     livingArea: property.livingArea?.toString() || "",
     unitCount: property.unitCount.toString(),
     rentalStatus: property.rentalStatus || "",
+    purchasePrice: property.purchasePrice?.toString() || "",
     expectedPurchasePrice: property.expectedPurchasePrice?.toString() || "",
     outstandingLoan: property.outstandingLoan?.toString() || "",
     annualColdRent: property.units.reduce((sum, unit) => sum + Number(unit.rentAmount || 0) + Number(unit.garageRent || 0), 0) * 12,
@@ -102,6 +109,7 @@ export default async function PropertiesPage({
   const analysisRows = properties.map((property) => {
     const coldMonthly = property.units.reduce((sum, unit) => sum + Number(unit.rentAmount || 0) + Number(unit.garageRent || 0), 0);
     const warmMonthly = property.units.reduce((sum, unit) => sum + Number(unit.rentAmount || 0) + Number(unit.garageRent || 0) + Number(unit.serviceCharges || 0), 0);
+    const purchasePrice = Number(property.purchasePrice || 0);
     const propertyValue = Number(property.expectedPurchasePrice || 0);
     const loanValue = Number(property.outstandingLoan || 0);
     const netValue = propertyValue - loanValue;
@@ -110,6 +118,7 @@ export default async function PropertiesPage({
       id: property.id,
       name: property.name,
       address: property.address,
+      purchasePrice,
       propertyValue,
       loanValue,
       netValue,
@@ -156,6 +165,7 @@ export default async function PropertiesPage({
           <label>Zustand<input name="condition" /></label>
           <label>Modernisierungen<textarea name="modernizations" /></label>
           <label>Vermietungsstatus<select name="rentalStatus" defaultValue="offen">{rentalStatuses.map((status) => <option key={status} value={status}>{status}</option>)}</select></label>
+          <label>Kaufpreis<input name="purchasePrice" type="number" step="0.01" /></label>
           <label>Kaufpreisvorstellung<input name="expectedPurchasePrice" type="number" step="0.01" /></label>
           <label>Valutiertes Darlehen<input name="outstandingLoan" type="number" step="0.01" /></label>
           <label>Interne Notizen<textarea name="internalNotes" /></label>
@@ -170,7 +180,7 @@ function analysisKey(value?: string): AnalysisKey | null {
 }
 
 function analysisSortKey(value?: string): AnalysisSortKey {
-  return value === "name" || value === "propertyValue" || value === "loanValue" || value === "annualColdRent" || value === "value" ? value : "value";
+  return value === "name" || value === "purchasePrice" || value === "propertyValue" || value === "loanValue" || value === "annualColdRent" || value === "value" ? value : "value";
 }
 
 function sortDirection(value?: string): SortDirection {
@@ -203,7 +213,8 @@ function PropertyAnalysisTable({
             <tr>
               <SortableHeader activeDirection={direction} activeSort={sortKey} label="Immobilie" sort="name" type={type} />
               <SortableHeader activeDirection={direction} activeSort={sortKey} align="right" label={config.valueLabel} sort="value" type={type} />
-              <SortableHeader activeDirection={direction} activeSort={sortKey} align="right" label="Kaufpreis" sort="propertyValue" type={type} />
+              <SortableHeader activeDirection={direction} activeSort={sortKey} align="right" label="Kaufpreis" sort="purchasePrice" type={type} />
+              <SortableHeader activeDirection={direction} activeSort={sortKey} align="right" label="Kaufpreisvorstellung" sort="propertyValue" type={type} />
               <SortableHeader activeDirection={direction} activeSort={sortKey} align="right" label="Darlehen" sort="loanValue" type={type} />
               <SortableHeader activeDirection={direction} activeSort={sortKey} align="right" label="Jahreskaltmiete" sort="annualColdRent" type={type} />
             </tr>
@@ -216,6 +227,7 @@ function PropertyAnalysisTable({
                   <div className="mt-1 text-xs text-muted">{row.address || "Keine Adresse hinterlegt"}</div>
                 </td>
                 <td className="px-4 py-3 text-right font-semibold">{formatAnalysisValue(row, type)}</td>
+                <td className="px-4 py-3 text-right text-muted">{money(row.purchasePrice)}</td>
                 <td className="px-4 py-3 text-right text-muted">{money(row.propertyValue)}</td>
                 <td className="px-4 py-3 text-right text-muted">{money(row.loanValue)}</td>
                 <td className="px-4 py-3 text-right text-muted">{money(row.annualColdRent)}</td>
@@ -226,6 +238,7 @@ function PropertyAnalysisTable({
             <tr>
               <td className="px-4 py-3">Summe / Gesamt</td>
               <td className="px-4 py-3 text-right">{formatTotal(rows, type, total)}</td>
+              <td className="px-4 py-3 text-right">{money(rows.reduce((sum, row) => sum + row.purchasePrice, 0))}</td>
               <td className="px-4 py-3 text-right">{money(rows.reduce((sum, row) => sum + row.propertyValue, 0))}</td>
               <td className="px-4 py-3 text-right">{money(rows.reduce((sum, row) => sum + row.loanValue, 0))}</td>
               <td className="px-4 py-3 text-right">{money(rows.reduce((sum, row) => sum + row.annualColdRent, 0))}</td>
@@ -288,6 +301,7 @@ function compareRows(a: PropertyAnalysisRow, b: PropertyAnalysisRow, type: Analy
 }
 
 function sortableNumericValue(row: PropertyAnalysisRow, type: AnalysisKey, sortKey: AnalysisSortKey) {
+  if (sortKey === "purchasePrice") return row.purchasePrice;
   if (sortKey === "propertyValue") return row.propertyValue;
   if (sortKey === "loanValue") return row.loanValue;
   if (sortKey === "annualColdRent") return row.annualColdRent;
@@ -295,6 +309,7 @@ function sortableNumericValue(row: PropertyAnalysisRow, type: AnalysisKey, sortK
 }
 
 function numericValue(row: PropertyAnalysisRow, type: AnalysisKey) {
+  if (type === "kaufpreis") return row.purchasePrice;
   if (type === "immobilienwert") return row.propertyValue;
   if (type === "darlehen") return row.loanValue;
   if (type === "nettowert") return row.netValue;

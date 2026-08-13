@@ -506,6 +506,42 @@ Contract-Links:
 - Agent/Telegram koennen signierte Links mit `expires` und `token` erzeugen; sie sind standardmaessig 24 Stunden gueltig.
 - Wenn `format=pdf` angefragt wird, aber keine PDF existiert, liefert die Route als Fallback die DOCX mit passendem Content-Type statt eines toten Links.
 
+## Dokument-OCR
+
+OCR ist eine feste Portal-Funktion im Docker-Image. Beim Upload kann `runOcr: true` gesetzt werden; alternativ kann OCR fuer bestehende Dokumente nachtraeglich gestartet werden.
+
+Upload mit OCR:
+
+```json
+POST /api/integrations/v1/documents
+Authorization: Bearer <token>
+
+{
+  "filename": "scan.pdf",
+  "mimeType": "application/pdf",
+  "fileBase64": "...",
+  "propertyId": "...",
+  "categoryId": "...",
+  "runOcr": true
+}
+```
+
+OCR-Status und erkannten Text lesen:
+
+```http
+GET /api/integrations/v1/documents/{documentId}/ocr
+Authorization: Bearer <token mit read:documents>
+```
+
+OCR nachtraeglich ausfuehren:
+
+```http
+POST /api/integrations/v1/documents/{documentId}/ocr
+Authorization: Bearer <token mit write:documents>
+```
+
+Der erkannte Text wird am Dokument in `ocrText` gespeichert, in die normale Suche einbezogen und beim semantischen Reindex in Qdrant aufgenommen. Interne Dateipfade werden nicht ausgegeben.
+
 Testbeispiel Telegram:
 
 ```text
@@ -557,3 +593,84 @@ Das Backup ist JSON und absichtlich lesbar:
 ```
 
 Beim Bearbeiten per Texteditor sollten IDs erhalten bleiben, damit Beziehungen zwischen Tabellen weiter stimmen.
+
+## Vermoegen, Darlehen und Bankkonto-Mapping
+
+Die Vermoegensfunktionen verwenden dieselbe Banking-Konfiguration wie die Nebenkostenabrechnung. Bankkonten werden nicht vollstaendig im Portal gespeichert; gespeichert werden Zuordnungen und zuletzt synchronisierte Werte.
+
+Wertfelder bei Immobilien:
+
+- `purchasePrice`: originaler Kaufpreis / Anschaffungspreis aus dem Kaufvertrag.
+- `expectedPurchasePrice`: Kaufpreisvorstellung bzw. erwarteter aktueller Verkaufswert.
+- `outstandingLoan`: valutiertes Darlehen; kann manuell gepflegt oder aus gemappten Banking-Konten synchronisiert werden.
+
+Auswertungen:
+
+- `/properties?auswertung=kaufpreis`: Tabelle der originalen Kaufpreise.
+- `/properties?auswertung=immobilienwert`: Tabelle der Kaufpreisvorstellungen.
+
+Bankkonten aus Banking lesen:
+
+```http
+GET /api/integrations/v1/net-worth/accounts
+Authorization: Bearer <token mit read:properties>
+```
+
+Nettowert-Zusammenfassung lesen:
+
+```http
+GET /api/integrations/v1/net-worth
+Authorization: Bearer <token mit read:properties>
+```
+
+Darlehenskonto einer Immobilie zuordnen:
+
+```http
+POST /api/integrations/v1/net-worth/property-loans
+Authorization: Bearer <token mit write:settings>
+
+{
+  "propertyId": "...",
+  "bankingAccountId": 123,
+  "label": "Darlehen Comdirect"
+}
+```
+
+Sonstige Vermoegenswerte oder Verbindlichkeiten erfassen:
+
+```http
+POST /api/integrations/v1/net-worth/assets
+Authorization: Bearer <token mit write:settings>
+
+{
+  "name": "Girokonto Comdirect",
+  "type": "ASSET",
+  "manualValue": null,
+  "bankingAccountId": 123,
+  "bankingAccountLabel": "Comdirect · Girokonto",
+  "note": "Wird aus Banking aktualisiert"
+}
+```
+
+Erlaubte `type`-Werte:
+
+- `ASSET`: positiver Vermoegenswert
+- `LIABILITY`: Verbindlichkeit, wird im Nettowert abgezogen
+
+Synchronisieren:
+
+```http
+POST /api/integrations/v1/net-worth/sync
+Authorization: Bearer <token mit write:settings>
+```
+
+Der Sync aktualisiert:
+
+- `Property.outstandingLoan` aus gemappten Darlehenskonten
+- `NetWorthAsset.lastSyncedValue` fuer gemappte Bankkonten
+
+Web-Oberflaeche:
+
+```text
+/net-worth
+```

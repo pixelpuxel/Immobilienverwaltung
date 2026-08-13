@@ -129,6 +129,7 @@ function documentSearchWhere(user: ScopedUser, terms: string[], brokerIds: strin
       ...containsAny("title", terms),
       ...containsAny("filename", terms),
       ...containsAny("summary", terms),
+      ...containsAny("ocrText", terms),
       { tags: { hasSome: terms } },
       { category: { OR: [...containsAny("name", terms), ...containsAny("group", terms)] } }
     ]

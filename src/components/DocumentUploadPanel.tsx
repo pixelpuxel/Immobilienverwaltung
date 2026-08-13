@@ -76,6 +76,13 @@ export function DocumentUploadPanel({
       </label>
       <label>Kategorie<select name="categoryId" defaultValue={defaultCategoryId}><option value="">Keine</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.label}</option>)}</select></label>
       <label>Status<select name="status"><option value="AVAILABLE">vorhanden</option><option value="REQUESTED">angefragt</option><option value="SHARED">freigegeben</option><option value="MISSING">fehlt</option><option value="NOT_RELEVANT">nicht relevant</option></select></label>
+      <label className="flex items-start gap-3 rounded-md border border-line bg-white p-3 text-sm">
+        <input className="mt-1 h-4 w-4" name="runOcr" type="checkbox" value="true" />
+        <span>
+          <span className="block font-semibold">OCR-Texterkennung ausfuehren</span>
+          <span className="block text-xs text-muted">Fuer PDFs und Bilder. Der erkannte Text wird am Dokument gespeichert und in die Suche aufgenommen.</span>
+        </span>
+      </label>
     </UploadForm>
   );
 }

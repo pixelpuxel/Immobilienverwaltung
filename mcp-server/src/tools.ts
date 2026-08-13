@@ -871,6 +871,35 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
   );
 
   server.registerTool(
+    "get_document_ocr",
+    {
+      title: "Dokument-OCR lesen",
+      description: "Liest OCR-Status und erkannten Text eines Dokuments. Nutze dies, wenn ein Dokument inhaltlich ausgewertet werden soll.",
+      inputSchema: {
+        id: z.string().trim().min(1)
+      }
+    },
+    async ({ id }) => jsonContent(await portal.json({
+      path: `/api/integrations/v1/documents/${encodeURIComponent(id)}/ocr`
+    }))
+  );
+
+  server.registerTool(
+    "run_document_ocr",
+    {
+      title: "Dokument-OCR ausführen",
+      description: "Fuehrt OCR fuer ein bestehendes PDF-/Bilddokument aus und speichert den Text im Portal. Braucht write:documents.",
+      inputSchema: {
+        id: z.string().trim().min(1)
+      }
+    },
+    async ({ id }) => jsonContent(await portal.json({
+      method: "POST",
+      path: `/api/integrations/v1/documents/${encodeURIComponent(id)}/ocr`
+    }))
+  );
+
+  server.registerTool(
     "list_contract_templates",
     {
       title: "Vertragsvorlagen listen",

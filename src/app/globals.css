@@ -83,3 +83,13 @@ button,
   text-decoration: none;
   line-height: 1.2;
 }
+
+.button-danger {
+  border-radius: 6px;
+  background: #b91c1c;
+  color: white;
+  padding: 10px 14px;
+  font-weight: 700;
+  max-width: 100%;
+  white-space: normal;
+}

@@ -100,6 +100,7 @@ export default async function PropertyDetailPage({ params }: { params: { id: str
       </div>
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {canEdit ? <Metric label="Kaufpreis" value={property.purchasePrice ? formatCurrency(Number(property.purchasePrice)) : "offen"} /> : null}
         {canEdit ? <Metric label="Kaufpreisvorstellung" value={property.expectedPurchasePrice ? formatCurrency(Number(property.expectedPurchasePrice)) : "offen"} /> : null}
         {canEdit ? <Metric label="Valutiertes Darlehen" value={property.outstandingLoan ? formatCurrency(Number(property.outstandingLoan)) : "offen"} /> : null}
         {canEdit ? <Metric label="Nettowert" value={expectedPrice ? formatCurrency(netValue) : "offen"} /> : null}
@@ -160,6 +161,7 @@ export default async function PropertyDetailPage({ params }: { params: { id: str
               <EditableField canEdit={canEdit} endpoint={propertyEndpoint} field="heatingType" label="Heizungsart" value={property.heatingType || ""} />
               <EditableField canEdit={canEdit} endpoint={propertyEndpoint} field="condition" label="Zustand" value={property.condition || ""} />
               <EditableField canEdit={canEdit} endpoint={propertyEndpoint} field="rentalStatus" label="Vermietungsstatus" value={property.rentalStatus || ""} options={["frei", "teilvermietet", "voll vermietet"]} type="select" />
+              {canEdit ? <EditableField canEdit={canEdit} endpoint={propertyEndpoint} field="purchasePrice" label="Kaufpreis" type="number" value={property.purchasePrice?.toString() || ""} displayValue={property.purchasePrice ? formatCurrency(Number(property.purchasePrice)) : ""} /> : null}
               {canEdit ? <EditableField canEdit={canEdit} endpoint={propertyEndpoint} field="expectedPurchasePrice" label="Kaufpreisvorstellung" type="number" value={property.expectedPurchasePrice?.toString() || ""} displayValue={property.expectedPurchasePrice ? formatCurrency(Number(property.expectedPurchasePrice)) : ""} /> : null}
               {canEdit ? <EditableField canEdit={canEdit} endpoint={propertyEndpoint} field="outstandingLoan" label="Valutiertes Darlehen" type="number" value={property.outstandingLoan?.toString() || ""} displayValue={property.outstandingLoan ? formatCurrency(Number(property.outstandingLoan)) : ""} /> : null}
             </div>

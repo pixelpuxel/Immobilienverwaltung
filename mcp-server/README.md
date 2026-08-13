@@ -207,6 +207,8 @@ Der Server stellt fachliche Tools bereit, z. B.:
 - `delete_document`
 - `download_document`
 - `get_document_links`
+- `get_document_ocr`
+- `run_document_ocr`
 - `list_contract_templates`
 - `derive_contract_template`
 - `create_contract`
@@ -237,11 +239,36 @@ Der Server stellt fachliche Tools bereit, z. B.:
 - `update_user`
 - `list_portal_instances`
 - `switch_portal_instance`
+- `list_banking_accounts`
+- `get_net_worth_summary`
+- `list_net_worth_assets`
+- `create_net_worth_asset`
+- `update_net_worth_asset`
+- `delete_net_worth_asset`
+- `list_property_loan_account_mappings`
+- `map_property_loan_account`
+- `unmap_property_loan_account`
+- `sync_net_worth_from_banking`
 - `integration_api_request`
 
 `integration_api_request` ist ein kontrollierter Fallback fuer neue Portal-Endpunkte. Er erlaubt nur relative Pfade unter `/api/integrations/v1/...` und keine externen URLs.
 
-Dokument-Uploads sollen bevorzugt ueber `upload_document` erfolgen. Das Tool akzeptiert bevorzugt einen Chat-/MCP-Dateianhang im Feld `file` und weiterhin `fileBase64` als Rueckfall. Weitere Felder sind `filename`, optional `mimeType`, `title`, `propertyId`, `unitId`, `tenantProfileId`, `categoryId`, `summary`, `tags` und `documentYear`.
+Dokument-Uploads sollen bevorzugt ueber `upload_document` erfolgen. Das Tool akzeptiert bevorzugt einen Chat-/MCP-Dateianhang im Feld `file` und weiterhin `fileBase64` als Rueckfall. Weitere Felder sind `filename`, optional `mimeType`, `title`, `propertyId`, `unitId`, `tenantProfileId`, `categoryId`, `summary`, `tags`, `documentYear` und `runOcr`.
+
+OCR:
+
+- `runOcr: true` fuehrt beim Upload OCR fuer PDF- und Bilddateien aus.
+- `run_document_ocr` verarbeitet ein bestehendes Dokument nachtraeglich.
+- `get_document_ocr` liefert Status, Fehler und erkannten Text.
+- OCR-Text wird im Portal gespeichert und in die strukturierte sowie semantische Suche aufgenommen.
+
+Vermoegen und Darlehen:
+
+- `list_banking_accounts` liest die verfuegbaren Bankkonten aus der Banking-API.
+- `get_net_worth_summary` liefert Immobilienwerte, Darlehen, sonstige Werte und Gesamt-Nettowert.
+- `map_property_loan_account` verknuepft ein Bankkonto als Darlehenskonto mit einer Immobilie.
+- `sync_net_worth_from_banking` aktualisiert die valutierten Darlehen und gemappte sonstige Vermoegenswerte.
+- `create_net_worth_asset` legt freie Vermoegenswerte/Verbindlichkeiten an oder mappt Girokonto, Tagesgeld, Festgeld oder andere Konten.
 
 Mieterdokumente wie Kuendigungen, Kautionsnachweise oder persoenliche Mietvertraege sollen bevorzugt ueber `upload_tenant_document` hochgeladen werden. Das Tool akzeptiert `tenantProfileId`, `file` oder `fileBase64`, `filename`, optional `categoryName` wie `Kuendigungen` und loest die Dokumentkategorie intern auf.
 

@@ -39,6 +39,7 @@ export const propertySchema = z.object({
   condition: z.string().optional(),
   modernizations: z.string().optional(),
   rentalStatus: z.string().optional(),
+  purchasePrice: optionalNumber,
   expectedPurchasePrice: optionalNumber,
   outstandingLoan: optionalNumber,
   internalNotes: z.string().optional()

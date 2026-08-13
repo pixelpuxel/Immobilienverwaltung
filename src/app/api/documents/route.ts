@@ -5,6 +5,7 @@ import { indexDocument } from "@/lib/ai-search";
 import { assertSameOrigin, clientIp, requireApiUser } from "@/lib/auth";
 import { buildDocumentMetadata, extractDocumentYear } from "@/lib/document-metadata";
 import { saveUpload } from "@/lib/files";
+import { runDocumentOcr } from "@/lib/ocr";
 import { brokerPropertyIds, brokerVisibleDocumentWhere, tenantUnitId } from "@/lib/permissions";
 import { assertDocumentCategoryInPortal, assertPropertyInPortal, assertUnitInPortal, portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
@@ -203,6 +204,7 @@ export async function POST(request: NextRequest) {
   const documentYear = documentYearValue ? Number(documentYearValue) : null;
   const isPropertyImage = String(form.get("isPropertyImage") || "") === "true";
   const isPrimaryImage = String(form.get("isPrimaryImage") || "") === "true";
+  const runOcr = String(form.get("runOcr") || "") === "true";
   if (documentYear !== null && (!Number.isInteger(documentYear) || documentYear < 1900 || documentYear > 2100)) {
     return NextResponse.json({ error: "Abrechnungsjahr ist ungueltig." }, { status: 400 });
   }
@@ -262,6 +264,11 @@ export async function POST(request: NextRequest) {
       data: metadata
     });
     await auditLog({ userId: user.id, action: AuditAction.FILE_UPLOADED, entity: "Document", entityId: document.id, ipAddress: clientIp(request) });
+    if (runOcr) {
+      runDocumentOcr(document.id)
+        .then(() => indexDocument(document.id))
+        .catch((error) => console.error("Document OCR failed", document.id, error));
+    }
     indexDocument(document.id).catch((error) => console.error("Document index failed", document.id, error));
     uploadedDocuments.push(enrichedDocument);
   }

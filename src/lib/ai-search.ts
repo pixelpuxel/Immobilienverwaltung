@@ -221,6 +221,7 @@ async function documentIndexText(document: {
   storagePath: string;
   summary: string | null;
   tags: string[];
+  ocrText?: string | null;
   property?: { name: string; address: string; rentalStatus: string | null; objectType: string | null } | null;
   unit?: { unitNumber: string; floor: string | null; property?: { name: string; address: string } | null } | null;
   category?: { group: string; name: string; description: string | null } | null;
@@ -229,6 +230,7 @@ async function documentIndexText(document: {
     document.title,
     document.filename,
     document.summary,
+    document.ocrText ? document.ocrText.slice(0, 20000) : "",
     document.tags.join(", "),
     document.property ? `${document.property.name} ${document.property.address} ${document.property.rentalStatus || ""} ${document.property.objectType || ""}` : "",
     document.unit ? `${document.unit.property?.name || ""} ${document.unit.property?.address || ""} Einheit ${document.unit.unitNumber} ${document.unit.floor || ""}` : "",
