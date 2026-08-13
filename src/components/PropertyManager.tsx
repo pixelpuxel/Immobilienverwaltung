@@ -94,7 +94,7 @@ export function PropertyManager({ properties }: { properties: PropertyItem[] }) 
                 <label>Wohnflaeche<input name="livingArea" type="number" step="0.01" defaultValue={property.livingArea} /></label>
                 <label>Anzahl Einheiten<input name="unitCount" type="number" defaultValue={property.unitCount} /></label>
                 <label>Vermietungsstatus<select name="rentalStatus" defaultValue={property.rentalStatus || "offen"}>{rentalStatuses.map((status) => <option key={status} value={status}>{status}</option>)}</select></label>
-                <label>Tatsächlicher Kaufpreis (EUR)<input name="purchasePrice" type="number" step="0.01" defaultValue={property.purchasePrice} /></label>
+                <label>Kaufpreis<input name="purchasePrice" type="number" step="0.01" defaultValue={property.purchasePrice} /></label>
                 <label>Kaufpreisvorstellung<input name="expectedPurchasePrice" type="number" step="0.01" defaultValue={property.expectedPurchasePrice} /></label>
                 <label>Valutiertes Darlehen<input name="outstandingLoan" type="number" step="0.01" defaultValue={property.outstandingLoan} /></label>
                 <label>Interne Notizen<textarea name="internalNotes" defaultValue={property.internalNotes} /></label>
@@ -130,12 +130,10 @@ export function PropertyManager({ properties }: { properties: PropertyItem[] }) 
                 <div>{property.livingArea || "-"} qm Wohnflaeche</div>
                 <div>{property.documents} Dokumente</div>
               </div>
-              <div className="mt-3 grid gap-3 text-sm md:grid-cols-3">
-                <QuickMoneyEdit endpoint={`/api/properties/${property.id}`} field="purchasePrice" label="Tatsächlicher Kaufpreis" value={property.purchasePrice} />
+              <div className="mt-3 grid gap-3 text-sm md:grid-cols-2">
+                <QuickMoneyEdit endpoint={`/api/properties/${property.id}`} field="purchasePrice" label="Kaufpreis" value={property.purchasePrice} />
                 <QuickMoneyEdit endpoint={`/api/properties/${property.id}`} field="expectedPurchasePrice" label="Kaufpreisvorstellung" value={property.expectedPurchasePrice} />
                 <QuickMoneyEdit endpoint={`/api/properties/${property.id}`} field="outstandingLoan" label="Valutiertes Darlehen" value={property.outstandingLoan} />
-                <FinanceMetric label="Wertdifferenz" value={differenceText(property.expectedPurchasePrice, property.purchasePrice)} />
-                <FinanceMetric label="Eigenkapital" value={differenceText(property.expectedPurchasePrice, property.outstandingLoan)} />
                 <div className="rounded-md bg-panel p-3">
                   <div className="text-xs font-semibold text-muted">Rendite</div>
                   <div className="mt-1 font-semibold">{yieldText(property.annualColdRent, Number(property.expectedPurchasePrice || 0))}</div>
@@ -162,18 +160,4 @@ export function PropertyManager({ properties }: { properties: PropertyItem[] }) 
 function yieldText(annualColdRent: number, base: number) {
   if (!base || base <= 0) return "offen";
   return new Intl.NumberFormat("de-DE", { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(annualColdRent / base);
-}
-
-function differenceText(left: string, right: string) {
-  if (left === "" || right === "") return "offen";
-  return new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(Number(left) - Number(right));
-}
-
-function FinanceMetric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-md bg-panel p-3">
-      <div className="text-xs font-semibold text-muted">{label}</div>
-      <div className="mt-1 font-semibold">{value}</div>
-    </div>
-  );
 }

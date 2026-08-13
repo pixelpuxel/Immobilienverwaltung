@@ -1,51 +1,44 @@
-import { AuditAction } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
-
-import { auditLog } from "@/lib/audit";
-import { runAndStoreDocumentOcr } from "@/lib/document-ocr";
-import { requireIntegrationUser } from "@/lib/integration-auth";
-import { canAccessDocument } from "@/lib/permissions";
-import { portalWhere } from "@/lib/portal-instance";
+import { indexDocument } from "@/lib/ai-search";
+import { integrationError, requireIntegrationUser } from "@/lib/integration-auth";
+import { integrationDocumentVisibilityWhere } from "@/lib/integration-document-access";
+import { isOcrSupported, runDocumentOcr } from "@/lib/ocr";
 import { prisma } from "@/lib/prisma";
-
-export const maxDuration = 900;
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   const { user, response } = await requireIntegrationUser(request, ["read:documents"]);
   if (!user) return response;
   const document = await prisma.document.findFirst({
-    where: { id: params.id, ...portalWhere(user) },
-    select: { id: true, ocrText: true, ocrStatus: true, ocrProcessedAt: true, ocrError: true }
+    where: { AND: [{ id: params.id }, await integrationDocumentVisibilityWhere(user)] }
   });
-  if (!document || !(await canAccessDocument(user, params.id, true))) {
-    return NextResponse.json({ error: { code: "FORBIDDEN", message: "Nicht erlaubt." } }, { status: 403 });
-  }
-  return NextResponse.json(document);
+  if (!document) return integrationError("NOT_FOUND", "Dokument wurde nicht gefunden.", 404);
+  return NextResponse.json({
+    documentId: document.id,
+    supported: isOcrSupported(document),
+    status: document.ocrStatus || null,
+    processedAt: document.ocrProcessedAt,
+    error: document.ocrError,
+    text: document.ocrText || ""
+  });
 }
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   const { user, response } = await requireIntegrationUser(request, ["write:documents"]);
   if (!user) return response;
   const document = await prisma.document.findFirst({
-    where: { id: params.id, ...portalWhere(user) },
-    select: { id: true, filename: true, mimeType: true, storagePath: true }
+    where: { AND: [{ id: params.id }, await integrationDocumentVisibilityWhere(user)] }
   });
-  if (!document || !(await canAccessDocument(user, params.id, true))) {
-    return NextResponse.json({ error: { code: "FORBIDDEN", message: "Nicht erlaubt." } }, { status: 403 });
+  if (!document) return integrationError("NOT_FOUND", "Dokument wurde nicht gefunden.", 404);
+  const result = await runDocumentOcr(document.id);
+  if (result.status === "DONE" || result.status === "EMPTY") {
+    indexDocument(document.id).catch((error) => console.error("Document index failed after OCR", document.id, error));
   }
-  try {
-    const result = await runAndStoreDocumentOcr(document);
-    await auditLog({
-      userId: user.id,
-      action: AuditAction.FILE_VIEWED,
-      entity: "Document",
-      entityId: document.id,
-      ipAddress: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "integration",
-      detail: { source: "integration-ocr", ocrStatus: result.ocrStatus }
-    });
-    return NextResponse.json(result);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "OCR fehlgeschlagen.";
-    return NextResponse.json({ error: { code: "OCR_FAILED", message } }, { status: 500 });
-  }
+  return NextResponse.json({
+    documentId: document.id,
+    supported: isOcrSupported(document),
+    status: result.status,
+    error: result.error || null,
+    textLength: result.text.length,
+    processedAt: result.document.ocrProcessedAt
+  });
 }

@@ -59,20 +59,6 @@ export function ApiTokenManager({ initialTokens, mcpEndpoint }: { initialTokens:
     setTokens((current) => current.map((token) => token.id === id ? { ...token, revokedAt: new Date().toISOString() } : token));
   }
 
-  async function deleteInvalidTokens() {
-    setMessage("");
-    const response = await fetch("/api/api-tokens", { method: "DELETE" });
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      setMessage(body.error || "Ungueltige Tokens konnten nicht geloescht werden.");
-      return;
-    }
-    setTokens((current) => current.filter((token) => !isInvalidToken(token)));
-    setMessage(`${body.deleted || 0} ungueltige Tokens geloescht.`);
-  }
-
-  const invalidTokenCount = tokens.filter(isInvalidToken).length;
-
   return (
     <section className="rounded-lg border border-line bg-white">
       <div className="border-b border-line p-4">
@@ -121,13 +107,6 @@ export function ApiTokenManager({ initialTokens, mcpEndpoint }: { initialTokens:
         </div>
       ) : null}
       {message ? <div className="border-t border-line p-4 text-sm font-semibold text-red-700">{message}</div> : null}
-      {invalidTokenCount ? (
-        <div className="flex justify-end border-t border-line p-4">
-          <button className="button-secondary px-3 py-2 text-sm" onClick={deleteInvalidTokens} type="button">
-            Ungueltige Tokens loeschen ({invalidTokenCount})
-          </button>
-        </div>
-      ) : null}
       <div className="divide-y divide-line border-t border-line">
         {tokens.length ? tokens.map((token) => (
           <div className="grid gap-2 p-4 text-sm" key={token.id}>
@@ -136,8 +115,8 @@ export function ApiTokenManager({ initialTokens, mcpEndpoint }: { initialTokens:
                 <div className="font-bold">{token.name}</div>
                 <div className="text-xs text-muted">Erstellt: {formatDate(token.createdAt)} · Zuletzt: {token.lastUsedAt ? formatDate(token.lastUsedAt) : "nie"}</div>
               </div>
-              {isInvalidToken(token) ? (
-                <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-700">{token.revokedAt ? "widerrufen" : "abgelaufen"}</span>
+              {token.revokedAt ? (
+                <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-700">widerrufen</span>
               ) : (
                 <button className="button-secondary px-3 py-2 text-sm" onClick={() => revokeToken(token.id)} type="button">Widerrufen</button>
               )}
@@ -154,8 +133,4 @@ export function ApiTokenManager({ initialTokens, mcpEndpoint }: { initialTokens:
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("de-DE", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
-}
-
-function isInvalidToken(token: ApiTokenRow) {
-  return Boolean(token.revokedAt) || Boolean(token.expiresAt && new Date(token.expiresAt) <= new Date());
 }

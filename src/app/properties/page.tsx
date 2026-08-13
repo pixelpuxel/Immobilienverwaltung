@@ -11,8 +11,8 @@ export const dynamic = "force-dynamic";
 const rentalStatuses = ["offen", "frei", "teilvermietet", "voll vermietet", "leerstehend", "reserviert", "in Sanierung"];
 const analysisLabels = {
   kaufpreis: {
-    title: "Historische Kaufpreise",
-    description: "Tatsächlicher Kaufpreis je Immobilie, bei Altbeträgen und mehreren Erwerbsvorgängen auf Euro normalisiert.",
+    title: "Kaufpreise",
+    description: "Originale Kaufpreise je Immobilie und Summe ueber alle Objekte.",
     valueLabel: "Kaufpreis"
   },
   immobilienwert: {
@@ -26,19 +26,9 @@ const analysisLabels = {
     valueLabel: "Valutiertes Darlehen"
   },
   nettowert: {
-    title: "Eigenkapital",
+    title: "Nettowert",
     description: "Kaufpreisvorstellung abzüglich valutiertem Darlehen.",
-    valueLabel: "Eigenkapital"
-  },
-  eigenkapital: {
-    title: "Eigenkapital",
-    description: "Kaufpreisvorstellung abzüglich valutiertem Darlehen.",
-    valueLabel: "Eigenkapital"
-  },
-  wertdifferenz: {
-    title: "Wertdifferenz",
-    description: "Kaufpreisvorstellung abzüglich tatsächlichem Kaufpreis.",
-    valueLabel: "Wertdifferenz"
+    valueLabel: "Nettowert"
   },
   rendite: {
     title: "Rendite",
@@ -47,7 +37,7 @@ const analysisLabels = {
   },
   "gehebelte-rendite": {
     title: "Gehebelte Rendite",
-    description: "Jahreskaltmiete geteilt durch Eigenkapital.",
+    description: "Jahreskaltmiete geteilt durch Nettowert.",
     valueLabel: "Gehebelte Rendite"
   },
   kaltmiete: {
@@ -70,12 +60,9 @@ type PropertyAnalysisRow = {
   name: string;
   address: string;
   purchasePrice: number;
-  hasPurchasePrice: boolean;
   propertyValue: number;
   loanValue: number;
   netValue: number;
-  valueGain: number | null;
-  equity: number | null;
   coldMonthly: number;
   warmMonthly: number;
   annualColdRent: number;
@@ -122,11 +109,8 @@ export default async function PropertiesPage({
   const analysisRows = properties.map((property) => {
     const coldMonthly = property.units.reduce((sum, unit) => sum + Number(unit.rentAmount || 0) + Number(unit.garageRent || 0), 0);
     const warmMonthly = property.units.reduce((sum, unit) => sum + Number(unit.rentAmount || 0) + Number(unit.garageRent || 0) + Number(unit.serviceCharges || 0), 0);
-    const propertyValue = Number(property.expectedPurchasePrice || 0);
     const purchasePrice = Number(property.purchasePrice || 0);
-    const hasPurchasePrice = property.purchasePrice !== null;
-    const hasPropertyValue = property.expectedPurchasePrice !== null;
-    const hasLoanValue = property.outstandingLoan !== null;
+    const propertyValue = Number(property.expectedPurchasePrice || 0);
     const loanValue = Number(property.outstandingLoan || 0);
     const netValue = propertyValue - loanValue;
     const annualColdRent = coldMonthly * 12;
@@ -135,12 +119,9 @@ export default async function PropertiesPage({
       name: property.name,
       address: property.address,
       purchasePrice,
-      hasPurchasePrice,
       propertyValue,
       loanValue,
       netValue,
-      valueGain: hasPurchasePrice && hasPropertyValue ? propertyValue - purchasePrice : null,
-      equity: hasPropertyValue && hasLoanValue ? propertyValue - loanValue : null,
       coldMonthly,
       warmMonthly,
       annualColdRent,
@@ -184,7 +165,7 @@ export default async function PropertiesPage({
           <label>Zustand<input name="condition" /></label>
           <label>Modernisierungen<textarea name="modernizations" /></label>
           <label>Vermietungsstatus<select name="rentalStatus" defaultValue="offen">{rentalStatuses.map((status) => <option key={status} value={status}>{status}</option>)}</select></label>
-          <label>Tatsächlicher Kaufpreis (EUR)<input name="purchasePrice" type="number" step="0.01" /></label>
+          <label>Kaufpreis<input name="purchasePrice" type="number" step="0.01" /></label>
           <label>Kaufpreisvorstellung<input name="expectedPurchasePrice" type="number" step="0.01" /></label>
           <label>Valutiertes Darlehen<input name="outstandingLoan" type="number" step="0.01" /></label>
           <label>Interne Notizen<textarea name="internalNotes" /></label>
@@ -227,7 +208,7 @@ function PropertyAnalysisTable({
         <p className="mt-1 text-sm text-muted">{config.description}</p>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[980px] text-left text-sm">
+        <table className="w-full min-w-[760px] text-left text-sm">
           <thead className="bg-panel text-xs uppercase text-muted">
             <tr>
               <SortableHeader activeDirection={direction} activeSort={sortKey} label="Immobilie" sort="name" type={type} />
@@ -246,7 +227,7 @@ function PropertyAnalysisTable({
                   <div className="mt-1 text-xs text-muted">{row.address || "Keine Adresse hinterlegt"}</div>
                 </td>
                 <td className="px-4 py-3 text-right font-semibold">{formatAnalysisValue(row, type)}</td>
-                <td className="px-4 py-3 text-right text-muted">{row.hasPurchasePrice ? money(row.purchasePrice) : "offen"}</td>
+                <td className="px-4 py-3 text-right text-muted">{money(row.purchasePrice)}</td>
                 <td className="px-4 py-3 text-right text-muted">{money(row.propertyValue)}</td>
                 <td className="px-4 py-3 text-right text-muted">{money(row.loanValue)}</td>
                 <td className="px-4 py-3 text-right text-muted">{money(row.annualColdRent)}</td>
@@ -257,7 +238,7 @@ function PropertyAnalysisTable({
             <tr>
               <td className="px-4 py-3">Summe / Gesamt</td>
               <td className="px-4 py-3 text-right">{formatTotal(rows, type, total)}</td>
-              <td className="px-4 py-3 text-right">{money(rows.reduce((sum, row) => sum + (row.hasPurchasePrice ? row.purchasePrice : 0), 0))}</td>
+              <td className="px-4 py-3 text-right">{money(rows.reduce((sum, row) => sum + row.purchasePrice, 0))}</td>
               <td className="px-4 py-3 text-right">{money(rows.reduce((sum, row) => sum + row.propertyValue, 0))}</td>
               <td className="px-4 py-3 text-right">{money(rows.reduce((sum, row) => sum + row.loanValue, 0))}</td>
               <td className="px-4 py-3 text-right">{money(rows.reduce((sum, row) => sum + row.annualColdRent, 0))}</td>
@@ -320,7 +301,7 @@ function compareRows(a: PropertyAnalysisRow, b: PropertyAnalysisRow, type: Analy
 }
 
 function sortableNumericValue(row: PropertyAnalysisRow, type: AnalysisKey, sortKey: AnalysisSortKey) {
-  if (sortKey === "purchasePrice") return row.hasPurchasePrice ? row.purchasePrice : Number.NEGATIVE_INFINITY;
+  if (sortKey === "purchasePrice") return row.purchasePrice;
   if (sortKey === "propertyValue") return row.propertyValue;
   if (sortKey === "loanValue") return row.loanValue;
   if (sortKey === "annualColdRent") return row.annualColdRent;
@@ -331,8 +312,7 @@ function numericValue(row: PropertyAnalysisRow, type: AnalysisKey) {
   if (type === "kaufpreis") return row.purchasePrice;
   if (type === "immobilienwert") return row.propertyValue;
   if (type === "darlehen") return row.loanValue;
-  if (type === "nettowert" || type === "eigenkapital") return row.equity || 0;
-  if (type === "wertdifferenz") return row.valueGain || 0;
+  if (type === "nettowert") return row.netValue;
   if (type === "rendite") return row.yieldValue || 0;
   if (type === "gehebelte-rendite") return row.leveragedYield || 0;
   if (type === "kaltmiete") return row.coldMonthly;
@@ -342,18 +322,12 @@ function numericValue(row: PropertyAnalysisRow, type: AnalysisKey) {
 function totalValue(rows: PropertyAnalysisRow[], type: AnalysisKey) {
   if (type === "rendite") return percent(rows.reduce((sum, row) => sum + row.annualColdRent, 0), rows.reduce((sum, row) => sum + row.propertyValue, 0));
   if (type === "gehebelte-rendite") return percent(rows.reduce((sum, row) => sum + row.annualColdRent, 0), rows.reduce((sum, row) => sum + row.netValue, 0));
-  if (type === "kaufpreis") return money(rows.reduce((sum, row) => sum + (row.hasPurchasePrice ? row.purchasePrice : 0), 0));
-  if (type === "wertdifferenz") return money(rows.reduce((sum, row) => sum + (row.valueGain || 0), 0));
-  if (type === "nettowert" || type === "eigenkapital") return money(rows.reduce((sum, row) => sum + (row.equity || 0), 0));
   return money(rows.reduce((sum, row) => sum + numericValue(row, type), 0));
 }
 
 function formatAnalysisValue(row: PropertyAnalysisRow, type: AnalysisKey) {
   if (type === "rendite") return percent(row.annualColdRent, row.propertyValue);
   if (type === "gehebelte-rendite") return percent(row.annualColdRent, row.netValue);
-  if (type === "kaufpreis" && !row.hasPurchasePrice) return "offen";
-  if (type === "wertdifferenz" && row.valueGain === null) return "offen";
-  if ((type === "nettowert" || type === "eigenkapital") && row.equity === null) return "offen";
   return money(numericValue(row, type));
 }
 

@@ -16,25 +16,17 @@ type Statement = {
 export function ServiceChargeStatementVersions({
   propertyId,
   year,
-  statements,
-  canCreate,
-  missingRuleMessage
+  statements
 }: {
   propertyId: string;
   year: number;
   statements: Statement[];
-  canCreate: boolean;
-  missingRuleMessage?: string;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
 
   async function create() {
-    if (!canCreate) {
-      setMessage(missingRuleMessage || "Zuerst Verteilerschluessel speichern.");
-      return;
-    }
     setBusy("create");
     setMessage("");
     const response = await fetch("/api/service-charge-statements", {
@@ -78,14 +70,8 @@ export function ServiceChargeStatementVersions({
           <h2 className="mt-1 text-xl font-bold">Pruefen, speichern und drucken</h2>
           <p className="mt-1 text-sm text-muted">Jede Version friert Daten, Verteilung und Pruefsumme ein. Festgeschriebene Versionen bleiben unveraendert.</p>
         </div>
-        <button disabled={Boolean(busy)} onClick={create} type="button">{busy === "create" ? "Erzeuge..." : canCreate ? "Neue Abrechnungsversion" : "Verteilerschluessel fehlt"}</button>
+        <button disabled={Boolean(busy)} onClick={create} type="button">{busy === "create" ? "Erzeuge..." : "Neue Abrechnungsversion"}</button>
       </div>
-      {!canCreate ? (
-        <div className="border-b border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
-          <div className="font-bold">PDF-Erzeugung ist vorbereitet.</div>
-          <p className="mt-1">{missingRuleMessage || "Speichere zuerst den Verteilerschluessel fuer diese Immobilie und dieses Jahr. Danach kannst du hier eine Abrechnungsversion erzeugen und als PDF oeffnen."}</p>
-        </div>
-      ) : null}
       {message ? <div className="border-b border-line bg-panel p-3 text-sm font-semibold">{message}</div> : null}
       <div className="divide-y divide-line">
         {statements.map((statement) => (

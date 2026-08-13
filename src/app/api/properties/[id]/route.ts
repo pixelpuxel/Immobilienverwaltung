@@ -6,13 +6,12 @@ import { portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 import { propertyUpdateSchema } from "@/lib/property-schema";
 import { normalizePropertyAddressInput } from "@/lib/property-address";
-import { withPropertyFinance } from "@/lib/property-finance";
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   const user = await requireApiUser(request);
   if (!user) return NextResponse.json({ error: "Nicht angemeldet." }, { status: 401 });
   const property = await prisma.property.findFirst({ where: { id: params.id, ...portalWhere(user) }, include: { units: true, documents: true } });
-  return property ? NextResponse.json(withPropertyFinance(property)) : NextResponse.json({ error: "Nicht gefunden." }, { status: 404 });
+  return property ? NextResponse.json(property) : NextResponse.json({ error: "Nicht gefunden." }, { status: 404 });
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
@@ -25,7 +24,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   if (!existing) return NextResponse.json({ error: "Nicht gefunden." }, { status: 404 });
   const property = await prisma.property.update({ where: { id: params.id }, data: normalizePropertyAddressInput(body.data, existing) });
   await auditLog({ userId: user.id, action: AuditAction.PROPERTY_CHANGED, entity: "Property", entityId: property.id, ipAddress: clientIp(request) });
-  return NextResponse.json(withPropertyFinance(property));
+  return NextResponse.json(property);
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {

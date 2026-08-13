@@ -8,6 +8,7 @@ import { brokerPropertyIds, brokerVisibleDocumentWhere, tenantUnitId } from "@/l
 import { portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 import { formatPortalDateTime, getPortalTimeZone } from "@/lib/time-zone";
+import { manualOrSyncedAssetValue } from "@/lib/net-worth";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,7 @@ export default async function DashboardPage() {
   const timeZone = await getPortalTimeZone(user.portalInstanceId);
   const brokerIds = user.role === Role.BROKER ? await brokerPropertyIds(user.id) : null;
   const tenantUnit = user.role === Role.TENANT ? await tenantUnitId(user.id) : null;
-  const [properties, units, documents, contracts, auditLogs, purchaseValue, propertyValue, valueGain, loanValue, income, openTodos] = user.role === Role.ADMIN
+  const [properties, units, documents, contracts, auditLogs, purchaseValue, propertyValue, loanValue, income, openTodos, otherNetWorth] = user.role === Role.ADMIN
     ? await Promise.all([
         prisma.property.count({ where: portalWhere(user) }),
         prisma.unit.count({ where: { property: portalWhere(user) } }),
@@ -25,7 +26,6 @@ export default async function DashboardPage() {
         prisma.auditLog.findMany({ where: portalWhere(user), orderBy: { createdAt: "desc" }, take: 8, include: { user: true } }),
         totalPurchaseValue(undefined, user.portalInstanceId),
         totalPropertyValue(undefined, user.portalInstanceId),
-        totalValueGain(undefined, user.portalInstanceId),
         totalLoanValue(undefined, user.portalInstanceId),
         totalMonthlyIncome(undefined, user.portalInstanceId),
         prisma.propertyTodo.findMany({
@@ -33,7 +33,8 @@ export default async function DashboardPage() {
           include: { property: { select: { id: true, name: true } } },
           orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
           take: 6
-        })
+        }),
+        totalOtherNetWorth(user.portalInstanceId)
       ])
     : user.role === Role.BROKER
       ? await Promise.all([
@@ -44,10 +45,10 @@ export default async function DashboardPage() {
           [],
           totalPurchaseValue(brokerIds || []),
           totalPropertyValue(brokerIds || []),
-          totalValueGain(brokerIds || []),
           0,
           totalMonthlyIncome(brokerIds || []),
-          []
+          [],
+          0
         ])
       : user.role === Role.TAX_ADVISOR
         ? await Promise.all([
@@ -59,9 +60,9 @@ export default async function DashboardPage() {
             0,
             0,
             0,
-            0,
             { cold: 0, warm: 0 },
-            []
+            [],
+            0
           ])
       : await Promise.all([
           prisma.property.count({ where: { units: { some: { id: tenantUnit || "" } } } }),
@@ -72,14 +73,15 @@ export default async function DashboardPage() {
           0,
           0,
           0,
-          0,
           { cold: 0, warm: 0 },
-          []
+          [],
+          0
         ]);
   const owner = user.role === Role.BROKER ? await prisma.user.findFirst({ where: { role: Role.ADMIN, active: true, ...portalWhere(user) }, orderBy: { createdAt: "asc" } }) : null;
   const ownerMail = owner?.contactEmail || owner?.email || "admin@example.com";
   const annualColdRent = income.cold * 12;
-  const equity = propertyValue - loanValue;
+  const netValue = propertyValue - loanValue;
+  const totalNetWorth = netValue + (typeof otherNetWorth === "number" ? otherNetWorth : 0);
   const activityLabels = user.role === Role.ADMIN ? await activityLabelMap(auditLogs) : new Map<string, string>();
   const propertyBaseHref = user.role === Role.BROKER ? "/broker" : "/properties";
 
@@ -101,13 +103,13 @@ export default async function DashboardPage() {
         ) : null}
         <Link href="/documents"><StatCard label="Dokumente" value={documents} detail={user.role === Role.TENANT ? "Für Sie bereitgestellt" : "Geschuetzte Unterlagen"} icon="DU" tone="violet" /></Link>
         {user.role !== Role.TAX_ADVISOR ? <Link href="/contracts"><StatCard label="Verträge" value={contracts} detail={user.role === Role.TENANT ? "Ihre Mietvertraege" : "Erzeugte Vertragsdokumente"} icon="MV" tone="amber" /></Link> : null}
+        {user.role === Role.ADMIN ? <Link href="/properties?auswertung=kaufpreis"><StatCard label="Kaufpreise" value={money(purchaseValue)} detail="Summe der originalen Kaufpreise" icon="KP" tone="amber" /></Link> : null}
         {user.role === Role.ADMIN ? <Link href="/properties?auswertung=immobilienwert"><StatCard label="Immobilienwert" value={money(propertyValue)} detail="Summe der Kaufpreisvorstellungen" icon="€" tone="rose" /></Link> : null}
-        {user.role === Role.ADMIN ? <Link href="/properties?auswertung=kaufpreis"><StatCard label="Historische Kaufpreise" value={money(purchaseValue)} detail="Belegte und auf EUR normalisierte Kaufpreise" icon="KP" tone="violet" /></Link> : null}
-        {user.role === Role.ADMIN ? <Link href="/properties?auswertung=wertdifferenz"><StatCard label="Wertdifferenz" value={money(valueGain)} detail="Kaufpreisvorstellung minus Kaufpreis" icon="WD" tone="emerald" /></Link> : null}
         {user.role === Role.ADMIN ? <Link href="/properties?auswertung=darlehen"><StatCard label="Valutierte Darlehen" value={money(loanValue)} detail="Noch offene Darlehenssumme" icon="DL" tone="slate" /></Link> : null}
-        {user.role === Role.ADMIN ? <Link href="/properties?auswertung=eigenkapital"><StatCard label="Eigenkapital" value={money(equity)} detail="Kaufpreisvorstellung minus valutiertes Darlehen" icon="EK" tone="blue" /></Link> : null}
+        {user.role === Role.ADMIN ? <Link href="/properties?auswertung=nettowert"><StatCard label="Nettowert" value={money(netValue)} detail="Kaufpreisvorstellung minus Darlehen" icon="NW" tone="blue" /></Link> : null}
+        {user.role === Role.ADMIN ? <Link href="/net-worth"><StatCard label="Gesamtvermögen" value={money(totalNetWorth)} detail="Immobilien netto plus sonstige Vermögenswerte" icon="GW" tone="rose" /></Link> : null}
         {user.role === Role.ADMIN ? <Link href="/properties?auswertung=rendite"><StatCard label="Rendite" value={percent(annualColdRent, propertyValue)} detail="Jahreskaltmiete geteilt durch Kaufpreisvorstellung" icon="%" tone="emerald" /></Link> : null}
-        {user.role === Role.ADMIN ? <Link href="/properties?auswertung=gehebelte-rendite"><StatCard label="Gehebelte Rendite" value={percent(annualColdRent, equity)} detail="Jahreskaltmiete geteilt durch Eigenkapital" icon="GR" tone="amber" /></Link> : null}
+        {user.role === Role.ADMIN ? <Link href="/properties?auswertung=gehebelte-rendite"><StatCard label="Gehebelte Rendite" value={percent(annualColdRent, netValue)} detail="Jahreskaltmiete geteilt durch Nettowert" icon="GR" tone="amber" /></Link> : null}
         {user.role === Role.ADMIN || user.role === Role.BROKER ? <Link href={`${propertyBaseHref}?auswertung=kaltmiete`}><StatCard label="Kaltmiete" value={money(income.cold)} detail={`${money(income.cold * 12)} / Jahr inkl. Tiefgarage, ohne Nebenkosten`} icon="KM" tone="slate" /></Link> : null}
         {user.role === Role.ADMIN || user.role === Role.BROKER ? <Link href={`${propertyBaseHref}?auswertung=warmmiete`}><StatCard label="Warmmiete" value={money(income.warm)} detail={`${money(income.warm * 12)} / Jahr inkl. Nebenkosten`} icon="WM" tone="emerald" /></Link> : null}
       </div>
@@ -189,14 +191,6 @@ export default async function DashboardPage() {
   );
 }
 
-async function totalPropertyValue(propertyIds?: string[], portalInstanceId?: string | null) {
-  const properties = await prisma.property.findMany({
-    where: { ...(propertyIds ? { id: { in: propertyIds } } : {}), ...(portalInstanceId ? { portalInstanceId } : {}) },
-    select: { expectedPurchasePrice: true }
-  });
-  return properties.reduce((sum, property) => sum + Number(property.expectedPurchasePrice || 0), 0);
-}
-
 async function totalPurchaseValue(propertyIds?: string[], portalInstanceId?: string | null) {
   const properties = await prisma.property.findMany({
     where: { ...(propertyIds ? { id: { in: propertyIds } } : {}), ...(portalInstanceId ? { portalInstanceId } : {}) },
@@ -205,17 +199,12 @@ async function totalPurchaseValue(propertyIds?: string[], portalInstanceId?: str
   return properties.reduce((sum, property) => sum + Number(property.purchasePrice || 0), 0);
 }
 
-async function totalValueGain(propertyIds?: string[], portalInstanceId?: string | null) {
+async function totalPropertyValue(propertyIds?: string[], portalInstanceId?: string | null) {
   const properties = await prisma.property.findMany({
-    where: {
-      ...(propertyIds ? { id: { in: propertyIds } } : {}),
-      ...(portalInstanceId ? { portalInstanceId } : {}),
-      purchasePrice: { not: null },
-      expectedPurchasePrice: { not: null }
-    },
-    select: { purchasePrice: true, expectedPurchasePrice: true }
+    where: { ...(propertyIds ? { id: { in: propertyIds } } : {}), ...(portalInstanceId ? { portalInstanceId } : {}) },
+    select: { expectedPurchasePrice: true }
   });
-  return properties.reduce((sum, property) => sum + Number(property.expectedPurchasePrice) - Number(property.purchasePrice), 0);
+  return properties.reduce((sum, property) => sum + Number(property.expectedPurchasePrice || 0), 0);
 }
 
 async function totalLoanValue(propertyIds?: string[], portalInstanceId?: string | null) {
@@ -239,6 +228,14 @@ async function totalMonthlyIncome(propertyIds?: string[], portalInstanceId?: str
       warm: sum.warm + rent + charges
     };
   }, { cold: 0, warm: 0 });
+}
+
+async function totalOtherNetWorth(portalInstanceId?: string | null) {
+  const assets = await prisma.netWorthAsset.findMany({
+    where: { portalInstanceId: portalInstanceId ?? null, active: true },
+    select: { type: true, manualValue: true, bankingAccountId: true, lastSyncedValue: true }
+  });
+  return assets.reduce((sum, asset) => sum + manualOrSyncedAssetValue(asset), 0);
 }
 
 function money(value: number) {

@@ -5,6 +5,7 @@ import { requireIntegrationUser } from "@/lib/integration-auth";
 import { serializeDocument } from "@/lib/integration-data";
 import { buildDocumentMetadata } from "@/lib/document-metadata";
 import { saveUpload } from "@/lib/files";
+import { runDocumentOcr } from "@/lib/ocr";
 import { brokerPropertyIds } from "@/lib/permissions";
 import { assertPropertyInPortal, assertUnitInPortal } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
@@ -23,6 +24,7 @@ type IntegrationDocumentUploadInput = {
   summary: string | null;
   tags: string[];
   documentYear: number | null;
+  runOcr: boolean;
 };
 
 export async function GET(request: NextRequest) {
@@ -33,9 +35,6 @@ export async function GET(request: NextRequest) {
   const unitId = request.nextUrl.searchParams.get("unitId");
   const tenantId = request.nextUrl.searchParams.get("tenantId") || request.nextUrl.searchParams.get("tenantProfileId");
   const categoryId = request.nextUrl.searchParams.get("categoryId");
-  const categoryName = request.nextUrl.searchParams.get("categoryName")?.trim();
-  const categoryGroup = request.nextUrl.searchParams.get("categoryGroup")?.trim();
-  const kind = request.nextUrl.searchParams.get("kind")?.trim();
   const updatedSince = request.nextUrl.searchParams.get("updatedSince");
   const limit = Math.min(100, Math.max(1, Number(request.nextUrl.searchParams.get("limit") || "50") || 50));
   const page = Math.max(1, Number(request.nextUrl.searchParams.get("page") || "1") || 1);
@@ -53,18 +52,15 @@ export async function GET(request: NextRequest) {
       unitId ? { unitId } : {},
       tenant ? tenantPersonalDocumentWhere(tenant) : {},
       categoryId ? { categoryId } : {},
-      categoryName ? { category: { name: { contains: categoryName, mode: "insensitive" } } } : {},
-      categoryGroup ? { category: { group: { contains: categoryGroup, mode: "insensitive" } } } : {},
-      kind ? documentKindWhere(kind) : {},
       updatedSince ? { updatedAt: { gte: new Date(updatedSince) } } : {},
-      q ? documentSearchWhere(q) : {}
+      q ? { OR: [{ title: { contains: q, mode: "insensitive" } }, { filename: { contains: q, mode: "insensitive" } }, { summary: { contains: q, mode: "insensitive" } }, { ocrText: { contains: q, mode: "insensitive" } }] } : {}
     ]
   };
   const [documents, total] = await Promise.all([
     prisma.document.findMany({
       where,
       include: integrationDocumentInclude(),
-      orderBy: [{ documentYear: "desc" }, { title: "desc" }, { updatedAt: "desc" }],
+      orderBy: { updatedAt: "desc" },
       skip: (page - 1) * limit,
       take: limit
     }),
@@ -163,6 +159,11 @@ export async function POST(request: NextRequest) {
     },
     include: integrationDocumentInclude()
   });
+  if (input.runOcr) {
+    await runDocumentOcr(document.id);
+    const enriched = await prisma.document.findUniqueOrThrow({ where: { id: document.id }, include: integrationDocumentInclude() });
+    return NextResponse.json(serializeDocument(enriched), { status: 201 });
+  }
   if (!document.summary || !document.tags.length) {
     const metadata = buildDocumentMetadata(document);
     const enriched = await prisma.document.update({ where: { id: document.id }, data: { summary: document.summary || metadata.summary, tags: document.tags.length ? document.tags : metadata.tags }, include: integrationDocumentInclude() });
@@ -179,47 +180,6 @@ export async function POST(request: NextRequest) {
       }
     }, { status: uploadErrorStatus(message) });
   }
-}
-
-function documentSearchWhere(q: string): Prisma.DocumentWhereInput {
-  return {
-    OR: [
-      { title: { contains: q, mode: "insensitive" } },
-      { filename: { contains: q, mode: "insensitive" } },
-      { summary: { contains: q, mode: "insensitive" } },
-      { category: { name: { contains: q, mode: "insensitive" } } },
-      { category: { group: { contains: q, mode: "insensitive" } } },
-      { property: { name: { contains: q, mode: "insensitive" } } },
-      { property: { address: { contains: q, mode: "insensitive" } } },
-      { unit: { unitNumber: { contains: q, mode: "insensitive" } } },
-      { tenantProfile: { firstName: { contains: q, mode: "insensitive" } } },
-      { tenantProfile: { lastName: { contains: q, mode: "insensitive" } } }
-    ]
-  };
-}
-
-function strictDocumentTypeWhere(value: string): Prisma.DocumentWhereInput {
-  return {
-    OR: [
-      { title: { contains: value, mode: "insensitive" } },
-      { filename: { contains: value, mode: "insensitive" } },
-      { category: { name: { contains: value, mode: "insensitive" } } }
-    ]
-  };
-}
-
-function documentKindWhere(kind: string): Prisma.DocumentWhereInput {
-  const normalized = kind.toLowerCase().replace(/[^a-z0-9]+/g, "_");
-  if (["lease_contract", "mietvertrag", "mietvertraege", "contract"].includes(normalized)) {
-    return strictDocumentTypeWhere("Mietvertrag");
-  }
-  if (["stepped_rent", "staffelmiete"].includes(normalized)) {
-    return strictDocumentTypeWhere("Staffelmiete");
-  }
-  if (["termination", "kuendigung", "kundigung"].includes(normalized)) {
-    return strictDocumentTypeWhere("Kuendigung");
-  }
-  return {};
 }
 
 function savedImageMimeType(file: File) {
@@ -253,7 +213,8 @@ async function parseIntegrationDocumentUpload(request: NextRequest): Promise<Int
       categoryId: textValue(data.categoryId),
       summary: textValue(data.summary) || textValue(data.description),
       tags: arrayValue(data.tags),
-      documentYear: numberValue(data.documentYear)
+      documentYear: numberValue(data.documentYear),
+      runOcr: booleanValue(data.runOcr) || booleanValue(data.ocr)
     });
   }
 
@@ -273,7 +234,8 @@ async function parseIntegrationDocumentUpload(request: NextRequest): Promise<Int
     categoryId: String(form.get("categoryId") || "") || null,
     summary: String(form.get("summary") || "") || null,
     tags: String(form.get("tags") || "").split(",").map((tag) => tag.trim()).filter(Boolean),
-    documentYear: numberValue(form.get("documentYear"))
+    documentYear: numberValue(form.get("documentYear")),
+    runOcr: String(form.get("runOcr") || form.get("ocr") || "") === "true"
   });
 }
 
@@ -291,6 +253,7 @@ function normalizeUploadInput(input: {
   summary?: string | null;
   tags?: string[];
   documentYear?: number | null;
+  runOcr?: boolean;
 }): IntegrationDocumentUploadInput {
   return {
     file: input.file,
@@ -305,7 +268,8 @@ function normalizeUploadInput(input: {
     categoryId: input.categoryId || null,
     summary: input.summary || null,
     tags: input.tags || [],
-    documentYear: input.documentYear || null
+    documentYear: input.documentYear || null,
+    runOcr: Boolean(input.runOcr)
   };
 }
 
@@ -320,7 +284,7 @@ function booleanValue(value: unknown) {
 function numberValue(value: unknown) {
   if (value === undefined || value === null || value === "") return null;
   const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 1900 || parsed > 2100) throw new Error("documentYear ist ungueltig.");
+  if (!Number.isInteger(parsed) || parsed < 1900 || parsed > 2049) throw new Error("documentYear ist ungueltig.");
   return parsed;
 }
 

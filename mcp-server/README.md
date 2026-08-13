@@ -71,26 +71,6 @@ Flow:
 
 Die erzeugten OAuth-Tokens erscheinen im Portal unter **Einstellungen -> API-Zugaenge** und koennen dort widerrufen werden.
 
-### Benutzergebundene MCP-Routen
-
-Neben der Standardroute kann ein Connector gezielt an einen Portalbenutzer gebunden werden:
-
-```text
-https://portal.example.com/mcp
-https://portal.example.com/mcp/maren
-```
-
-`/mcp` nutzt den Benutzer, der den OAuth-Flow bestaetigt. `/mcp/<benutzer>` erwartet, dass der OAuth-Flow vom passenden Zielbenutzer oder von einem Plattform-Admin bestaetigt wird. Der erzeugte API-Token gehoert dann zu diesem Zielbenutzer und sieht nur dessen Portalinstanz und Rechte.
-
-Der Pfadbestandteil `<benutzer>` kann Benutzername, Benutzer-ID oder E-Mail ohne Sonderzeichen sein; fuer ChatGPT-Connectoren ist ein kurzer eindeutiger Benutzername wie `maren` vorgesehen. Der MCP-Server prueft bei jedem Request zusaetzlich `/api/integrations/v1/me`: Ein Token fuer Gabriel wird auf `/mcp/maren` mit `403 FORBIDDEN` abgelehnt.
-
-Discovery fuer eine profilgebundene Route:
-
-```text
-GET https://portal.example.com/.well-known/oauth-protected-resource/maren
-POST https://portal.example.com/mcp/maren
-```
-
 ## ENV
 
 ```env
@@ -186,10 +166,8 @@ Der Server stellt fachliche Tools bereit, z. B.:
 - `create_property`
 - `update_property`
 - `list_units`
-- `search_units`
 - `create_unit`
 - `update_unit`
-- `update_unit_rent_details`
 - `delete_unit`
 - `list_tenants`
 - `get_tenant`
@@ -205,8 +183,9 @@ Der Server stellt fachliche Tools bereit, z. B.:
 - `upload_tenant_document`
 - `update_document`
 - `delete_document`
-- `download_document`
 - `get_document_links`
+- `get_document_ocr`
+- `run_document_ocr`
 - `list_contract_templates`
 - `derive_contract_template`
 - `create_contract`
@@ -214,19 +193,8 @@ Der Server stellt fachliche Tools bereit, z. B.:
 - `list_contracts`
 - `delete_contract`
 - `get_contract_links`
-- `get_transaction_details`
 - `list_rent_payments`
 - `upsert_rent_payment`
-- `get_service_charge_workspace`
-- `save_service_charge_rule`
-- `add_service_charge_line`
-- `delete_service_charge_line`
-- `list_service_charge_statements`
-- `create_service_charge_statement`
-- `get_service_charge_statement`
-- `finalize_service_charge_statement`
-- `delete_service_charge_statement`
-- `get_service_charge_statement_links`
 - `list_timeline_events`
 - `create_timeline_event`
 - `update_timeline_event`
@@ -237,32 +205,45 @@ Der Server stellt fachliche Tools bereit, z. B.:
 - `update_user`
 - `list_portal_instances`
 - `switch_portal_instance`
+- `list_banking_accounts`
+- `get_net_worth_summary`
+- `list_net_worth_assets`
+- `create_net_worth_asset`
+- `update_net_worth_asset`
+- `delete_net_worth_asset`
+- `list_property_loan_account_mappings`
+- `map_property_loan_account`
+- `unmap_property_loan_account`
+- `sync_net_worth_from_banking`
 - `integration_api_request`
 
 `integration_api_request` ist ein kontrollierter Fallback fuer neue Portal-Endpunkte. Er erlaubt nur relative Pfade unter `/api/integrations/v1/...` und keine externen URLs.
 
-Dokument-Uploads sollen bevorzugt ueber `upload_document` erfolgen. Das Tool akzeptiert bevorzugt einen Chat-/MCP-Dateianhang im Feld `file` und weiterhin `fileBase64` als Rueckfall. Weitere Felder sind `filename`, optional `mimeType`, `title`, `propertyId`, `unitId`, `tenantProfileId`, `categoryId`, `summary`, `tags` und `documentYear`.
+Dokument-Uploads sollen bevorzugt ueber `upload_document` erfolgen. Das Tool akzeptiert bevorzugt einen Chat-/MCP-Dateianhang im Feld `file` und weiterhin `fileBase64` als Rueckfall. Weitere Felder sind `filename`, optional `mimeType`, `title`, `propertyId`, `unitId`, `tenantProfileId`, `categoryId`, `summary`, `tags`, `documentYear` und `runOcr`.
+
+OCR:
+
+- `runOcr: true` fuehrt beim Upload OCR fuer PDF- und Bilddateien aus.
+- `run_document_ocr` verarbeitet ein bestehendes Dokument nachtraeglich.
+- `get_document_ocr` liefert Status, Fehler und erkannten Text.
+- OCR-Text wird im Portal gespeichert und in die strukturierte sowie semantische Suche aufgenommen.
+
+Vermoegen und Darlehen:
+
+- `list_banking_accounts` liest die verfuegbaren Bankkonten aus der Banking-API.
+- `get_net_worth_summary` liefert Immobilienwerte, Darlehen, sonstige Werte und Gesamt-Nettowert.
+- `map_property_loan_account` verknuepft ein Bankkonto als Darlehenskonto mit einer Immobilie.
+- `sync_net_worth_from_banking` aktualisiert die valutierten Darlehen und gemappte sonstige Vermoegenswerte.
+- `create_net_worth_asset` legt freie Vermoegenswerte/Verbindlichkeiten an oder mappt Girokonto, Tagesgeld, Festgeld oder andere Konten.
 
 Mieterdokumente wie Kuendigungen, Kautionsnachweise oder persoenliche Mietvertraege sollen bevorzugt ueber `upload_tenant_document` hochgeladen werden. Das Tool akzeptiert `tenantProfileId`, `file` oder `fileBase64`, `filename`, optional `categoryName` wie `Kuendigungen` und loest die Dokumentkategorie intern auf.
-
-Dokumente koennen mit `download_document` direkt als MCP-Datei/Resource geladen werden. Das Tool liefert Metadaten (`documentId`, `filename`, `mimeType`, `size`) und eine eingebettete Datei-Resource zurueck. Es nutzt keine signierte URL und keine frei uebergebenen Dateipfade. Der Portal-Endpunkt prueft `read:documents`, `download:documents`, Portalinstanz, Dokumentzugriff, erlaubten Dateityp und ein 25-MB-Limit. `get_document_links` bleibt fuer normale Portal-Links bestehen.
 
 Wenn die fachliche Einsortierung noch unklar ist, ist der Standardablauf zweistufig:
 
 1. `upload_inbox_document` speichert den Chat-Anhang neutral im Dokumenteneingang.
 2. `classify_document` setzt danach Immobilie, Einheit, Mieter, Kategorie, Beschreibung, Tags, Jahr und optionale Verknuepfungen.
 
-Banking-Buchungen koennen mit `get_transaction_details` ueber das Immoportal gelesen werden, sofern im Portal unter **Einstellungen -> Banking-Integration** ein Banking-API-Token hinterlegt ist. Das Tool ruft keine Banking-Datenbank direkt ab, sondern nutzt:
-
-```text
-/api/integrations/v1/banking/transactions/{transaction_id}/details
-```
-
-Die Antwort enthaelt die Rohbuchung, Kategorie/Unterkategorie, zugeordnete Immobilie, Einheit, Mieter, Vertrag, Notizen, OCR-/KI-Daten, verknuepfte Dokumente, Historie, Benutzerkommentare und die vollstaendige Split-Struktur. Falls das Banking-Portal selbst keinen Detail-Endpunkt liefert, setzt das Immoportal die Daten aus den vorhandenen Banking-Endpunkten fuer Buchung, Splits, Historie und Kommentare zusammen.
-
 Der MCP-Server liest Datei-Anhaenge serverseitig. Unterstuetzt werden Dateiobjekte mit `path`, `filename`/`name`, `mimeType`/`type`, `data`/`base64` oder sichere HTTPS-URLs. Automatische Dubletten-Zusaetze wie `(1)`, `(2)` und `Kopie` werden aus Dateinamen entfernt. Erlaubt sind PDF, DOCX, XLSX, JPG und PNG bis 25 MB.
-
-Immobilien liefern die Finanzfelder `purchasePrice` (tatsaechlicher historischer Kaufpreis in EUR), `expectedPurchasePrice` (Kaufpreisvorstellung), `outstandingLoan` (valutiertes Darlehen) sowie die serverseitig berechneten Felder `valueGain` und `equity`. Schreibbar sind nur die drei Ausgangswerte; die abgeleiteten Werte werden nicht redundant gespeichert.
 
 ## Sicherheitsmodell
 

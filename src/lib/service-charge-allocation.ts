@@ -73,7 +73,7 @@ export function calculateServiceChargeAllocation(
         .reduce((sum, line) => sum + Math.abs(line.amount), 0);
       const share = occupiedDays / yearDays;
       const allocatedCosts = roundMoney(unitCosts * share);
-      const actualPrepayments = actualPrepaymentsForTenancy(data, tenancy);
+      const actualPrepayments = roundMoney(toNumber(tenancy.actual_service_charge_prepayments));
       return {
         tenantId: tenancy.external_id,
         unitId: tenancy.unit_external_id,
@@ -125,7 +125,7 @@ export function calculateServiceChargeAllocation(
       ? (unitValue / totalDistributionValue) * (occupiedDays / yearDays)
       : 0;
     const allocatedCosts = roundMoney(costs * share);
-    const actualPrepayments = actualPrepaymentsForTenancy(data, tenancy);
+    const actualPrepayments = roundMoney(toNumber(tenancy.actual_service_charge_prepayments));
     return {
       tenantId: tenancy.external_id,
       unitId: tenancy.unit_external_id,
@@ -144,56 +144,22 @@ export function calculateServiceChargeAllocation(
       blockingWarnings.push(`Einheit ${unitId} hat trotz Zeitachsenbereinigung ueberschneidende Mietzeitraeume (${days} Belegungstage).`);
     }
   }
-  let allocatedToTenants = roundMoney(
+  const allocatedToTenants = roundMoney(
     tenantResults.reduce((sum, item) => sum + item.allocatedCosts, 0)
   );
-  let totalPrepayments = roundMoney(
+  const totalPrepayments = roundMoney(
     tenantResults.reduce((sum, item) => sum + item.actualPrepayments, 0)
   );
-  let ownerShare = roundMoney(costs - allocatedToTenants);
-  if (!tenantResults.length && data.units.length === 1) {
-    const directPrepayments = roundMoney(Math.abs(toNumber(data.service_charge_prepayments.total)));
-    if (costs > 0 || directPrepayments > 0) {
-      allocatedToTenants = costs;
-      ownerShare = 0;
-      totalPrepayments = directPrepayments;
-      warnings.push("Keine verknuepften Mietverhaeltnisse gefunden. Das Ein-Einheiten-Objekt wurde als Gesamtobjekt aus Bankpositionen abgerechnet.");
-    }
-  }
   return {
     method: rule.method,
     allocableCosts: costs,
     allocatedToTenants,
-    ownerShare,
+    ownerShare: roundMoney(costs - allocatedToTenants),
     totalPrepayments,
     tenantResults,
     warnings,
     blockingWarnings
   };
-}
-
-
-function actualPrepaymentsForTenancy(
-  data: ServiceChargeData,
-  tenancy: ServiceChargeData["tenancies"][number]
-) {
-  const yearStart = Date.UTC(data.year, 0, 1);
-  const yearEndExclusive = Date.UTC(data.year + 1, 0, 1);
-  const tenancyStart = parseDate(tenancy.move_in_date || tenancy.lease_start_date) ?? yearStart;
-  const tenancyEndExclusive = addDay(parseDate(tenancy.move_out_date)) ?? yearEndExclusive;
-  const start = Math.max(yearStart, tenancyStart);
-  const endExclusive = Math.min(yearEndExclusive, tenancyEndExclusive);
-  const matched = data.service_charge_prepayments.items
-    .filter((line) => {
-      if (line.tenant_external_id) return line.tenant_external_id === tenancy.external_id;
-      if (line.unit_external_id !== tenancy.unit_external_id) return false;
-      const bookingDate = parseDate(line.value_date || line.booking_date);
-      if (bookingDate === null) return false;
-      return bookingDate >= start && bookingDate < endExclusive;
-    })
-    .reduce((sum, line) => sum + Math.abs(toNumber(line.amount)), 0);
-  if (matched > 0) return roundMoney(matched);
-  return roundMoney(toNumber(tenancy.actual_service_charge_prepayments));
 }
 
 function overlapDaysExclusive(year: number, rawStart: number, rawEndExclusive: number) {
@@ -229,17 +195,10 @@ function normalizedTenancyPeriods(data: ServiceChargeData) {
         endExclusive: addDay(parseDate(tenancy.move_out_date))
       }))
       .filter((item): item is typeof item & { start: number } => {
-        if (item.start === null) {
-          missingStartCount += 1;
-          daysByTenant.set(item.tenancy.external_id, 0);
-          return false;
-        }
-        if (item.tenancy.is_current === false && item.endExclusive === null) {
-          missingStartCount += 1;
-          daysByTenant.set(item.tenancy.external_id, 0);
-          return false;
-        }
-        return true;
+        if (item.start !== null) return true;
+        missingStartCount += 1;
+        daysByTenant.set(item.tenancy.external_id, 0);
+        return false;
       })
       .sort((a, b) => a.start - b.start || a.tenancy.external_id.localeCompare(b.tenancy.external_id));
     valid.forEach((item, index) => {

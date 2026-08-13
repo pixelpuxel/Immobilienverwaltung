@@ -63,6 +63,7 @@ export async function POST(request: NextRequest) {
     });
     await tx.serviceChargeUnitAllocation.deleteMany({ where: { ruleId: saved.id } });
     const allocations = Object.entries(parsed.data.unitValues)
+      .filter(([, value]) => value > 0)
       .map(([unitId, value]) => ({ ruleId: saved.id, unitId, value }));
     if (allocations.length) await tx.serviceChargeUnitAllocation.createMany({ data: allocations });
     return tx.serviceChargeRule.findUniqueOrThrow({

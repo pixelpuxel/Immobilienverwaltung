@@ -3,13 +3,10 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { auditLog } from "@/lib/audit";
 import { readDocumentContent } from "@/lib/document-content";
-import { runAndStoreDocumentOcr } from "@/lib/document-ocr";
 import { requireIntegrationUser } from "@/lib/integration-auth";
 import { canAccessDocument } from "@/lib/permissions";
 import { portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
-
-export const maxDuration = 900;
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   const { user, response } = await requireIntegrationUser(request, ["read:documents", "download:documents"]);
@@ -33,29 +30,6 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     preferPdf,
     maxChars
   });
-  let portalOcrText = document.ocrText;
-  let portalOcrProcessedAt = document.ocrProcessedAt;
-  if (result.extractionStatus !== "TEXT_EXTRACTED" && !portalOcrText?.trim() && isOcrDocument(document.mimeType, document.filename)) {
-    try {
-      const ocr = await runAndStoreDocumentOcr(document);
-      portalOcrText = ocr.ocrText;
-      portalOcrProcessedAt = ocr.ocrProcessedAt;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "OCR fehlgeschlagen.";
-      result.note = `Portal-OCR fehlgeschlagen: ${message}`;
-    }
-  }
-  if (result.extractionStatus !== "TEXT_EXTRACTED" && portalOcrText?.trim()) {
-    const maxOcrChars = Math.max(1_000, Math.min(500_000, maxChars || 200_000));
-    const ocrTruncated = portalOcrText.length > maxOcrChars;
-    result.extractionStatus = "TEXT_EXTRACTED";
-    result.text = ocrTruncated ? portalOcrText.slice(0, maxOcrChars) : portalOcrText;
-    result.textTruncated = ocrTruncated;
-    result.note = portalOcrProcessedAt
-      ? `Dauerhaft gespeicherter Portal-OCR-Text vom ${portalOcrProcessedAt.toISOString()}.`
-      : "Dauerhaft gespeicherter Portal-OCR-Text.";
-    if (!includeFile) result.returnedFile = null;
-  }
 
   await auditLog({
     userId: user.id,
@@ -67,10 +41,4 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   });
 
   return NextResponse.json(result);
-}
-
-function isOcrDocument(mimeType: string, filename: string) {
-  const lowerMimeType = mimeType.toLowerCase();
-  const lowerFilename = filename.toLowerCase();
-  return lowerMimeType === "application/pdf" || lowerMimeType.startsWith("image/") || /\.(pdf|jpe?g|png|tiff?|webp)$/.test(lowerFilename);
 }

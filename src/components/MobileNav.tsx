@@ -20,7 +20,7 @@ export function MobileNav({
   const [open, setOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-40 w-full overflow-visible border-b border-line bg-white lg:hidden">
+    <header className="sticky top-0 z-40 w-full overflow-x-hidden border-b border-line bg-white lg:hidden">
       <div className="flex items-center justify-between gap-3 px-4 py-3">
         <div>
           <div className="text-base font-bold">Immobilienportal</div>

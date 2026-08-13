@@ -22,13 +22,8 @@ import { asMoneyNumber, calculateColdRent, calculateWarmRent, money } from "@/li
 
 export const dynamic = "force-dynamic";
 
-export default async function UsersPage({
-  searchParams
-}: {
-  searchParams?: { tenantId?: string; userId?: string };
-}) {
+export default async function UsersPage() {
   const user = await requireUser([Role.ADMIN]);
-  const targetTenantId = searchParams?.tenantId || "";
   const [users, properties, units, wohnungsgeberDocuments, contractDocuments] = await Promise.all([
     prisma.user.findMany({
       where: portalWhere(user),
@@ -87,7 +82,6 @@ export default async function UsersPage({
         <div className="mt-2 flex flex-wrap gap-2 text-xs">
           <span className="rounded-full bg-panel px-2 py-1">{item.role === Role.ADMIN ? "Eigentümer" : item.role === Role.BROKER ? "Makler" : item.role === Role.TAX_ADVISOR ? "Steuerberater" : "Mieter"}</span>
           <span className="rounded-full bg-panel px-2 py-1">{item.active ? "aktiv" : "gesperrt"}</span>
-          {item.tenantProfile && !item.tenantProfile.isCurrent ? <span className="rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-800">vergangenes Mietverhaeltnis</span> : null}
         </div>
         <div className="mt-3 text-muted">
           {item.role === Role.BROKER
@@ -96,7 +90,7 @@ export default async function UsersPage({
               : "Keine Immobilien freigegeben"
             : item.role === Role.TENANT
               ? item.tenantProfile?.unit
-                ? `Einheit: ${item.tenantProfile.unit.property.name} / ${item.tenantProfile.unit.unitNumber} · ${item.tenantProfile.isCurrent ? "laufend" : "beendet"} · ${tenantTimelineLabel(item.tenantProfile)}`
+                ? `Einheit: ${item.tenantProfile.unit.property.name} / ${item.tenantProfile.unit.unitNumber} · ${item.tenantProfile.isCurrent ? "laufend" : "beendet"} · Einzug ${formatDate(item.tenantProfile.moveInDate)}`
                 : "Keine Einheit zugeordnet"
               : item.role === Role.TAX_ADVISOR
                 ? "Zugriff nur auf einzeln freigegebene Dokumente"
@@ -191,7 +185,7 @@ export default async function UsersPage({
           <UserRoleGroup count={tenantUsers.length} title="Mieter" open>
             <div className="grid gap-3 p-3">
               {tenantsByUnit.map((group) => (
-                <details className="overflow-hidden rounded-md border border-line bg-white" key={group.label} open={group.current.length > 0 || groupContainsTenant(group, targetTenantId)}>
+                <details className="overflow-hidden rounded-md border border-line bg-white" key={group.label} open={group.current.length > 0}>
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-3 bg-panel px-3 py-2 [&::-webkit-details-marker]:hidden">
                     <span className="font-bold">{group.label}</span>
                     <span className="rounded-full bg-white px-2 py-1 text-xs font-semibold text-muted">{group.current.length} aktuell · {group.past.length} vergangen</span>
@@ -204,7 +198,6 @@ export default async function UsersPage({
                         closeLabel="Vergangene Mieter zuklappen"
                         openLabel="Vergangene Mieter aufklappen"
                         summaryClassName="cursor-pointer list-none px-4 py-3 text-sm font-bold text-muted [&::-webkit-details-marker]:hidden"
-                        defaultOpen={group.past.some((item) => item.tenantProfile?.id === targetTenantId)}
                       >
                         <div className="border-t border-line">{group.past.map(renderUserCard)}</div>
                       </ToggleDetails>
@@ -231,28 +224,6 @@ export default async function UsersPage({
       </div>
     </AppShell>
   );
-}
-
-
-function groupContainsTenant(
-  group: { current: Array<{ tenantProfile?: { id: string } | null }>; past: Array<{ tenantProfile?: { id: string } | null }> },
-  tenantId: string
-) {
-  return Boolean(tenantId) && [...group.current, ...group.past].some((item) => item.tenantProfile?.id === tenantId);
-}
-
-
-function tenantTimelineLabel(profile: { moveInDate?: Date | null; leaseStartDate?: Date | null; moveOutDate?: Date | null }) {
-  const parts = [];
-  if (profile.moveInDate) {
-    parts.push(`Einzug ${formatDate(profile.moveInDate)}`);
-  } else if (profile.leaseStartDate) {
-    parts.push(`Vertragsbeginn ${formatDate(profile.leaseStartDate)}`);
-  } else {
-    parts.push("Einzug offen");
-  }
-  if (profile.moveOutDate) parts.push(`Auszug ${formatDate(profile.moveOutDate)}`);
-  return parts.join(" · ");
 }
 
 function toDateInput(value?: Date | null) {

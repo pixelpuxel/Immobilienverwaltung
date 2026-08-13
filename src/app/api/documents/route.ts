@@ -5,8 +5,9 @@ import { indexDocument } from "@/lib/ai-search";
 import { assertSameOrigin, clientIp, requireApiUser } from "@/lib/auth";
 import { buildDocumentMetadata, extractDocumentYear } from "@/lib/document-metadata";
 import { saveUpload } from "@/lib/files";
+import { runDocumentOcr } from "@/lib/ocr";
 import { brokerPropertyIds, brokerVisibleDocumentWhere, tenantUnitId } from "@/lib/permissions";
-import { assertDocumentCategoryInPortal, assertPropertyInPortal, assertUnitInPortal, portalWhere } from "@/lib/portal-instance";
+import { assertPropertyInPortal, assertUnitInPortal, portalWhere } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(request: NextRequest) {
@@ -198,14 +199,9 @@ export async function POST(request: NextRequest) {
   let propertyId = String(form.get("propertyId") || "") || null;
   let unitId = String(form.get("unitId") || "") || null;
   const tenantProfileId = String(form.get("tenantProfileId") || "") || null;
-  const categoryId = String(form.get("categoryId") || "") || null;
-  const documentYearValue = String(form.get("documentYear") || "").trim();
-  const documentYear = documentYearValue ? Number(documentYearValue) : null;
   const isPropertyImage = String(form.get("isPropertyImage") || "") === "true";
   const isPrimaryImage = String(form.get("isPrimaryImage") || "") === "true";
-  if (documentYear !== null && (!Number.isInteger(documentYear) || documentYear < 1900 || documentYear > 2100)) {
-    return NextResponse.json({ error: "Abrechnungsjahr ist ungueltig." }, { status: 400 });
-  }
+  const runOcr = String(form.get("runOcr") || "") === "true";
   if (tenantProfileId) {
     const tenant = await prisma.tenantProfile.findFirst({
       where: { id: tenantProfileId, user: portalWhere(user) },
@@ -220,9 +216,6 @@ export async function POST(request: NextRequest) {
   }
   if (!(await assertPropertyInPortal(propertyId, user)) || !(await assertUnitInPortal(unitId, user))) {
     return NextResponse.json({ error: "Zuordnung gehoert nicht zu dieser Instanz." }, { status: 403 });
-  }
-  if (!(await assertDocumentCategoryInPortal(categoryId, user))) {
-    return NextResponse.json({ error: "Kategorie gehoert nicht zu dieser Instanz." }, { status: 400 });
   }
   if (isPropertyImage && isPrimaryImage && propertyId) {
     await prisma.document.updateMany({
@@ -248,8 +241,7 @@ export async function POST(request: NextRequest) {
         propertyId,
         unitId,
         tenantProfileId,
-        categoryId,
-        documentYear,
+        categoryId: String(form.get("categoryId") || "") || null,
         isPropertyImage,
         isPrimaryImage: isPropertyImage && isPrimaryImage && index === 0,
         uploadedById: user.id
@@ -257,10 +249,14 @@ export async function POST(request: NextRequest) {
       include: { property: true, unit: { include: { property: true } }, category: true }
     });
     const metadata = buildDocumentMetadata(document);
-    const enrichedDocument = await prisma.document.update({
+    let enrichedDocument = await prisma.document.update({
       where: { id: document.id },
       data: metadata
     });
+    if (runOcr) {
+      const ocr = await runDocumentOcr(document.id);
+      enrichedDocument = ocr.document;
+    }
     await auditLog({ userId: user.id, action: AuditAction.FILE_UPLOADED, entity: "Document", entityId: document.id, ipAddress: clientIp(request) });
     indexDocument(document.id).catch((error) => console.error("Document index failed", document.id, error));
     uploadedDocuments.push(enrichedDocument);

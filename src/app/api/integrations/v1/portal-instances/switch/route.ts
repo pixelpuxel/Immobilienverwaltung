@@ -5,11 +5,7 @@ import { createPlainApiToken, hashApiToken, integrationError, requireAdminIntegr
 import { prisma } from "@/lib/prisma";
 
 const schema = z.object({
-  instanceId: z.string().trim().min(1).optional(),
-  portalInstanceId: z.string().trim().min(1).optional()
-}).refine((value) => Boolean(value.instanceId || value.portalInstanceId), {
-  message: "Portal-Instanz fehlt.",
-  path: ["instanceId"]
+  instanceId: z.string().trim().min(1)
 });
 
 export async function POST(request: NextRequest) {
@@ -24,10 +20,8 @@ export async function POST(request: NextRequest) {
   const body = schema.safeParse(await request.json().catch(() => ({})));
   if (!body.success) return integrationError("BAD_REQUEST", "Ungueltige Portal-Instanz.", 400);
 
-  const instanceId = body.data.instanceId || body.data.portalInstanceId;
-  if (!instanceId) return integrationError("BAD_REQUEST", "Ungueltige Portal-Instanz.", 400);
   const instance = await prisma.portalInstance.findUnique({
-    where: { id: instanceId },
+    where: { id: body.data.instanceId },
     include: {
       users: {
         where: { role: Role.ADMIN, active: true },

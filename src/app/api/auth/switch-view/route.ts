@@ -10,21 +10,6 @@ const schema = z.object({
   instanceSwitch: z.boolean().optional().default(false)
 });
 
-async function readSwitchBody(request: NextRequest) {
-  const contentType = request.headers.get("content-type") || "";
-  if (contentType.includes("application/json")) {
-    return request.json().catch(() => ({}));
-  }
-  const form = await request.formData().catch(() => null);
-  if (!form) return {};
-  const rawUserId = String(form.get("userId") || "").trim();
-  const rawInstanceSwitch = String(form.get("instanceSwitch") || "").toLowerCase();
-  return {
-    userId: rawUserId || undefined,
-    instanceSwitch: ["1", "true", "on", "yes"].includes(rawInstanceSwitch)
-  };
-}
-
 async function sessionContext(request: NextRequest) {
   const session = readSessionToken(request.cookies.get(SESSION_COOKIE)?.value);
   if (!session) return null;
@@ -168,7 +153,7 @@ export async function POST(request: NextRequest) {
   if (!context) return NextResponse.json({ error: "Nur Eigentümer koennen die Ansicht wechseln." }, { status: 403 });
   const { actor, admin, isImpersonating } = context;
 
-  const body = schema.safeParse(await readSwitchBody(request));
+  const body = schema.safeParse(await request.json());
   if (!body.success) return NextResponse.json({ error: "Ungueltige Ansicht." }, { status: 400 });
   const currentPortalId = actor.portalInstanceId || admin.portalInstanceId;
   const targetScope = isImpersonating

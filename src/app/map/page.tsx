@@ -31,9 +31,6 @@ export default async function MapPage() {
       longitude: property.longitude as number,
       rentalStatus: property.rentalStatus,
       unitCount: property.units.length || property.unitCount,
-      purchasePrice: user.role === Role.ADMIN ? property.purchasePrice?.toString() || null : undefined,
-      expectedPurchasePrice: user.role === Role.ADMIN ? property.expectedPurchasePrice?.toString() || null : undefined,
-      outstandingLoan: user.role === Role.ADMIN ? property.outstandingLoan?.toString() || null : undefined,
       primaryImageId: property.documents.find((document) => document.isPropertyImage && document.isPrimaryImage)?.id
         || property.documents.find((document) => document.isPropertyImage)?.id
         || ""

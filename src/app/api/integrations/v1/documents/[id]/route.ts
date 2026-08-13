@@ -26,7 +26,7 @@ const documentUpdateSchema = z.object({
   categoryId: z.string().nullable().optional(),
   isPropertyImage: z.boolean().optional(),
   isPrimaryImage: z.boolean().optional(),
-  documentYear: z.number().int().min(1900).max(2100).nullable().optional()
+  documentYear: z.number().int().min(1900).max(2049).nullable().optional()
 });
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {

@@ -28,7 +28,7 @@ ENV PORT=8088
 ENV HOSTNAME=0.0.0.0
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends libreoffice-writer poppler-utils tesseract-ocr tesseract-ocr-deu openssl ca-certificates tini \
+  && apt-get install -y --no-install-recommends libreoffice-writer poppler-utils tesseract-ocr tesseract-ocr-deu tesseract-ocr-eng openssl ca-certificates tini \
   && rm -rf /var/lib/apt/lists/* \
   && mkdir -p /app/uploads /app/contracts
 

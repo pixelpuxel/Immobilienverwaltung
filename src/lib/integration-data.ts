@@ -1,5 +1,4 @@
 import { type BrokerValuation, type Document, type DocumentCategory, type Prisma, type Property, type Unit, type User } from "@prisma/client";
-import { decimalString, propertyFinance } from "@/lib/property-finance";
 
 export function propertySelect(include?: string[]): Prisma.PropertyInclude | undefined {
   if (!include?.length) return undefined;
@@ -17,7 +16,6 @@ export function serializeProperty(property: Property & {
   documents?: Document[];
   brokerValuations?: Array<BrokerValuation & { user?: Pick<User, "id" | "email" | "username" | "name" | "role"> | null }>;
 }) {
-  const finance = propertyFinance(property);
   return {
     ...property,
     livingArea: property.livingArea?.toString() ?? null,
@@ -27,8 +25,6 @@ export function serializeProperty(property: Property & {
     purchasePrice: property.purchasePrice?.toString() ?? null,
     expectedPurchasePrice: property.expectedPurchasePrice?.toString() ?? null,
     outstandingLoan: property.outstandingLoan?.toString() ?? null,
-    valueGain: decimalString(finance.valueGain),
-    equity: decimalString(finance.equity),
     units: property.units?.map(serializeUnit),
     documents: property.documents?.map((document) => ({
       id: document.id,
@@ -107,11 +103,11 @@ export function serializeDocument(document: Document & {
     category: document.category ? { id: document.category.id, group: document.category.group, name: document.category.name } : null,
     summary: document.summary,
     tags: document.tags,
-    documentYear: document.documentYear,
     ocrStatus: document.ocrStatus,
     ocrProcessedAt: document.ocrProcessedAt,
     ocrError: document.ocrError,
     ocrText: document.ocrText,
+    documentYear: document.documentYear,
     isPropertyImage: document.isPropertyImage,
     isPrimaryImage: document.isPrimaryImage,
     createdAt: document.createdAt,

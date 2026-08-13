@@ -12,12 +12,7 @@ export async function GET(request: NextRequest) {
   const { user, response } = await requireIntegrationUser(request, ["read:units"]);
   if (!user) return response;
   const propertyId = request.nextUrl.searchParams.get("propertyId");
-  const q = request.nextUrl.searchParams.get("q")?.trim() || "";
-  const where: Prisma.UnitWhereInput = {
-    ...(await unitAccessWhere(user)),
-    ...(propertyId ? { propertyId } : {}),
-    ...(q ? unitSearchWhere(q) : {})
-  };
+  const where: Prisma.UnitWhereInput = { ...(await unitAccessWhere(user)), ...(propertyId ? { propertyId } : {}) };
   const units = await prisma.unit.findMany({ where, orderBy: { updatedAt: "desc" } });
   return NextResponse.json({ items: units.map(serializeUnit), nextCursor: null });
 }
@@ -32,27 +27,6 @@ export async function POST(request: NextRequest) {
   if (!(await assertPropertyInPortal(body.data.propertyId, user))) return NextResponse.json({ error: { code: "FORBIDDEN", message: "Immobilie gehoert nicht zu dieser Instanz." } }, { status: 403 });
   const unit = await prisma.unit.create({ data: withCalculatedWarmRent(body.data) });
   return NextResponse.json(serializeUnit(unit), { status: 201 });
-}
-
-function unitSearchWhere(query: string): Prisma.UnitWhereInput {
-  const terms = query
-    .split(/[\s,;/]+/)
-    .map((item) => item.trim())
-    .filter((item) => item.length >= 2);
-  if (!terms.length) return {};
-  return {
-    AND: terms.map((term) => ({
-      OR: [
-        { unitNumber: { contains: term, mode: "insensitive" } },
-        { floor: { contains: term, mode: "insensitive" } },
-        { status: { contains: term, mode: "insensitive" } },
-        { property: { name: { contains: term, mode: "insensitive" } } },
-        { property: { address: { contains: term, mode: "insensitive" } } },
-        { property: { street: { contains: term, mode: "insensitive" } } },
-        { property: { city: { contains: term, mode: "insensitive" } } }
-      ]
-    }))
-  };
 }
 
 async function unitAccessWhere(user: { id: string; role: Role; portalInstanceId: string | null }) {

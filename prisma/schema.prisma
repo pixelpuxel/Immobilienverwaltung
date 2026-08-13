@@ -42,6 +42,11 @@ enum AuditAction {
   BACKUP_IMPORTED
 }
 
+enum NetWorthAssetType {
+  ASSET
+  LIABILITY
+}
+
 model PortalInstance {
   id          String             @id @default(cuid())
   name        String
@@ -63,6 +68,8 @@ model PortalInstance {
   serviceChargeRules ServiceChargeRule[]
   serviceChargeStatementLines ServiceChargeStatementLine[]
   serviceChargeStatements ServiceChargeStatement[]
+  propertyLoanAccountMappings PropertyLoanAccountMapping[]
+  netWorthAssets NetWorthAsset[]
   agentConfig AgentConfig?
   agentConversations AgentConversation[]
   auditLogs   AuditLog[]
@@ -218,8 +225,47 @@ model Property {
   todos                 PropertyTodo[]
   serviceChargeRules    ServiceChargeRule[]
   serviceChargeStatements ServiceChargeStatement[]
+  loanAccountMappings PropertyLoanAccountMapping[]
   timelineEvents        TimelineEvent[]
   portalInstance        PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
+}
+
+model PropertyLoanAccountMapping {
+  id                String          @id @default(cuid())
+  portalInstanceId  String?
+  propertyId        String
+  bankingAccountId  Int
+  label             String?
+  lastBalance       Decimal?        @db.Decimal(14, 2)
+  lastBalanceAt     DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  portalInstance    PortalInstance? @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
+  property          Property        @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@unique([propertyId, bankingAccountId])
+  @@index([portalInstanceId])
+  @@index([bankingAccountId])
+}
+
+model NetWorthAsset {
+  id                  String            @id @default(cuid())
+  portalInstanceId    String?
+  name                String
+  type                NetWorthAssetType @default(ASSET)
+  manualValue         Decimal?          @db.Decimal(14, 2)
+  bankingAccountId    Int?
+  bankingAccountLabel String?
+  lastSyncedValue     Decimal?          @db.Decimal(14, 2)
+  lastSyncedAt        DateTime?
+  note                String?
+  active              Boolean           @default(true)
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  portalInstance      PortalInstance?   @relation(fields: [portalInstanceId], references: [id], onDelete: Cascade)
+
+  @@index([portalInstanceId, active])
+  @@index([bankingAccountId])
 }
 
 model PropertyTodo {
@@ -372,11 +418,11 @@ model Document {
   isPrimaryImage  Boolean         @default(false)
   summary         String?
   tags            String[]        @default([])
-  documentYear    Int?
   ocrText         String?         @db.Text
   ocrStatus       String?
-  ocrProcessedAt DateTime?
-  ocrError        String?         @db.Text
+  ocrProcessedAt  DateTime?
+  ocrError        String?
+  documentYear    Int?
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
   property        Property?       @relation(fields: [propertyId], references: [id], onDelete: Cascade)
