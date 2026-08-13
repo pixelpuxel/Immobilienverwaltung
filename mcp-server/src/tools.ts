@@ -133,7 +133,7 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
     "list_properties",
     {
       title: "Immobilien listen",
-      description: "Listet Immobilien mit optionalem Suchbegriff und optionalen Unterdaten.",
+      description: "Listet Immobilien mit optionalem Suchbegriff und optionalen Unterdaten. Mit include: [\"images\"] werden Objektbilder als images mit Preview-, Thumbnail- und Download-Links mitgeliefert.",
       inputSchema: {
         q: optionalString,
         limit: z.number().int().min(1).max(100).optional(),
@@ -151,7 +151,7 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
     "get_property",
     {
       title: "Immobilie abrufen",
-      description: "Ruft eine Immobilie per ID ab, optional mit Einheiten, Dokumenten, Mietern und Bildern.",
+      description: "Ruft eine Immobilie per ID ab, optional mit Einheiten, Dokumenten, Mietern und Bildern. Mit include: [\"images\"] werden Objektbilder als images mit Preview-, Thumbnail- und Download-Links mitgeliefert.",
       inputSchema: {
         id: z.string().trim().min(1),
         include: z.array(z.enum(["units", "documents", "tenants", "images", "brokerValuations"])).optional()

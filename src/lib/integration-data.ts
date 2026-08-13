@@ -2,9 +2,19 @@ import { type BrokerValuation, type Document, type DocumentCategory, type Prisma
 
 export function propertySelect(include?: string[]): Prisma.PropertyInclude | undefined {
   if (!include?.length) return undefined;
+  const wantsDocuments = include.includes("documents");
+  const wantsImages = include.includes("images");
   return {
     units: include.includes("units"),
-    documents: include.includes("documents"),
+    documents: wantsDocuments || wantsImages
+      ? {
+          where: wantsDocuments ? undefined : { isPropertyImage: true },
+          orderBy: [
+            { isPrimaryImage: "desc" },
+            { updatedAt: "desc" }
+          ]
+        }
+      : false,
     brokerValuations: include.includes("brokerValuations")
       ? { include: { user: { select: { id: true, email: true, username: true, name: true, role: true } } }, orderBy: { updatedAt: "desc" } }
       : false
@@ -15,7 +25,10 @@ export function serializeProperty(property: Property & {
   units?: Unit[];
   documents?: Document[];
   brokerValuations?: Array<BrokerValuation & { user?: Pick<User, "id" | "email" | "username" | "name" | "role"> | null }>;
-}) {
+}, include?: string[]) {
+  const wantsImages = include?.includes("images");
+  const wantsDocuments = include?.includes("documents");
+  const propertyImages = property.documents?.filter((document) => document.isPropertyImage) || [];
   return {
     ...property,
     livingArea: property.livingArea?.toString() ?? null,
@@ -26,7 +39,7 @@ export function serializeProperty(property: Property & {
     expectedPurchasePrice: property.expectedPurchasePrice?.toString() ?? null,
     outstandingLoan: property.outstandingLoan?.toString() ?? null,
     units: property.units?.map(serializeUnit),
-    documents: property.documents?.map((document) => ({
+    documents: wantsDocuments ? property.documents?.map((document) => ({
       id: document.id,
       title: document.title,
       filename: document.filename,
@@ -34,7 +47,18 @@ export function serializeProperty(property: Property & {
       isPropertyImage: document.isPropertyImage,
       isPrimaryImage: document.isPrimaryImage,
       previewUrl: `/api/integrations/v1/documents/${document.id}/preview`
-    })),
+    })) : undefined,
+    images: wantsImages ? propertyImages.map((document) => ({
+      id: document.id,
+      title: document.title,
+      filename: document.filename,
+      mimeType: document.mimeType,
+      size: document.size,
+      isPrimaryImage: document.isPrimaryImage,
+      previewUrl: `/api/integrations/v1/documents/${document.id}/preview`,
+      thumbnailUrl: `/api/integrations/v1/documents/${document.id}/thumbnail`,
+      downloadUrl: `/api/integrations/v1/documents/${document.id}/download`
+    })) : undefined,
     brokerValuations: property.brokerValuations?.map((valuation) => ({
       id: valuation.id,
       userId: valuation.userId,

@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
     ]
   };
   const items = await prisma.property.findMany({ where, include: propertySelect(include), orderBy: { updatedAt: "desc" }, take: limit });
-  return NextResponse.json({ items: items.map(serializeProperty), nextCursor: null });
+  return NextResponse.json({ items: items.map((property) => serializeProperty(property, include)), nextCursor: null });
 }
 
 export async function POST(request: NextRequest) {
@@ -45,4 +45,3 @@ async function propertyAccessWhere(user: { id: string; role: Role; portalInstanc
   const profile = await prisma.tenantProfile.findUnique({ where: { userId: user.id } });
   return { ...portalWhere(user), units: { some: { id: profile?.unitId || "" } } };
 }
-

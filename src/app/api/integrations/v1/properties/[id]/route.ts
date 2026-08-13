@@ -13,7 +13,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   if (!user) return response;
   const include = request.nextUrl.searchParams.get("include")?.split(",").map((item) => item.trim()).filter(Boolean);
   const property = await prisma.property.findFirst({ where: { id: params.id, ...(await propertyAccessWhere(user)) }, include: propertySelect(include) });
-  return property ? NextResponse.json(serializeProperty(property)) : NextResponse.json({ error: { code: "NOT_FOUND", message: "Immobilie nicht gefunden." } }, { status: 404 });
+  return property ? NextResponse.json(serializeProperty(property, include)) : NextResponse.json({ error: { code: "NOT_FOUND", message: "Immobilie nicht gefunden." } }, { status: 404 });
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
@@ -35,4 +35,3 @@ async function propertyAccessWhere(user: { id: string; role: Role; portalInstanc
   const profile = await prisma.tenantProfile.findUnique({ where: { userId: user.id } });
   return { ...portalWhere(user), units: { some: { id: profile?.unitId || "" } } };
 }
-
