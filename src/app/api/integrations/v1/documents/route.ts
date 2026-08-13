@@ -5,6 +5,7 @@ import { requireIntegrationUser } from "@/lib/integration-auth";
 import { serializeDocument } from "@/lib/integration-data";
 import { buildDocumentMetadata } from "@/lib/document-metadata";
 import { saveUpload } from "@/lib/files";
+import { runDocumentOcr } from "@/lib/ocr";
 import { brokerPropertyIds } from "@/lib/permissions";
 import { assertPropertyInPortal, assertUnitInPortal } from "@/lib/portal-instance";
 import { prisma } from "@/lib/prisma";
@@ -23,6 +24,7 @@ type IntegrationDocumentUploadInput = {
   summary: string | null;
   tags: string[];
   documentYear: number | null;
+  runOcr: boolean;
 };
 
 export async function GET(request: NextRequest) {
@@ -51,7 +53,7 @@ export async function GET(request: NextRequest) {
       tenant ? tenantPersonalDocumentWhere(tenant) : {},
       categoryId ? { categoryId } : {},
       updatedSince ? { updatedAt: { gte: new Date(updatedSince) } } : {},
-      q ? { OR: [{ title: { contains: q, mode: "insensitive" } }, { filename: { contains: q, mode: "insensitive" } }, { summary: { contains: q, mode: "insensitive" } }] } : {}
+      q ? { OR: [{ title: { contains: q, mode: "insensitive" } }, { filename: { contains: q, mode: "insensitive" } }, { summary: { contains: q, mode: "insensitive" } }, { ocrText: { contains: q, mode: "insensitive" } }] } : {}
     ]
   };
   const [documents, total] = await Promise.all([
@@ -157,6 +159,11 @@ export async function POST(request: NextRequest) {
     },
     include: integrationDocumentInclude()
   });
+  if (input.runOcr) {
+    await runDocumentOcr(document.id);
+    const enriched = await prisma.document.findUniqueOrThrow({ where: { id: document.id }, include: integrationDocumentInclude() });
+    return NextResponse.json(serializeDocument(enriched), { status: 201 });
+  }
   if (!document.summary || !document.tags.length) {
     const metadata = buildDocumentMetadata(document);
     const enriched = await prisma.document.update({ where: { id: document.id }, data: { summary: document.summary || metadata.summary, tags: document.tags.length ? document.tags : metadata.tags }, include: integrationDocumentInclude() });
@@ -206,7 +213,8 @@ async function parseIntegrationDocumentUpload(request: NextRequest): Promise<Int
       categoryId: textValue(data.categoryId),
       summary: textValue(data.summary) || textValue(data.description),
       tags: arrayValue(data.tags),
-      documentYear: numberValue(data.documentYear)
+      documentYear: numberValue(data.documentYear),
+      runOcr: booleanValue(data.runOcr) || booleanValue(data.ocr)
     });
   }
 
@@ -226,7 +234,8 @@ async function parseIntegrationDocumentUpload(request: NextRequest): Promise<Int
     categoryId: String(form.get("categoryId") || "") || null,
     summary: String(form.get("summary") || "") || null,
     tags: String(form.get("tags") || "").split(",").map((tag) => tag.trim()).filter(Boolean),
-    documentYear: numberValue(form.get("documentYear"))
+    documentYear: numberValue(form.get("documentYear")),
+    runOcr: String(form.get("runOcr") || form.get("ocr") || "") === "true"
   });
 }
 
@@ -244,6 +253,7 @@ function normalizeUploadInput(input: {
   summary?: string | null;
   tags?: string[];
   documentYear?: number | null;
+  runOcr?: boolean;
 }): IntegrationDocumentUploadInput {
   return {
     file: input.file,
@@ -258,7 +268,8 @@ function normalizeUploadInput(input: {
     categoryId: input.categoryId || null,
     summary: input.summary || null,
     tags: input.tags || [],
-    documentYear: input.documentYear || null
+    documentYear: input.documentYear || null,
+    runOcr: Boolean(input.runOcr)
   };
 }
 

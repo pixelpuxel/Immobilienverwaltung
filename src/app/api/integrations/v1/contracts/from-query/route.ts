@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { auditLog } from "@/lib/audit";
 import { clientIp } from "@/lib/auth";
+import { contractPublicLinks } from "@/lib/contract-downloads";
 import { generateContract, selectContractTemplate } from "@/lib/contracts";
 import { integrationError, requireAdminIntegration, requireIntegrationUser } from "@/lib/integration-auth";
 import { portalWhere } from "@/lib/portal-instance";
@@ -12,6 +13,8 @@ const schema = z.object({
   query: z.string().trim(),
   dryRun: z.boolean().optional().default(false)
 });
+
+const CONTRACT_LINK_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 export async function POST(request: NextRequest) {
   const { user, response } = await requireIntegrationUser(request, ["read:tenants", "read:contracts", "write:contracts"]);
@@ -134,6 +137,12 @@ export async function POST(request: NextRequest) {
   });
   await auditLog({ userId: user.id, action: AuditAction.CONTRACT_GENERATED, entity: "LeaseContract", entityId: contract.id, ipAddress: clientIp(request) });
 
+  const links = contractPublicLinks(contract.id, Boolean(contract.pdfPath), {
+    absolute: true,
+    signed: true,
+    expiresInSeconds: CONTRACT_LINK_TTL_SECONDS,
+    baseUrl: publicBaseUrl(request)
+  });
   const result = {
     id: contract.id,
     tenantProfileId: contract.tenantProfileId,
@@ -142,9 +151,11 @@ export async function POST(request: NextRequest) {
     tenantProfile: contract.tenantProfile,
     unit: contract.unit,
     createdAt: contract.createdAt,
-    previewUrl: absoluteUrl(request, `/api/contracts/${contract.id}/preview`),
-    docxDownloadUrl: absoluteUrl(request, `/api/contracts/${contract.id}/download?format=docx`),
-    pdfDownloadUrl: absoluteUrl(request, `/api/contracts/${contract.id}/download?format=pdf`),
+    previewUrl: links.preview,
+    downloadUrl: links.pdf || links.docx,
+    docxDownloadUrl: links.docx,
+    pdfDownloadUrl: links.pdf,
+    signedLinksExpireInSeconds: CONTRACT_LINK_TTL_SECONDS,
     integrationDocxDownloadUrl: absoluteUrl(request, `/api/integrations/v1/contracts/${contract.id}/download?format=docx`),
     integrationPdfDownloadUrl: absoluteUrl(request, `/api/integrations/v1/contracts/${contract.id}/download?format=pdf`)
   };
@@ -193,6 +204,18 @@ function compactTenant(tenant: {
 }
 
 function absoluteUrl(request: NextRequest, path: string) {
-  const appUrl = process.env.APP_URL || request.nextUrl.origin;
-  return `${appUrl.replace(/\/$/, "")}${path}`;
+  return `${publicBaseUrl(request).replace(/\/$/, "")}${path}`;
+}
+
+function publicBaseUrl(request: NextRequest) {
+  const configured = process.env.APP_URL?.trim();
+  if (configured && !/localhost|127\.0\.0\.1|portal\.local|^http:\/\/app(?::|\/|$)/i.test(configured)) {
+    return configured;
+  }
+  const forwardedHost = request.headers.get("x-forwarded-host") || request.headers.get("host");
+  if (forwardedHost && !/^app(?::|$)/i.test(forwardedHost)) {
+    const protocol = request.headers.get("x-forwarded-proto") || request.nextUrl.protocol.replace(":", "") || "https";
+    return `${protocol}://${forwardedHost}`;
+  }
+  return configured || request.nextUrl.origin;
 }

@@ -24,6 +24,9 @@ const documentToolOutputSchema = {
   status: z.string().nullable(),
   previewUrl: z.string().nullable(),
   downloadUrl: z.string().nullable(),
+  ocrStatus: z.string().nullable().optional(),
+  ocrProcessedAt: z.string().nullable().optional(),
+  ocrError: z.string().nullable().optional(),
   message: z.string(),
   document: z.unknown()
 };
@@ -157,6 +160,135 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
     async ({ id, include }) => jsonContent(await portal.json({
       path: `/api/integrations/v1/properties/${encodeURIComponent(id)}`,
       query: { include: include?.join(",") }
+    }))
+  );
+
+  server.registerTool(
+    "list_banking_accounts",
+    {
+      title: "Bankkonten aus Banking listen",
+      description: "Listet die in banking.schreiber.info sichtbaren Bankkonten mit Saldo. Grundlage fuer Darlehens- und Vermoegensmapping.",
+      inputSchema: {}
+    },
+    async () => jsonContent(await portal.json({ path: "/api/integrations/v1/net-worth/accounts" }))
+  );
+
+  server.registerTool(
+    "get_net_worth_summary",
+    {
+      title: "Nettowert und Vermoegen abrufen",
+      description: "Berechnet Immobilienwerte, valutierte Darlehen, sonstige Vermoegenswerte und Gesamt-Nettowert.",
+      inputSchema: {}
+    },
+    async () => jsonContent(await portal.json({ path: "/api/integrations/v1/net-worth" }))
+  );
+
+  server.registerTool(
+    "list_net_worth_assets",
+    {
+      title: "Sonstige Vermoegenswerte listen",
+      description: "Listet sonstige Vermoegenswerte und Verbindlichkeiten, inklusive optional gemappter Bankkonten.",
+      inputSchema: {}
+    },
+    async () => jsonContent(await portal.json({ path: "/api/integrations/v1/net-worth/assets" }))
+  );
+
+  server.registerTool(
+    "create_net_worth_asset",
+    {
+      title: "Sonstigen Vermoegenswert anlegen",
+      description: "Legt einen Vermoegenswert oder eine Verbindlichkeit an. Kann manuell oder per Banking-Konto gemappt sein.",
+      inputSchema: netWorthAssetInputShape()
+    },
+    async (args) => jsonContent(await portal.json({
+      method: "POST",
+      path: "/api/integrations/v1/net-worth/assets",
+      body: args
+    }))
+  );
+
+  server.registerTool(
+    "update_net_worth_asset",
+    {
+      title: "Sonstigen Vermoegenswert aktualisieren",
+      description: "Aendert einen Vermoegenswert oder eine Verbindlichkeit.",
+      inputSchema: {
+        id: z.string().trim().min(1),
+        data: z.object(netWorthAssetInputShape()).partial()
+      }
+    },
+    async ({ id, data }) => jsonContent(await portal.json({
+      method: "PATCH",
+      path: `/api/integrations/v1/net-worth/assets/${encodeURIComponent(id)}`,
+      body: data
+    }))
+  );
+
+  server.registerTool(
+    "delete_net_worth_asset",
+    {
+      title: "Sonstigen Vermoegenswert loeschen",
+      description: "Loescht einen Vermoegenswert oder eine Verbindlichkeit.",
+      inputSchema: { id: z.string().trim().min(1) }
+    },
+    async ({ id }) => jsonContent(await portal.json({
+      method: "DELETE",
+      path: `/api/integrations/v1/net-worth/assets/${encodeURIComponent(id)}`
+    }))
+  );
+
+  server.registerTool(
+    "list_property_loan_account_mappings",
+    {
+      title: "Darlehenskonto-Mappings listen",
+      description: "Listet, welche Banking-Konten als valutierte Darlehen welchen Immobilien zugeordnet sind.",
+      inputSchema: {}
+    },
+    async () => jsonContent(await portal.json({ path: "/api/integrations/v1/net-worth/property-loans" }))
+  );
+
+  server.registerTool(
+    "map_property_loan_account",
+    {
+      title: "Darlehenskonto einer Immobilie zuordnen",
+      description: "Ordnet einer Immobilie ein Banking-Konto als Darlehenskonto zu. Danach sync_net_worth_from_banking ausfuehren.",
+      inputSchema: {
+        propertyId: z.string().trim().min(1),
+        bankingAccountId: z.number().int(),
+        label: optionalString
+      }
+    },
+    async (args) => jsonContent(await portal.json({
+      method: "POST",
+      path: "/api/integrations/v1/net-worth/property-loans",
+      body: args
+    }))
+  );
+
+  server.registerTool(
+    "unmap_property_loan_account",
+    {
+      title: "Darlehenskonto-Zuordnung entfernen",
+      description: "Entfernt eine Darlehenskonto-Zuordnung anhand der Mapping-ID.",
+      inputSchema: { id: z.string().trim().min(1) }
+    },
+    async ({ id }) => jsonContent(await portal.json({
+      method: "DELETE",
+      path: `/api/integrations/v1/net-worth/property-loans/${encodeURIComponent(id)}`
+    }))
+  );
+
+  server.registerTool(
+    "sync_net_worth_from_banking",
+    {
+      title: "Vermoegenswerte aus Banking synchronisieren",
+      description: "Liest Banking-Salden ein, aktualisiert gemappte Immobilien-Darlehen und gemappte sonstige Vermoegenswerte.",
+      inputSchema: {}
+    },
+    async () => jsonContent(await portal.json({
+      method: "POST",
+      path: "/api/integrations/v1/net-worth/sync",
+      body: {}
     }))
   );
 
@@ -394,6 +526,7 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
         summary: optionalString.describe("Optionale Kurzbeschreibung."),
         tags: z.array(z.string()).optional(),
         documentYear: z.number().int().min(1900).max(2049).optional(),
+        runOcr: z.boolean().optional().describe("Wenn true, fuehrt das Portal nach dem Upload OCR fuer PDF-/Bilddateien aus."),
         isPropertyImage: z.boolean().optional(),
         isPrimaryImage: z.boolean().optional()
       },
@@ -431,11 +564,12 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
         title: optionalString.describe("Anzeigetitel im Portal."),
         summary: optionalString.describe("Kurze vorlaeufige Beschreibung."),
         tags: z.array(z.string()).optional(),
-        documentYear: z.number().int().min(1900).max(2049).optional()
+        documentYear: z.number().int().min(1900).max(2049).optional(),
+        runOcr: z.boolean().optional().describe("Wenn true, fuehrt das Portal nach dem Upload OCR fuer PDF-/Bilddateien aus.")
       },
       outputSchema: documentToolOutputSchema
     },
-    async ({ file, fileBase64, filename, mimeType, title, summary, tags, documentYear }) => {
+    async ({ file, fileBase64, filename, mimeType, title, summary, tags, documentYear, runOcr }) => {
       const upload = await resolveUploadPayload(file, fileBase64, filename, mimeType);
       const document = await portal.json({
         method: "POST",
@@ -449,7 +583,8 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
           scope: "PROPERTY",
           summary: summary || "Ueber MCP hochgeladen; fachliche Einsortierung steht noch aus.",
           tags: ["eingang", "mcp-upload", ...(tags || [])],
-          documentYear
+          documentYear,
+          runOcr
         }
       });
       return structuredJsonContent(documentToolResult(document as IntegrationDocumentLike, {
@@ -571,11 +706,12 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
         status: z.enum(["MISSING", "REQUESTED", "AVAILABLE", "SHARED", "NOT_RELEVANT"]).optional(),
         summary: optionalString.describe("Kurze Inhaltsbeschreibung."),
         tags: z.array(z.string()).optional(),
-        documentYear: z.number().int().min(1900).max(2049).optional()
+        documentYear: z.number().int().min(1900).max(2049).optional(),
+        runOcr: z.boolean().optional().describe("Wenn true, fuehrt das Portal nach dem Upload OCR fuer PDF-/Bilddateien aus.")
       },
       outputSchema: documentToolOutputSchema
     },
-    async ({ tenantProfileId, file, fileBase64, filename, mimeType, title, categoryName, categoryGroup, createCategoryIfMissing, status, summary, tags, documentYear }) => {
+    async ({ tenantProfileId, file, fileBase64, filename, mimeType, title, categoryName, categoryGroup, createCategoryIfMissing, status, summary, tags, documentYear, runOcr }) => {
       const upload = await resolveUploadPayload(file, fileBase64, filename, mimeType);
       const tenant = await portal.json<{ id: string; unitId?: string | null; unit?: { id: string; propertyId?: string | null } | null }>({
         path: `/api/integrations/v1/tenants/${encodeURIComponent(tenantProfileId)}`
@@ -599,7 +735,8 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
           scope: "TENANT",
           summary,
           tags,
-          documentYear
+          documentYear,
+          runOcr
         }
       });
       return structuredJsonContent(documentToolResult(document, {
@@ -665,6 +802,53 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
         `Gueltig bis: ${result.expiresAt}`
       ].join("\n"));
     }
+  );
+
+  server.registerTool(
+    "read_document_content",
+    {
+      title: "Dokumentinhalt lesen",
+      description: "Liest maschinenlesbaren Text aus einem Dokument. Bei Scan-PDFs oder nicht extrahierbaren Dateien kann die Originaldatei als Base64 fuer eine clientseitige Bild-/Dateierkennung mitgeliefert werden. Braucht read:documents und download:documents.",
+      inputSchema: {
+        id: z.string().trim().min(1),
+        includeFile: z.boolean().optional().describe("Wenn true, wird die Datei als Base64 mitgeliefert, sofern sie nicht zu gross ist."),
+        preferPdf: z.boolean().optional().describe("Wenn true, werden Office-Dateien nach Moeglichkeit als PDF zurueckgegeben."),
+        maxChars: z.number().int().min(1000).max(500000).optional().describe("Maximale Zeichenanzahl fuer extrahierten Text.")
+      }
+    },
+    async ({ id, includeFile, preferPdf, maxChars }) => jsonContent(await portal.json({
+      path: `/api/integrations/v1/documents/${encodeURIComponent(id)}/content`,
+      query: { includeFile, preferPdf, maxChars }
+    }))
+  );
+
+  server.registerTool(
+    "get_document_ocr",
+    {
+      title: "Dokument-OCR lesen",
+      description: "Liest OCR-Status und erkannten Text eines Dokuments. Nutze dies, wenn ein Dokument inhaltlich ausgewertet werden soll.",
+      inputSchema: {
+        id: z.string().trim().min(1)
+      }
+    },
+    async ({ id }) => jsonContent(await portal.json({
+      path: `/api/integrations/v1/documents/${encodeURIComponent(id)}/ocr`
+    }))
+  );
+
+  server.registerTool(
+    "run_document_ocr",
+    {
+      title: "Dokument-OCR ausführen",
+      description: "Fuehrt OCR fuer ein bestehendes PDF-/Bilddokument aus und speichert den Text im Portal. Braucht write:documents.",
+      inputSchema: {
+        id: z.string().trim().min(1)
+      }
+    },
+    async ({ id }) => jsonContent(await portal.json({
+      method: "POST",
+      path: `/api/integrations/v1/documents/${encodeURIComponent(id)}/ocr`
+    }))
   );
 
   server.registerTool(
@@ -770,16 +954,14 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
     "get_contract_links",
     {
       title: "Mietvertrags-Links erzeugen",
-      description: "Erzeugt autorisierte Integrations-Downloadlinks fuer DOCX und PDF.",
+      description: "Erzeugt stabile signierte Portal-Links fuer Vorschau, DOCX und PDF. Diese Links koennen ohne Portal-Login geoeffnet werden, bis sie ablaufen.",
       inputSchema: {
         id: z.string().trim().min(1)
       }
     },
-    async ({ id }) => textContent([
-      "Autorisierte Vertragslinks:",
-      `PDF: ${portal.integrationUrl(`/api/integrations/v1/contracts/${encodeURIComponent(id)}/download`, { format: "pdf" })}`,
-      `DOCX: ${portal.integrationUrl(`/api/integrations/v1/contracts/${encodeURIComponent(id)}/download`, { format: "docx" })}`
-    ].join("\n"))
+    async ({ id }) => jsonContent(await portal.json({
+      path: `/api/integrations/v1/contracts/${encodeURIComponent(id)}`
+    }))
   );
 
   server.registerTool(
@@ -1018,6 +1200,9 @@ type IntegrationDocumentLike = {
   categoryId?: string | null;
   scope?: string | null;
   status?: string | null;
+  ocrStatus?: string | null;
+  ocrProcessedAt?: string | null;
+  ocrError?: string | null;
   links?: {
     preview?: string | null;
     download?: string | null;
@@ -1044,6 +1229,9 @@ function documentToolResult(
     categoryName: options.categoryName ?? null,
     scope: document.scope || null,
     status: document.status || null,
+    ocrStatus: document.ocrStatus || null,
+    ocrProcessedAt: document.ocrProcessedAt || null,
+    ocrError: document.ocrError || null,
     previewUrl: document.links?.preview || null,
     downloadUrl: document.links?.download || null,
     message: options.message,
@@ -1270,6 +1458,7 @@ function propertyInputShape() {
     condition: optionalString,
     modernizations: optionalString,
     rentalStatus: optionalString,
+    purchasePrice: money,
     expectedPurchasePrice: money,
     outstandingLoan: money,
     internalNotes: optionalString
@@ -1327,6 +1516,18 @@ function tenantInputShape() {
     contractNotes: optionalString.nullable(),
     pets: optionalString.nullable(),
     specialAgreements: optionalString.nullable()
+  };
+}
+
+function netWorthAssetInputShape() {
+  return {
+    name: z.string().trim().min(1),
+    type: z.enum(["ASSET", "LIABILITY"]).optional().describe("ASSET fuer positiven Vermoegenswert, LIABILITY fuer Verbindlichkeit."),
+    manualValue: money.describe("Manueller Wert, wenn kein Bankkonto gemappt wird."),
+    bankingAccountId: z.number().int().optional().nullable().describe("ID aus list_banking_accounts, falls dieser Wert direkt aus Banking kommen soll."),
+    bankingAccountLabel: optionalString.nullable(),
+    note: optionalString.nullable(),
+    active: z.boolean().optional()
   };
 }
 

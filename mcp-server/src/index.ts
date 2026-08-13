@@ -60,7 +60,9 @@ app.get("/.well-known/oauth-protected-resource", (_request, response) => {
   });
 });
 
-app.post("/mcp", requireMcpClientToken, async (request, response) => {
+const mcpPaths = ["/mcp", "/mcp/:profile"];
+
+app.post(mcpPaths, requireMcpClientToken, async (request, response) => {
   const requestId = request.headers["x-request-id"]?.toString() || randomUUID();
   response.setHeader("X-Request-Id", requestId);
 
@@ -91,13 +93,13 @@ app.post("/mcp", requireMcpClientToken, async (request, response) => {
   }
 });
 
-app.get("/mcp", requireMcpClientToken, (_request, response) => {
+app.get(mcpPaths, requireMcpClientToken, (_request, response) => {
   response.status(405).json({
     error: "This MCP server uses stateless Streamable HTTP. Send JSON-RPC requests with POST /mcp."
   });
 });
 
-app.delete("/mcp", requireMcpClientToken, (_request, response) => {
+app.delete(mcpPaths, requireMcpClientToken, (_request, response) => {
   response.status(204).end();
 });
 

@@ -10,7 +10,16 @@ const snapshot: ServiceChargeStatementSnapshot = {
   year: 2025,
   method: "AREA",
   rule: { totalDistributionValue: 60.6, note: "WG-Zimmer", unitValues: { "unit-1": 18.4 } },
-  statementLines: [],
+  statementLines: [{
+    id: "line-1",
+    unitId: "unit-1",
+    unitName: "Zimmer 1",
+    description: "Heizkostenabrechnung Minol",
+    amount: 1200,
+    treatment: "NICHT_UMLAGEFAEHIG_MIETER",
+    sourceReference: "cmscrl5i40003czdk60lcszvm:Minol RC5 Abrechnung",
+    note: null
+  }],
   allocation: {
     method: "AREA",
     allocableCosts: 1200,
@@ -115,10 +124,13 @@ describe("service charge statement PDF", () => {
     const text = pdf.toString("latin1");
     expect(text).toContain("Nebenkostenabrechnung");
     expect(text).toContain("Max Beispiel");
-    expect(text).toContain("Stadtwerke Konstanz");
-    expect(text).toContain("BANK-REF-42");
-    expect(text).toContain("Vertrags- und Mietkontext");
-    expect(text).toContain("abcdef0123456789");
+    expect(text).toContain("Heizkostenabrechnung Minol");
+    expect(text).toContain("Nicht umlagefaehig");
+    expect(text).not.toContain("BANK-REF-42");
+    expect(text).not.toContain("Vertrags- und Mietkontext");
+    expect(text).not.toContain("cmscrl5i40003czdk60lcszvm");
+    expect(text).not.toContain("Pruefcode");
+    expect(text).not.toContain("abcdef0123");
   });
 
   it("creates a stable safe filename", () => {
@@ -133,8 +145,9 @@ describe("service charge statement PDF", () => {
       checksum: "abcdef0123456789abcdef0123456789",
       tenantId: "tenant-1"
     }).toString("latin1");
-    expect(pdf).toContain("Nebenkostenabrechnung - Max Beispiel");
-    expect(pdf).toContain("Ihr Kostenanteil");
+    expect(pdf).toContain("Nebenkostenabrechnung 2025");
+    expect(pdf).toContain("Mieter: Max Beispiel");
+    expect(pdf).toContain("Kostenanteil");
     expect(pdf).toContain("Nachzahlung");
   });
 });

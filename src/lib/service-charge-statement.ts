@@ -2,7 +2,13 @@ import { createHash } from "node:crypto";
 import { loadServiceChargeData, type ServiceChargeData } from "./banking-integration";
 import { portalWhere } from "./portal-instance";
 import { prisma } from "./prisma";
-import { calculateServiceChargeAllocation, type AllocationRuleInput, type ServiceChargeMethod } from "./service-charge-allocation";
+import {
+  calculateServiceChargeAllocation,
+  normalizeServiceChargeMethod,
+  normalizeTreatment,
+  type AllocationRuleInput,
+  type ServiceChargeMethod
+} from "./service-charge-allocation";
 
 export type ServiceChargeStatementSnapshot = {
   schemaVersion: 1 | 2;
@@ -83,13 +89,13 @@ export async function buildServiceChargeStatementSnapshot(input: {
     note: line.note
   }));
   const ruleInput: AllocationRuleInput = {
-    method: rule.method as ServiceChargeMethod,
+    method: normalizeServiceChargeMethod(rule.method),
     totalDistributionValue: rule.totalDistributionValue === null ? null : Number(rule.totalDistributionValue),
     unitValues: Object.fromEntries(rule.unitAllocations.map((item) => [item.unitId, Number(item.value)])),
     statementLines: statementLines.map((line) => ({
       unitId: line.unitId,
       amount: line.amount,
-      treatment: line.treatment as "ALLOCABLE" | "NON_ALLOCABLE" | "RESERVE"
+      treatment: normalizeTreatment(line.treatment)
     }))
   };
   const snapshot: ServiceChargeStatementSnapshot = {

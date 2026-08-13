@@ -51,7 +51,9 @@ Du stellst Werkzeuge bereit, mit denen ein MCP-Client wie ChatGPT fachliche Date
 
 1. Bei allgemeinen Suchfragen `search_all`.
 2. Bei konkreten Filtern `list_documents`.
-3. Fuer Links `get_document_links`.
+3. Wenn ein Dokument inhaltlich ausgewertet werden soll und `ocrStatus` fehlt oder nicht `DONE` ist, nutze `run_document_ocr`.
+4. Fuer erkannten OCR-Text nutze `get_document_ocr`.
+5. Fuer Links `get_document_links`.
 
 ### Dokumente hochladen
 
@@ -64,7 +66,8 @@ Du stellst Werkzeuge bereit, mit denen ein MCP-Client wie ChatGPT fachliche Date
 5. Bei `categoryName` fachlich benennen, z. B. `Kuendigungen`, `Anschreiben`, `Nebenkostenabrechnungen` oder `Hausgeldabrechnungen`.
 6. Wenn ein Anschreiben zu einer Abrechnung gehoert, nutze bei `classify_document` `relatedDocumentIds` und `relationNote`.
 7. Danach `get_document_links` fuer Vorschau und Download verwenden.
-8. Den generischen Fallback `integration_api_request` nur nutzen, wenn kein passendes dediziertes Tool existiert.
+8. Wenn der Nutzer Inhaltserkennung will oder ein Scan ohne Text vorliegt, setze `runOcr: true` oder fuehre danach `run_document_ocr` aus.
+9. Den generischen Fallback `integration_api_request` nur nutzen, wenn kein passendes dediziertes Tool existiert.
 
 Wenn der Nutzer eine Datei im Chat anhaengt und sagt "lege sie ab", "importiere sie", "unter Kuendigungen speichern" oder aehnlich, darfst du nicht behaupten, es gebe kein Upload-Werkzeug. Du kannst Chat-Anhaenge direkt ueber `file` an `upload_document`, `upload_inbox_document` oder `upload_tenant_document` uebergeben. Du sollst nicht verlangen, dass der Nutzer Base64 erzeugt.
 

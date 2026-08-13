@@ -56,7 +56,7 @@ export function calculateServiceChargeAllocation(
     blockingWarnings.push("Es sind weder umlagefaehige Kosten noch Nebenkostenvorauszahlungen kontiert.");
   }
   if (rule.method === "EXTERNAL_STATEMENT") {
-    const allocableLines = (rule.statementLines || []).filter((line) => line.treatment === "ALLOCABLE");
+    const allocableLines = (rule.statementLines || []).filter((line) => normalizeTreatment(line.treatment) === "ALLOCABLE");
     const externalCosts = roundMoney(allocableLines.reduce((sum, line) => sum + Math.abs(line.amount), 0));
     const yearDays = isLeapYear(data.year) ? 366 : 365;
     const unitIds = new Set(data.units.map((unit) => unit.external_id));
@@ -216,6 +216,27 @@ function normalizedTenancyPeriods(data: ServiceChargeData) {
 
 function addDay(value: number | null) {
   return value === null ? null : value + 86_400_000;
+}
+
+export function normalizeTreatment(value: string) {
+  const normalized = String(value || "").trim().toUpperCase();
+  if (["ALLOCABLE", "UMLAGEFAEHIG", "UMLAGEFAEHIG_MIETER"].includes(normalized)) {
+    return "ALLOCABLE" as const;
+  }
+  if (["NON_ALLOCABLE", "NICHT_UMLAGEFAEHIG", "NICHT_UMLAGEFAEHIG_MIETER"].includes(normalized)) {
+    return "NON_ALLOCABLE" as const;
+  }
+  if (["RESERVE", "RUECKLAGE", "ERHALTUNGSRUECKLAGE"].includes(normalized)) {
+    return "RESERVE" as const;
+  }
+  return "NON_ALLOCABLE" as const;
+}
+
+export function normalizeServiceChargeMethod(value: string) {
+  const normalized = String(value || "").trim().toUpperCase();
+  if (normalized === "AREA") return "AREA" as const;
+  if (normalized === "FIXED_SHARE") return "FIXED_SHARE" as const;
+  return "EXTERNAL_STATEMENT" as const;
 }
 
 function isLeapYear(year: number) {

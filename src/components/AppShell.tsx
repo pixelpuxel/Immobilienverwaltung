@@ -14,6 +14,7 @@ const adminLinks = [
   ["Karte", "/map"],
   ["Timeline", "/timeline"],
   ["Mieteinnahmen", "/rent-income"],
+  ["Vermögen", "/net-worth"],
   ["Nebenkosten", "/service-charges"],
   ["Aktuelle Mieterliste", "/current-tenants"],
   ["Offene To-dos", "/todos"],

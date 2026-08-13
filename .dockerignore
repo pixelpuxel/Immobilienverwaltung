@@ -2,6 +2,8 @@
 .env.*
 !.env.example
 .git
+.DS_Store
+._*
 .next
 node_modules
 npm-debug.log
