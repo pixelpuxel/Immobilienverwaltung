@@ -9,6 +9,13 @@ export type PortalRequest = {
   body?: unknown;
 };
 
+export type PortalFileResponse = {
+  buffer: Buffer;
+  filename: string;
+  mimeType: string;
+  size: number;
+};
+
 export class PortalClient {
   constructor(
     private readonly config: McpConfig,
@@ -57,6 +64,33 @@ export class PortalClient {
     return parsed as T;
   }
 
+  async file(request: PortalRequest): Promise<PortalFileResponse> {
+    const response = await fetch(this.buildPortalUrl(request.path, request.query), {
+      method: request.method || "GET",
+      headers: {
+        ...(this.portalToken ? { Authorization: `Bearer ${this.portalToken}` } : {}),
+        Accept: "*/*"
+      },
+      body: request.body === undefined ? undefined : JSON.stringify(request.body)
+    });
+
+    const contentType = response.headers.get("content-type") || "";
+    if (!response.ok) {
+      const text = await response.text();
+      const parsed = contentType.includes("application/json") ? parseJson(text) : null;
+      const message = errorMessage(parsed) || text || `${response.status} ${response.statusText}`;
+      throw new PortalApiError(response.status, message, parsed || { raw: text });
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    return {
+      buffer,
+      filename: filenameFromContentDisposition(response.headers.get("content-disposition")) || "document",
+      mimeType: contentType.split(";")[0]?.trim() || "application/octet-stream",
+      size: buffer.length
+    };
+  }
+
   integrationUrl(path: string, query?: PortalRequest["query"]) {
     return this.buildPublicUrl(path, query);
   }
@@ -89,4 +123,23 @@ function errorMessage(value: unknown) {
     : typeof object.message === "string"
       ? object.message
       : null;
+}
+
+function filenameFromContentDisposition(value: string | null) {
+  if (!value) return null;
+  const utf8Match = value.match(/filename\*=UTF-8(?:\x27\x27|%27%27)?([^;]+)/i);
+  if (utf8Match?.[1]) return safeDecodeFilename(utf8Match[1]);
+  const quotedMatch = value.match(/filename="([^"]+)"/i);
+  if (quotedMatch?.[1]) return safeDecodeFilename(quotedMatch[1]);
+  const plainMatch = value.match(/filename=([^;]+)/i);
+  if (plainMatch?.[1]) return safeDecodeFilename(plainMatch[1].trim());
+  return null;
+}
+
+function safeDecodeFilename(value: string) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
 }

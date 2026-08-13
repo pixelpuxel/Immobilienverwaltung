@@ -41,6 +41,8 @@
 - Portalinstanzen lesen/wechseln.
 - Kontrollierter Fallback auf neue Integrations-Endpunkte.
 
+- Regression-Regel: Wenn ein Tool im Prompt oder README genannt wird, muss es in `mcp-server/src/tools.ts` per `server.registerTool(...)` registriert sein und nach dem Deploy mit `tools/list` sowie mindestens einem `tools/call` getestet werden. Fuer Datei-Tools muss der Test pruefen, dass eine eingebettete MCP-Resource und nicht nur eine URL zurueckkommt.
+
 ## Noch bewusst offen
 
 - Echte Chat-Anhaenge werden ueber `file` unterstuetzt, soweit der jeweilige MCP-Client Dateiobjekte an Tools uebergibt. `fileBase64` bleibt als Rueckfall bestehen.
