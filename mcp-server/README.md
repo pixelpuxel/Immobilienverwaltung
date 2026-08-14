@@ -233,7 +233,9 @@ Dafuer muss `download_document` verwendet werden. Das Tool:
 - ruft intern ausschliesslich `/api/integrations/v1/documents/:id/download` mit dem Bearer-Token auf;
 - gibt keine internen Storage-Pfade aus;
 - gibt nicht nur eine URL aus;
-- liefert die Datei als eingebettete MCP-Resource mit `resource.blob` Base64, `mimeType`, Dateiname und Groesse;
+- liefert standardmaessig einen MCP-`resource_link`, damit grosse Dateien nicht als riesige Tool-Antwort scheitern;
+- der Dateiinhalt wird anschliessend direkt per `resources/read` auf die `immoportal://documents/:documentId`-Resource geladen;
+- kann mit `embed: true` kleine Dateien weiterhin direkt als eingebettete MCP-Resource mit `resource.blob` Base64 zurueckgeben;
 - besitzt ein `outputSchema`, damit ChatGPT das Tool sauber validieren kann.
 
 Wichtig fuer zukuenftige Aenderungen: Ein Tool gilt erst als verfuegbar, wenn es in `mcp-server/src/tools.ts` wirklich per `server.registerTool(...)` registriert ist. Eine Beschreibung im Prompt, README oder in einer API-Doku reicht nicht. Nach jedem MCP-Tool-Umbau muessen mindestens diese Tests laufen:
@@ -249,7 +251,7 @@ curl -s -X POST https://portal.schreiber.info/mcp \
   -H "Accept: application/json, text/event-stream" \
   --data @/tmp/mcp-tools-list.json | grep download_document
 
-# 2. Tool muss aufrufbar sein und eine Resource liefern
+# 2. Tool muss aufrufbar sein und einen Resource-Link liefern
 cat >/tmp/mcp-download-document.json <<JSON
 {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"download_document","arguments":{"documentId":"cmqfk7stx000t3hw1yrdlfscz"}}}
 JSON
@@ -258,6 +260,16 @@ curl -s -X POST https://portal.schreiber.info/mcp \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   --data @/tmp/mcp-download-document.json
+
+# 3. Dateiinhalt direkt ueber die MCP-Resource lesen
+cat >/tmp/mcp-read-document-resource.json <<JSON
+{"jsonrpc":"2.0","id":3,"method":"resources/read","params":{"uri":"immoportal://documents/cmqfk7stx000t3hw1yrdlfscz"}}
+JSON
+curl -s -X POST https://portal.schreiber.info/mcp \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  --data @/tmp/mcp-read-document-resource.json
 ```
 
 OCR:

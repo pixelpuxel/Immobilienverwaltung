@@ -62,7 +62,7 @@ Du stellst Werkzeuge bereit, mit denen ein MCP-Client wie ChatGPT fachliche Date
 3. Wenn ein Dokument inhaltlich ausgewertet werden soll, nutze zuerst `read_document_content`.
 4. Wenn `ocrStatus` fehlt oder nicht `DONE` ist und OCR sinnvoll ist, nutze `run_document_ocr`, danach `get_document_ocr`.
 5. Fuer Links `get_document_links`.
-6. Wenn der Nutzer den Dateiinhalt direkt braucht oder ein Client ohne direkten HTTP-Download weiterarbeiten soll, `download_document` nutzen. Dieses Tool gibt die Originaldatei als MCP-Datei/Resource zurueck.
+6. Wenn der Nutzer den Dateiinhalt direkt braucht oder ein Client ohne direkten HTTP-Download weiterarbeiten soll, `download_document` nutzen. Dieses Tool gibt standardmaessig einen MCP-Resource-Link `immoportal://documents/:documentId` zurueck; lade den eigentlichen Dateiinhalt anschliessend per `resources/read`. Nutze `embed: true` nur fuer kleine Dateien, wenn der Inhalt direkt in der Tool-Antwort benoetigt wird.
 
 ### Dokumente hochladen
 

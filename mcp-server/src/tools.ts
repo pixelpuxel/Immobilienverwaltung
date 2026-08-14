@@ -1,4 +1,4 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { readFile } from "node:fs/promises";
 import { isIP } from "node:net";
 import { z } from "zod";
@@ -42,7 +42,7 @@ const downloadDocumentOutputSchema = {
   mimeType: z.string(),
   size: z.number().int().nonnegative(),
   uri: z.string(),
-  encoding: z.literal("base64"),
+  encoding: z.literal("base64").nullable(),
   resourceEmbedded: z.boolean()
 };
 const DOWNLOAD_DOCUMENT_MAX_BYTES = 25 * 1024 * 1024;
@@ -60,6 +60,35 @@ const DOWNLOAD_DOCUMENT_ALLOWED_MIME_TYPES = new Set([
 ]);
 
 export function registerPortalTools(server: McpServer, portal: PortalClient) {
+  server.registerResource(
+    "document_file",
+    new ResourceTemplate("immoportal://documents/{documentId}", { list: undefined }),
+    {
+      title: "Immoportal Dokumentdatei",
+      description: "Liest die Originaldatei eines Portal-Dokuments direkt als MCP-Resource.",
+      mimeType: "application/octet-stream"
+    },
+    async (uri, variables) => {
+      const documentId = firstVariable(variables.documentId);
+      if (!documentId) throw new Error("documentId fehlt.");
+      const file = await loadDocumentFile(portal, documentId);
+      return {
+        contents: [
+          {
+            uri: uri.toString(),
+            mimeType: file.mimeType,
+            blob: file.buffer.toString("base64"),
+            _meta: {
+              documentId,
+              filename: file.filename,
+              size: file.size
+            }
+          }
+        ]
+      };
+    }
+  );
+
   server.registerTool(
     "portal_health",
     {
@@ -852,54 +881,65 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
     "download_document",
     {
       title: "Dokument als Datei laden",
-      description: "Laedt die Originaldatei eines Dokuments ueber die Integrations-API und gibt sie direkt als eingebettete MCP-Resource zurueck. Nutze dies fuer Bilder, PDFs, Office-Dateien und Textdateien, wenn der Client die Datei ohne eigenen HTTP-Abruf weiterverarbeiten soll.",
+      description: "Laedt die Originaldatei eines Dokuments ueber die Integrations-API und gibt sie als MCP-Resource-Link zurueck. Der Client kann die Datei danach per resources/read direkt aus dem MCP lesen, ohne externen HTTP-Link. Optional kann die Datei fuer kleine Dateien direkt eingebettet werden.",
       inputSchema: {
-        documentId: z.string().trim().min(1).describe("ID des Dokuments, dessen Originaldatei geladen werden soll.")
+        documentId: z.string().trim().min(1).describe("ID des Dokuments, dessen Originaldatei geladen werden soll."),
+        embed: z.boolean().optional().describe("Nur fuer kleine Dateien: Datei direkt in der Tool-Antwort als Base64 einbetten. Standard ist false, damit grosse Dateien nicht als riesige Tool-Antwort scheitern.")
       },
       outputSchema: downloadDocumentOutputSchema
     },
-    async ({ documentId }) => {
-      const file = await portal.file({
-        path: `/api/integrations/v1/documents/${encodeURIComponent(documentId)}/download`
-      });
-      if (!DOWNLOAD_DOCUMENT_ALLOWED_MIME_TYPES.has(file.mimeType)) {
-        throw new Error(`UNSUPPORTED_FILE_TYPE: Der Dateityp ${file.mimeType} wird von download_document nicht unterstuetzt.`);
-      }
-      if (file.size > DOWNLOAD_DOCUMENT_MAX_BYTES) {
-        throw new Error(`FILE_TOO_LARGE: Die Datei ist ${file.size} Bytes gross. Erlaubt sind maximal ${DOWNLOAD_DOCUMENT_MAX_BYTES} Bytes.`);
-      }
+    async ({ documentId, embed = false }) => {
+      const file = await loadDocumentFile(portal, documentId);
 
-      const uri = `immoportal://documents/${encodeURIComponent(documentId)}/${encodeURIComponent(file.filename)}`;
+      const uri = documentResourceUri(documentId);
       const structuredContent = {
         documentId,
         filename: file.filename,
         mimeType: file.mimeType,
         size: file.size,
         uri,
-        encoding: "base64" as const,
-        resourceEmbedded: true
+        encoding: embed ? "base64" as const : null,
+        resourceEmbedded: embed
       };
-
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: asText(structuredContent)
-          },
-          {
-            type: "resource" as const,
-            resource: {
-              uri,
-              mimeType: file.mimeType,
-              blob: file.buffer.toString("base64"),
-              _meta: {
-                documentId,
-                filename: file.filename,
-                size: file.size
+      const content = [
+        {
+          type: "text" as const,
+          text: embed
+            ? asText(structuredContent)
+            : [
+                "Dokumentdatei bereitgestellt.",
+                `Dateiname: ${file.filename}`,
+                `MIME-Type: ${file.mimeType}`,
+                `Groesse: ${file.size} Bytes`,
+                `MCP-Resource: ${uri}`,
+                "Der Dateiinhalt kann direkt per resources/read auf diese Resource geladen werden."
+              ].join("\n")
+        },
+        embed
+          ? {
+              type: "resource" as const,
+              resource: {
+                uri,
+                mimeType: file.mimeType,
+                blob: file.buffer.toString("base64"),
+                _meta: {
+                  documentId,
+                  filename: file.filename,
+                  size: file.size
+                }
               }
             }
-          }
-        ],
+          : {
+              type: "resource_link" as const,
+              uri,
+              name: file.filename,
+              mimeType: file.mimeType,
+              description: `${file.filename} (${file.size} Bytes)`
+            }
+      ];
+
+      return {
+        content,
         structuredContent
       };
     }
@@ -1289,6 +1329,28 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
     },
     async ({ method, path, query, body }) => jsonContent(await portal.json({ method, path, query, body }))
   );
+}
+
+async function loadDocumentFile(portal: PortalClient, documentId: string) {
+  const file = await portal.file({
+    path: `/api/integrations/v1/documents/${encodeURIComponent(documentId)}/download`
+  });
+  if (!DOWNLOAD_DOCUMENT_ALLOWED_MIME_TYPES.has(file.mimeType)) {
+    throw new Error(`UNSUPPORTED_FILE_TYPE: Der Dateityp ${file.mimeType} wird von download_document nicht unterstuetzt.`);
+  }
+  if (file.size > DOWNLOAD_DOCUMENT_MAX_BYTES) {
+    throw new Error(`FILE_TOO_LARGE: Die Datei ist ${file.size} Bytes gross. Erlaubt sind maximal ${DOWNLOAD_DOCUMENT_MAX_BYTES} Bytes.`);
+  }
+  return file;
+}
+
+function documentResourceUri(documentId: string) {
+  return `immoportal://documents/${encodeURIComponent(documentId)}`;
+}
+
+function firstVariable(value: unknown) {
+  if (Array.isArray(value)) return typeof value[0] === "string" ? value[0] : "";
+  return typeof value === "string" ? value : "";
 }
 
 type IntegrationDocumentLike = {
