@@ -27,7 +27,7 @@ Du stellst Werkzeuge bereit, mit denen ein MCP-Client wie ChatGPT fachliche Date
 
 ### Kaufpreis, Marktwert und Darlehen eintragen
 
-1. Fuer Finanzfelder immer `update_property_finance` nutzen.
+1. Finanzfelder koennen direkt ueber `update_property` geschrieben werden; `update_property_finance` ist nur die kompakte Spezialvariante.
 2. `purchasePrice` ist der echte historische Kaufpreis aus Kaufvertrag/Urkunde.
 3. `expectedPurchasePrice` ist die aktuelle Kaufpreisvorstellung bzw. der erwartete Verkaufspreis/Marktwert.
 4. `outstandingLoan` ist das valutierte Darlehen bzw. die aktuelle Restschuld.

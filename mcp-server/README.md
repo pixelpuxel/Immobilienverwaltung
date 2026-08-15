@@ -164,7 +164,7 @@ Der Server stellt fachliche Tools bereit, z. B.:
 - `list_properties`
 - `get_property`
 - `create_property`
-- `update_property`
+- `update_property` inklusive `purchasePrice`, `expectedPurchasePrice` und `outstandingLoan`
 - `list_units`
 - `create_unit`
 - `update_unit`
@@ -283,7 +283,8 @@ Vermoegen und Darlehen:
 
 - `list_banking_accounts` liest die verfuegbaren Bankkonten aus der Banking-API.
 - `get_net_worth_summary` liefert Immobilienwerte, Darlehen, sonstige Werte und Gesamt-Nettowert.
-- `update_property_finance` setzt gezielt Immobilien-Finanzfelder: `purchasePrice` ist der echte historische Kaufpreis, `expectedPurchasePrice` die aktuelle Kaufpreisvorstellung/Markterwartung, `outstandingLoan` das valutierte Darlehen. Diese Felder duerfen nicht miteinander vermischt werden.
+- `update_property` akzeptiert Immobilien-Finanzfelder direkt: `purchasePrice` ist der echte historische Kaufpreis, `expectedPurchasePrice` die aktuelle Kaufpreisvorstellung/Markterwartung, `outstandingLoan` das valutierte Darlehen.
+- `update_property_finance` ist zusaetzlich als kompakte Spezialvariante fuer genau diese Finanzfelder vorhanden. Diese Felder duerfen nicht miteinander vermischt werden.
 - `map_property_loan_account` verknuepft ein Bankkonto als Darlehenskonto mit einer Immobilie.
 - `sync_net_worth_from_banking` aktualisiert die valutierten Darlehen und gemappte sonstige Vermoegenswerte.
 - `create_net_worth_asset` legt freie Vermoegenswerte/Verbindlichkeiten an oder mappt Girokonto, Tagesgeld, Festgeld oder andere Konten.

@@ -361,17 +361,21 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
     "update_property",
     {
       title: "Immobilie aktualisieren",
-      description: "Aktualisiert Stammdaten, Adresse oder Status einer Immobilie. Fuer Kaufpreis, erwarteten Kaufpreis und valutiertes Darlehen bevorzugt update_property_finance nutzen.",
+      description: "Aktualisiert Stammdaten, Adresse, Status und Finanzfelder einer Immobilie. `purchasePrice` ist der echte historische Kaufpreis; nicht mit `expectedPurchasePrice` verwechseln. Felder koennen direkt oder im Rueckwaertskompatibilitaets-Objekt `data` uebergeben werden.",
       inputSchema: {
         id: z.string().trim().min(1),
-        data: z.object(propertyInputShape()).partial()
+        ...propertyInputShape(),
+        data: z.object(propertyInputShape()).partial().optional()
       }
     },
-    async ({ id, data }) => jsonContent(await portal.json({
-      method: "PATCH",
-      path: `/api/integrations/v1/properties/${encodeURIComponent(id)}`,
-      body: data
-    }))
+    async ({ id, data, ...directData }) => {
+      const body = Object.fromEntries(Object.entries({ ...(data || {}), ...directData }).filter(([, value]) => value !== undefined));
+      return jsonContent(await portal.json({
+        method: "PATCH",
+        path: `/api/integrations/v1/properties/${encodeURIComponent(id)}`,
+        body
+      }));
+    }
   );
 
   server.registerTool(
