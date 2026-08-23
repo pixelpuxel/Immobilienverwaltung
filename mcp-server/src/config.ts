@@ -4,6 +4,7 @@ export type McpConfig = {
   port: number;
   publicBaseUrl: string;
   portalBaseUrl: string;
+  jsonLimit: string;
 };
 
 export function readConfig(): McpConfig {
@@ -13,7 +14,8 @@ export function readConfig(): McpConfig {
     version: process.env.MCP_SERVER_VERSION || "0.1.0",
     port: Number(process.env.MCP_PORT || "8090"),
     publicBaseUrl: (process.env.MCP_PUBLIC_BASE_URL || "http://localhost:8090").replace(/\/+$/, ""),
-    portalBaseUrl
+    portalBaseUrl,
+    jsonLimit: process.env.MCP_JSON_LIMIT || "120mb"
   };
 }
 

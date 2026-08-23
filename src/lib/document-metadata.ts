@@ -67,6 +67,7 @@ function extractDateYear(value: Date | string | null | undefined) {
 function readableFileType(mimeType: string | null | undefined, filename: string) {
   const lower = filename.toLowerCase();
   if (mimeType?.includes("pdf") || lower.endsWith(".pdf")) return "PDF";
+  if (mimeType === "application/zip" || lower.endsWith(".zip")) return "ZIP-Archiv";
   if (mimeType?.includes("word") || lower.endsWith(".docx") || lower.endsWith(".doc")) return "Word-Dokument";
   if (mimeType?.startsWith("image/") || /\.(jpe?g|png|webp|gif)$/i.test(filename)) return "Bild";
   if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) return "Excel-Datei";

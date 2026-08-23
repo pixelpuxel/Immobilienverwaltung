@@ -11,7 +11,7 @@ const app = express();
 const MCP_ROUTES = ["/mcp", "/mcp/:profile"];
 
 app.disable("x-powered-by");
-app.use(express.json({ limit: "8mb" }));
+app.use(express.json({ limit: config.jsonLimit }));
 
 app.get("/health", async (_request, response) => {
   try {

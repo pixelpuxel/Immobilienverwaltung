@@ -5,6 +5,7 @@ import { requireIntegrationUser } from "@/lib/integration-auth";
 import { serializeDocument } from "@/lib/integration-data";
 import { buildDocumentMetadata } from "@/lib/document-metadata";
 import { saveUpload } from "@/lib/files";
+import { resolveIntegrationUploadFile } from "@/lib/integration-upload";
 import { runDocumentOcr } from "@/lib/ocr";
 import { brokerPropertyIds } from "@/lib/permissions";
 import { assertPropertyInPortal, assertUnitInPortal } from "@/lib/portal-instance";
@@ -234,17 +235,14 @@ async function parseIntegrationDocumentUpload(request: NextRequest): Promise<Int
     const body = await request.json();
     if (!body || typeof body !== "object") throw new Error("Ungueltiger JSON-Body.");
     const data = body as Record<string, unknown>;
-    const filename = textValue(data.filename) || textValue(data.fileName) || "dokument.pdf";
-    const mimeType = textValue(data.mimeType) || "application/octet-stream";
-    const base64 = textValue(data.fileBase64) || textValue(data.base64) || textValue(data.contentBase64);
-    if (!base64) throw new Error("Datei fehlt: fileBase64 ist erforderlich.");
-    const cleanBase64 = base64.includes(",") ? base64.split(",").pop() || "" : base64;
-    if (!/^[A-Za-z0-9+/=\s_-]+$/.test(cleanBase64)) throw new Error("fileBase64 ist ungueltig.");
-    const buffer = Buffer.from(cleanBase64.replace(/\s/g, ""), cleanBase64.includes("-") || cleanBase64.includes("_") ? "base64url" : "base64");
-    if (!buffer.length) throw new Error("fileBase64 ist leer.");
+    const upload = await resolveIntegrationUploadFile({
+      data,
+      filename: textValue(data.filename) || textValue(data.fileName),
+      mimeType: textValue(data.mimeType)
+    });
     return normalizeUploadInput({
-      file: new File([new Uint8Array(buffer)], filename, { type: mimeType }),
-      title: textValue(data.title) || filename,
+      file: upload.file,
+      title: textValue(data.title) || upload.filename,
       propertyId: textValue(data.propertyId),
       unitId: textValue(data.unitId),
       tenantProfileId: textValue(data.tenantProfileId) || textValue(data.tenantId),

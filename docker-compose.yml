@@ -14,6 +14,9 @@ services:
       - "${APP_PORT:-8088}:8088"
     environment:
       APP_URL: ${APP_URL:-http://localhost:8088}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-}
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:-}
+      MCP_PUBLIC_BASE_URL: ${MCP_PUBLIC_BASE_URL:-}
       TRUST_PROXY: ${TRUST_PROXY:-false}
       APP_HOST: ${APP_HOST:-0.0.0.0}
       APP_PORT: ${APP_PORT:-8088}
@@ -100,6 +103,7 @@ services:
       MCP_SERVER_VERSION: ${MCP_SERVER_VERSION:-0.1.0}
       MCP_PUBLIC_BASE_URL: ${MCP_PUBLIC_BASE_URL:-http://localhost:8088}
       MCP_PORTAL_BASE_URL: ${MCP_PORTAL_BASE_URL:-http://app:8088}
+      MCP_JSON_LIMIT: ${MCP_JSON_LIMIT:-120mb}
 
   deploy-hook:
     build: ./deploy-hook

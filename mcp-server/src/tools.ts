@@ -1,5 +1,5 @@
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { isIP } from "node:net";
 import { z } from "zod";
 import { PortalClient } from "./portal-client.js";
@@ -10,6 +10,7 @@ const optionalId = z.string().trim().min(1).optional();
 const money = z.union([z.string(), z.number()]).optional().nullable();
 const uploadedFileInput = z.unknown().optional().describe("Bevorzugt: Datei-Referenz des MCP-/Chat-Clients. Unterstuetzt Objekte mit path, filename/name, mimeType/type, data/base64 oder url.");
 const optionalFileBase64 = z.string().trim().min(1).optional().describe("Rueckfall: Dateiinhalt als Base64 oder Data-URL.");
+const optionalFileBase64Chunks = z.array(z.string().trim().min(1)).optional().describe("Rueckfall fuer grosse Dateien: Dateiinhalt als geordnete Base64-Bloecke.");
 const documentToolOutputSchema = {
   success: z.boolean(),
   documentId: z.string(),
@@ -591,6 +592,7 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
       inputSchema: {
         file: uploadedFileInput,
         fileBase64: optionalFileBase64,
+        fileBase64Chunks: optionalFileBase64Chunks,
         filename: z.string().trim().min(1).optional().describe("Dateiname inklusive Erweiterung, z. B. Mietvertrag.pdf."),
         mimeType: z.string().trim().min(1).optional().describe("MIME-Type, z. B. application/pdf."),
         title: optionalString.describe("Anzeigetitel im Portal. Wenn leer, wird filename verwendet."),
@@ -607,10 +609,13 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
         isPropertyImage: z.boolean().optional(),
         isPrimaryImage: z.boolean().optional()
       },
-      outputSchema: documentToolOutputSchema
-    },
-    async (args) => {
-      const file = await resolveUploadPayload(args.file, args.fileBase64, args.filename, args.mimeType);
+      outputSchema: documentToolOutputSchema,
+      _meta: {
+        "openai/fileParams": ["file"]
+      }
+    } as any,
+    async (args: any) => {
+      const file = await resolveUploadPayload(args.file, args.fileBase64, args.fileBase64Chunks, args.filename, args.mimeType);
       const document = await portal.json<IntegrationDocumentLike>({
         method: "POST",
         path: "/api/integrations/v1/documents",
@@ -618,6 +623,7 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
           ...args,
           file: undefined,
           fileBase64: file.fileBase64,
+          fileBase64Chunks: undefined,
           filename: file.filename,
           mimeType: file.mimeType
         }
@@ -636,6 +642,7 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
       inputSchema: {
         file: uploadedFileInput,
         fileBase64: optionalFileBase64,
+        fileBase64Chunks: optionalFileBase64Chunks,
         filename: z.string().trim().min(1).optional().describe("Dateiname inklusive Erweiterung."),
         mimeType: z.string().trim().min(1).optional().describe("MIME-Type, z. B. application/pdf."),
         title: optionalString.describe("Anzeigetitel im Portal."),
@@ -644,10 +651,14 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
         documentYear: z.number().int().min(1900).max(2049).optional(),
         runOcr: z.boolean().optional().describe("Wenn true, fuehrt das Portal nach dem Upload OCR fuer PDF-/Bilddateien aus.")
       },
-      outputSchema: documentToolOutputSchema
-    },
-    async ({ file, fileBase64, filename, mimeType, title, summary, tags, documentYear, runOcr }) => {
-      const upload = await resolveUploadPayload(file, fileBase64, filename, mimeType);
+      outputSchema: documentToolOutputSchema,
+      _meta: {
+        "openai/fileParams": ["file"]
+      }
+    } as any,
+    async ({ file, fileBase64, fileBase64Chunks, filename, mimeType, title, summary, tags, documentYear, runOcr }: any) => {
+      const upload = await resolveUploadPayload(file, fileBase64, fileBase64Chunks, filename, mimeType);
+      const isZip = upload.mimeType === "application/zip" || upload.filename.toLowerCase().endsWith(".zip");
       const document = await portal.json({
         method: "POST",
         path: "/api/integrations/v1/documents",
@@ -659,9 +670,9 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
           status: "AVAILABLE",
           scope: "PROPERTY",
           summary: summary || "Ueber MCP hochgeladen; fachliche Einsortierung steht noch aus.",
-          tags: ["eingang", "mcp-upload", ...(tags || [])],
+          tags: Array.from(new Set(["eingang", "mcp-upload", ...(isZip ? ["zip"] : []), ...(tags || [])])),
           documentYear,
-          runOcr
+          runOcr: isZip ? false : runOcr
         }
       });
       return structuredJsonContent(documentToolResult(document as IntegrationDocumentLike, {
@@ -774,6 +785,7 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
         tenantProfileId: z.string().trim().min(1).describe("TenantProfile-ID des Mieters, z. B. nach list_tenants/get_tenant."),
         file: uploadedFileInput,
         fileBase64: optionalFileBase64,
+        fileBase64Chunks: optionalFileBase64Chunks,
         filename: z.string().trim().min(1).optional().describe("Sinnvoller Dateiname inklusive Erweiterung, z. B. 2026-06-26_Kuendigung_Mieter.pdf."),
         mimeType: z.string().trim().min(1).optional().describe("MIME-Type, z. B. application/pdf."),
         title: optionalString.describe("Anzeigetitel im Portal."),
@@ -786,10 +798,13 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
         documentYear: z.number().int().min(1900).max(2049).optional(),
         runOcr: z.boolean().optional().describe("Wenn true, fuehrt das Portal nach dem Upload OCR fuer PDF-/Bilddateien aus.")
       },
-      outputSchema: documentToolOutputSchema
-    },
-    async ({ tenantProfileId, file, fileBase64, filename, mimeType, title, categoryName, categoryGroup, createCategoryIfMissing, status, summary, tags, documentYear, runOcr }) => {
-      const upload = await resolveUploadPayload(file, fileBase64, filename, mimeType);
+      outputSchema: documentToolOutputSchema,
+      _meta: {
+        "openai/fileParams": ["file"]
+      }
+    } as any,
+    async ({ tenantProfileId, file, fileBase64, fileBase64Chunks, filename, mimeType, title, categoryName, categoryGroup, createCategoryIfMissing, status, summary, tags, documentYear, runOcr }: any) => {
+      const upload = await resolveUploadPayload(file, fileBase64, fileBase64Chunks, filename, mimeType);
       const tenant = await portal.json<{ id: string; unitId?: string | null; unit?: { id: string; propertyId?: string | null } | null }>({
         path: `/api/integrations/v1/tenants/${encodeURIComponent(tenantProfileId)}`
       });
@@ -840,6 +855,58 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
       method: "PATCH",
       path: `/api/integrations/v1/documents/${encodeURIComponent(id)}`,
       body: data
+    }))
+  );
+
+  server.registerTool(
+    "create_public_share",
+    {
+      title: "Geschuetzte Freigabe erstellen",
+      description: "Speichert eine bereitgestellte Datei als geschuetzte Freigabe und gibt einen oeffentlichen /share-Link zurueck. Unterstuetzt fileBase64 und fileBase64Chunks fuer grosse ZIP-Dateien.",
+      inputSchema: {
+        name: z.string().trim().min(1).optional(),
+        description: optionalString,
+        expiresDays: z.number().int().min(1).max(90).optional(),
+        file: uploadedFileInput,
+        filename: z.string().trim().min(1).optional(),
+        mimeType: z.string().trim().min(1).optional(),
+        fileBase64: optionalFileBase64,
+        fileBase64Chunks: optionalFileBase64Chunks,
+        files: z.array(z.object({
+          file: uploadedFileInput,
+          filename: z.string().trim().min(1).optional(),
+          mimeType: z.string().trim().min(1).optional(),
+          fileBase64: optionalFileBase64,
+          fileBase64Chunks: optionalFileBase64Chunks
+        }).passthrough()).optional()
+      },
+      _meta: {
+        "openai/fileParams": ["file", "files[].file"]
+      }
+    } as any,
+    async (args: any) => jsonContent(await portal.json({
+      method: "POST",
+      path: "/api/integrations/v1/public-shares",
+      body: await publicShareUploadBody(args as Record<string, unknown>)
+    }))
+  );
+
+  server.registerTool(
+    "create_public_share_from_document",
+    {
+      title: "Freigabe aus Dokument erstellen",
+      description: "Erstellt eine geschuetzte Freigabe aus einem bestehenden Portal-Dokument.",
+      inputSchema: {
+        documentId: z.string().trim().min(1),
+        name: optionalString,
+        description: optionalString,
+        expiresDays: z.number().int().min(1).max(90).optional()
+      }
+    },
+    async (args) => jsonContent(await portal.json({
+      method: "POST",
+      path: "/api/integrations/v1/public-shares/from-document",
+      body: args
     }))
   );
 
@@ -1421,22 +1488,31 @@ type UploadedFileLike = {
   type?: string;
   data?: string;
   base64?: string;
+  fileBase64Chunks?: string[];
   url?: string;
+  download_url?: string;
   fileId?: string;
+  file_id?: string;
 };
 
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const ALLOWED_MIME_TYPES = new Set([
   "application/pdf",
+  "application/msword",
+  "application/vnd.ms-excel",
+  "application/zip",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   "image/jpeg",
-  "image/png"
+  "image/png",
+  "text/csv",
+  "text/plain"
 ]);
 
 async function resolveUploadPayload(
   file: unknown,
   fileBase64?: string,
+  fileBase64Chunks?: string[],
   fallbackFilename?: string,
   fallbackMimeType?: string
 ): Promise<ResolvedUploadPayload> {
@@ -1452,19 +1528,23 @@ async function resolveUploadPayload(
     filename = fallbackFilename || uploaded.filename || uploaded.name || filename;
     mimeType = fallbackMimeType || uploaded.mimeType || uploaded.type || mimeType;
 
-    if (uploaded.path) {
-      buffer = await readFile(uploaded.path);
-    } else if (uploaded.base64 || uploaded.data) {
+    if (uploaded.base64 || uploaded.data) {
       buffer = decodeBase64File(uploaded.base64 || uploaded.data || "");
-    } else if (uploaded.url) {
-      buffer = await downloadAllowedFile(uploaded.url);
-    } else if (uploaded.fileId) {
-      throw new Error("fileId kann von diesem MCP-Server nicht direkt aufgeloest werden. Bitte Dateiinhalt als file.data/base64 oder file.path uebergeben.");
+    } else if (uploaded.fileBase64Chunks?.length) {
+      buffer = decodeBase64File(uploaded.fileBase64Chunks.join(""));
+    } else if (uploaded.url || uploaded.download_url) {
+      buffer = await downloadAllowedFile(uploaded.url || uploaded.download_url || "");
+    } else if (uploaded.path) {
+      buffer = await readServerLocalFile(uploaded.path);
+    } else if (uploaded.fileId || uploaded.file_id) {
+      throw new Error("Datei konnte nicht vom Proxy aufgeloest werden. Bitte Dateiinhalt als file.data/base64 oder fileBase64Chunks uebergeben.");
     } else {
       throw new Error("Die Datei enthaelt weder Pfad, Base64-Daten, URL noch aufloesbare File-ID.");
     }
   } else if (fileBase64) {
     buffer = decodeBase64File(fileBase64);
+  } else if (fileBase64Chunks?.length) {
+    buffer = decodeBase64File(fileBase64Chunks.join(""));
   }
 
   if (!buffer) throw new Error("Keine Datei uebergeben. Bitte file oder fileBase64 angeben.");
@@ -1483,11 +1563,72 @@ async function resolveUploadPayload(
   };
 }
 
+async function publicShareUploadBody(args: Record<string, unknown>) {
+  const files = Array.isArray(args.files) && args.files.length ? args.files : null;
+  if (files) {
+    return {
+      ...args,
+      file: undefined,
+      fileBase64: undefined,
+      fileBase64Chunks: undefined,
+      files: await Promise.all(files.map(async (entry) => {
+        const item = entry && typeof entry === "object" ? entry as Record<string, unknown> : {};
+        const upload = await resolveUploadPayload(
+          item.file,
+          typeof item.fileBase64 === "string" ? item.fileBase64 : undefined,
+          Array.isArray(item.fileBase64Chunks) ? item.fileBase64Chunks.map(String) : undefined,
+          typeof item.filename === "string" ? item.filename : undefined,
+          typeof item.mimeType === "string" ? item.mimeType : undefined
+        );
+        return {
+          ...item,
+          file: undefined,
+          fileBase64: upload.fileBase64,
+          fileBase64Chunks: undefined,
+          filename: upload.filename,
+          mimeType: upload.mimeType
+        };
+      }))
+    };
+  }
+  const upload = await resolveUploadPayload(
+    args.file,
+    typeof args.fileBase64 === "string" ? args.fileBase64 : undefined,
+    Array.isArray(args.fileBase64Chunks) ? args.fileBase64Chunks.map(String) : undefined,
+    typeof args.filename === "string" ? args.filename : undefined,
+    typeof args.mimeType === "string" ? args.mimeType : undefined
+  );
+  return {
+    ...args,
+    file: undefined,
+    fileBase64: upload.fileBase64,
+    fileBase64Chunks: undefined,
+    filename: upload.filename,
+    mimeType: upload.mimeType
+  };
+}
+
 function decodeBase64File(value: string): Buffer {
-  const cleanBase64 = value.replace(/^data:[^;]+;base64,/, "").replace(/\s/g, "");
+  const cleanBase64 = (value.includes(",") ? value.substring(value.indexOf(",") + 1) : value).replace(/\s/g, "");
   if (!cleanBase64) throw new Error("fileBase64 ist leer.");
   if (!/^[A-Za-z0-9+/=_-]+$/.test(cleanBase64)) throw new Error("fileBase64 ist ungueltig.");
   return Buffer.from(cleanBase64, cleanBase64.includes("-") || cleanBase64.includes("_") ? "base64url" : "base64");
+}
+
+async function readServerLocalFile(filePath: string): Promise<Buffer> {
+  if (filePath.startsWith("/mnt/data/")) {
+    throw new Error("Lokale Pfade des Clients werden nicht automatisch ins Portal übertragen. Bitte file.data/base64 oder fileBase64Chunks übergeben.");
+  }
+  let info;
+  try {
+    info = await stat(filePath);
+  } catch {
+    throw new Error("Lokale Pfade des Clients werden nicht automatisch ins Portal übertragen. Bitte file.data/base64 oder fileBase64Chunks übergeben.");
+  }
+  if (!info.isFile()) {
+    throw new Error("Lokale Pfade des Clients werden nicht automatisch ins Portal übertragen. Bitte file.data/base64 oder fileBase64Chunks übergeben.");
+  }
+  return readFile(filePath);
 }
 
 async function downloadAllowedFile(urlString: string): Promise<Buffer> {
@@ -1534,9 +1675,16 @@ function detectMimeType(buffer: Buffer, filename: string, providedMimeType: stri
     const lower = filename.toLowerCase();
     if (lower.endsWith(".docx")) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
     if (lower.endsWith(".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    return "application/zip";
   }
   if (buffer.subarray(0, 3).toString("hex") === "ffd8ff") return "image/jpeg";
   if (buffer.subarray(0, 8).toString("hex") === "89504e470d0a1a0a") return "image/png";
+  const lower = filename.toLowerCase();
+  if (lower.endsWith(".doc")) return "application/msword";
+  if (lower.endsWith(".xls")) return "application/vnd.ms-excel";
+  if (lower.endsWith(".csv")) return "text/csv";
+  if (lower.endsWith(".txt")) return "text/plain";
+  if (lower.endsWith(".zip")) return "application/zip";
   return providedMimeType || "application/octet-stream";
 }
 
