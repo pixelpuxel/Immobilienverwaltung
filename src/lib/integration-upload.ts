@@ -33,10 +33,12 @@ export async function resolveIntegrationUploadFile(input: {
   let buffer: Buffer | null = null;
   if (base64 !== null) {
     buffer = decodeBase64File(base64);
-  } else if (directFile?.url && typeof directFile.url === "string") {
-    buffer = await downloadRemoteFile(directFile.url);
+  } else if (fileDownloadUrl(directFile)) {
+    buffer = await downloadRemoteFile(fileDownloadUrl(directFile)!);
   } else if (directFile?.path) {
     throw new Error("Lokale Pfade des Clients werden nicht automatisch ins Portal übertragen. Bitte file.data/base64 oder fileBase64Chunks übergeben.");
+  } else if (fileReferenceId(directFile)) {
+    throw new Error("Die uebergebene ChatGPT-Dateireferenz konnte vom MCP-Proxy nicht materialisiert werden.");
   }
 
   if (!buffer) throw new Error("Dateiargument fehlt.");
@@ -116,6 +118,14 @@ function fileName(file: Record<string, unknown> | null) {
 
 function fileMimeType(file: Record<string, unknown> | null) {
   return textValue(file?.mimeType) || textValue(file?.type) || textValue(file?.mime_type);
+}
+
+function fileDownloadUrl(file: Record<string, unknown> | null) {
+  return textValue(file?.download_url) || textValue(file?.downloadUrl) || textValue(file?.url);
+}
+
+function fileReferenceId(file: Record<string, unknown> | null) {
+  return textValue(file?.file_id) || textValue(file?.fileId);
 }
 
 async function downloadRemoteFile(urlString: string) {

@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { env } from "./env";
+import { publicPortalBaseUrl } from "./public-shares";
 
 export type DocumentFileKind = "download" | "preview" | "thumbnail";
 
@@ -13,7 +14,7 @@ export type DocumentSignedUrlOptions = {
 const SIGNED_URL_CLOCK_TOLERANCE_SECONDS = 30;
 
 export function buildDocumentFileUrl(documentId: string, kind: DocumentFileKind, options?: DocumentSignedUrlOptions) {
-  const base = options?.absolute ? env.appUrl.replace(/\/$/, "") : "";
+  const base = options?.absolute ? publicPortalBaseUrl() : "";
   const url = new URL(`${base || "http://local"}/api/documents/${documentId}/${kind}`);
   if (options?.signed) {
     const expiresAt = options.expiresAtSeconds ?? Math.floor(Date.now() / 1000) + (options.expiresInSeconds || 3600);

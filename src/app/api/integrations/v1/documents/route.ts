@@ -4,7 +4,7 @@ import { integrationDocumentInclude, integrationDocumentVisibilityWhere, integra
 import { requireIntegrationUser } from "@/lib/integration-auth";
 import { serializeDocument } from "@/lib/integration-data";
 import { buildDocumentMetadata } from "@/lib/document-metadata";
-import { saveUpload } from "@/lib/files";
+import { deletePrivateFile, saveUpload } from "@/lib/files";
 import { resolveIntegrationUploadFile } from "@/lib/integration-upload";
 import { runDocumentOcr } from "@/lib/ocr";
 import { brokerPropertyIds } from "@/lib/permissions";
@@ -137,29 +137,35 @@ export async function POST(request: NextRequest) {
     });
   }
   const saved = await saveUpload(input.file);
-  const document = await prisma.document.create({
-    data: {
-      portalInstanceId: user.portalInstanceId,
-      title: input.title,
-      filename: saved.filename,
-      mimeType: saved.mimeType,
-      size: saved.size,
-      storagePath: saved.storagePath,
-      status: input.status,
-      scope: input.isPropertyImage ? DocumentScope.PROPERTY : tenantProfileId ? DocumentScope.TENANT : input.scope,
-      propertyId,
-      unitId,
-      tenantProfileId,
-      categoryId: input.categoryId,
-      summary: input.summary,
-      tags: input.tags,
-      documentYear: input.documentYear,
-      isPropertyImage: input.isPropertyImage,
-      isPrimaryImage: input.isPrimaryImage,
-      uploadedById: user.id
-    },
-    include: integrationDocumentInclude()
-  });
+  let document;
+  try {
+    document = await prisma.document.create({
+      data: {
+        portalInstanceId: user.portalInstanceId,
+        title: input.title,
+        filename: saved.filename,
+        mimeType: saved.mimeType,
+        size: saved.size,
+        storagePath: saved.storagePath,
+        status: input.status,
+        scope: input.isPropertyImage ? DocumentScope.PROPERTY : tenantProfileId ? DocumentScope.TENANT : input.scope,
+        propertyId,
+        unitId,
+        tenantProfileId,
+        categoryId: input.categoryId,
+        summary: input.summary,
+        tags: input.tags,
+        documentYear: input.documentYear,
+        isPropertyImage: input.isPropertyImage,
+        isPrimaryImage: input.isPrimaryImage,
+        uploadedById: user.id
+      },
+      include: integrationDocumentInclude()
+    });
+  } catch (error) {
+    await deletePrivateFile(saved.storagePath).catch(() => undefined);
+    throw error;
+  }
   if (input.runOcr) {
     await runDocumentOcr(document.id);
     const enriched = await prisma.document.findUniqueOrThrow({ where: { id: document.id }, include: integrationDocumentInclude() });

@@ -1,12 +1,13 @@
 import { mkdtemp, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { decodeBase64File, detectMimeType, resolveIntegrationUploadFile } from "../src/lib/integration-upload";
 
 const tempDirs: string[] = [];
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
@@ -29,6 +30,36 @@ describe("resolveIntegrationUploadFile", () => {
     });
     expect(upload.buffer.toString("hex")).toBe("504b03041400");
     expect(upload.mimeType).toBe("application/zip");
+  });
+
+  it("loads a materialized ChatGPT file reference through download_url", async () => {
+    const bytes = Buffer.from("%PDF connector");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(new Uint8Array(bytes), {
+      status: 200,
+      headers: { "content-type": "application/pdf", "content-length": String(bytes.length) }
+    }));
+
+    const upload = await resolveIntegrationUploadFile({
+      data: {
+        file: {
+          download_url: "https://files.openai.example/attachment.pdf",
+          file_id: "file_000000008c1c81f4a6d0d0f98e21c93d",
+          file_name: "Kuendigung (1).pdf",
+          mime_type: "application/pdf"
+        }
+      }
+    });
+
+    expect(String(vi.mocked(fetch).mock.calls[0]?.[0])).toBe("https://files.openai.example/attachment.pdf");
+    expect(upload.buffer).toEqual(bytes);
+    expect(upload.filename).toBe("Kuendigung (1).pdf");
+    expect(upload.mimeType).toBe("application/pdf");
+  });
+
+  it("reports an unresolved file_id without requiring a public URL from the caller", async () => {
+    await expect(resolveIntegrationUploadFile({
+      data: { file: { file_id: "file_unresolved", file_name: "test.pdf" } }
+    })).rejects.toThrow("vom MCP-Proxy nicht materialisiert");
   });
 
   it("rejects client-local paths instead of reading them", async () => {

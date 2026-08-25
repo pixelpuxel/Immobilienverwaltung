@@ -1,35 +1,46 @@
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { readFile, stat } from "node:fs/promises";
 import { isIP } from "node:net";
 import { z } from "zod";
-import { PortalClient } from "./portal-client.js";
+import { PortalApiError, PortalClient } from "./portal-client.js";
 import { asText, jsonContent, structuredJsonContent, textContent } from "./format.js";
 
 const optionalString = z.string().trim().optional();
 const optionalId = z.string().trim().min(1).optional();
 const money = z.union([z.string(), z.number()]).optional().nullable();
-const uploadedFileInput = z.unknown().optional().describe("Bevorzugt: Datei-Referenz des MCP-/Chat-Clients. Unterstuetzt Objekte mit path, filename/name, mimeType/type, data/base64 oder url.");
+const openAiFileInput = z.object({
+  download_url: z.string().trim().min(1),
+  file_id: z.string().trim().min(1),
+  mime_type: z.string().trim().optional(),
+  file_name: z.string().trim().optional()
+}).passthrough();
+const uploadedFileInput = openAiFileInput.optional().describe("ChatGPT-Dateianhang. Dieses Feld ist ein OpenAI File-Parameter; der Client materialisiert den Anhang als { download_url, file_id, mime_type?, file_name? }.");
 const optionalFileBase64 = z.string().trim().min(1).optional().describe("Rueckfall: Dateiinhalt als Base64 oder Data-URL.");
 const optionalFileBase64Chunks = z.array(z.string().trim().min(1)).optional().describe("Rueckfall fuer grosse Dateien: Dateiinhalt als geordnete Base64-Bloecke.");
 const documentToolOutputSchema = {
   success: z.boolean(),
-  documentId: z.string(),
-  filename: z.string(),
-  title: z.string().nullable(),
-  tenantProfileId: z.string().nullable(),
-  propertyId: z.string().nullable(),
-  unitId: z.string().nullable(),
-  categoryId: z.string().nullable(),
-  categoryName: z.string().nullable(),
-  scope: z.string().nullable(),
-  status: z.string().nullable(),
-  previewUrl: z.string().nullable(),
-  downloadUrl: z.string().nullable(),
+  stage: z.string().optional(),
+  error: z.string().optional(),
+  documentId: z.string().optional(),
+  filename: z.string().optional(),
+  title: z.string().nullable().optional(),
+  tenantProfileId: z.string().nullable().optional(),
+  tenantName: z.string().nullable().optional(),
+  propertyId: z.string().nullable().optional(),
+  property: z.string().nullable().optional(),
+  unitId: z.string().nullable().optional(),
+  unit: z.string().nullable().optional(),
+  categoryId: z.string().nullable().optional(),
+  categoryName: z.string().nullable().optional(),
+  category: z.string().nullable().optional(),
+  scope: z.string().nullable().optional(),
+  status: z.string().nullable().optional(),
+  previewUrl: z.string().nullable().optional(),
+  downloadUrl: z.string().nullable().optional(),
   ocrStatus: z.string().nullable().optional(),
   ocrProcessedAt: z.string().nullable().optional(),
   ocrError: z.string().nullable().optional(),
   message: z.string(),
-  document: z.unknown()
+  document: z.unknown().optional()
 };
 const classifyDocumentOutputSchema = {
   ...documentToolOutputSchema,
@@ -615,22 +626,26 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
       }
     } as any,
     async (args: any) => {
-      const file = await resolveUploadPayload(args.file, args.fileBase64, args.fileBase64Chunks, args.filename, args.mimeType);
-      const document = await portal.json<IntegrationDocumentLike>({
-        method: "POST",
-        path: "/api/integrations/v1/documents",
-        body: {
-          ...args,
-          file: undefined,
-          fileBase64: file.fileBase64,
-          fileBase64Chunks: undefined,
-          filename: file.filename,
-          mimeType: file.mimeType
-        }
-      });
-      return structuredJsonContent(documentToolResult(document, {
-        message: "Dokument wurde hochgeladen."
-      }));
+      try {
+        const file = await resolveUploadPayload(args.file, args.fileBase64, args.fileBase64Chunks, args.filename, args.mimeType);
+        const document = await portal.json<IntegrationDocumentLike>({
+          method: "POST",
+          path: "/api/integrations/v1/documents",
+          body: {
+            ...args,
+            file: undefined,
+            fileBase64: file.fileBase64,
+            fileBase64Chunks: undefined,
+            filename: file.filename,
+            mimeType: file.mimeType
+          }
+        });
+        return structuredJsonContent(documentToolResult(document, {
+          message: "Dokument wurde hochgeladen."
+        }));
+      } catch (error) {
+        return structuredJsonContent(uploadToolError(error));
+      }
     }
   );
 
@@ -657,27 +672,31 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
       }
     } as any,
     async ({ file, fileBase64, fileBase64Chunks, filename, mimeType, title, summary, tags, documentYear, runOcr }: any) => {
-      const upload = await resolveUploadPayload(file, fileBase64, fileBase64Chunks, filename, mimeType);
-      const isZip = upload.mimeType === "application/zip" || upload.filename.toLowerCase().endsWith(".zip");
-      const document = await portal.json({
-        method: "POST",
-        path: "/api/integrations/v1/documents",
-        body: {
-          fileBase64: upload.fileBase64,
-          filename: upload.filename,
-          mimeType: upload.mimeType,
-          title: title || upload.filename,
-          status: "AVAILABLE",
-          scope: "PROPERTY",
-          summary: summary || "Ueber MCP hochgeladen; fachliche Einsortierung steht noch aus.",
-          tags: Array.from(new Set(["eingang", "mcp-upload", ...(isZip ? ["zip"] : []), ...(tags || [])])),
-          documentYear,
-          runOcr: isZip ? false : runOcr
-        }
-      });
-      return structuredJsonContent(documentToolResult(document as IntegrationDocumentLike, {
-        message: "Dokument wurde neutral in den Eingang hochgeladen. Nutze als naechsten Schritt classify_document zur Einsortierung."
-      }));
+      try {
+        const upload = await resolveUploadPayload(file, fileBase64, fileBase64Chunks, filename, mimeType);
+        const isZip = upload.mimeType === "application/zip" || upload.filename.toLowerCase().endsWith(".zip");
+        const document = await portal.json({
+          method: "POST",
+          path: "/api/integrations/v1/documents",
+          body: {
+            fileBase64: upload.fileBase64,
+            filename: upload.filename,
+            mimeType: upload.mimeType,
+            title: title || upload.filename,
+            status: "AVAILABLE",
+            scope: "PROPERTY",
+            summary: summary || "Ueber MCP hochgeladen; fachliche Einsortierung steht noch aus.",
+            tags: Array.from(new Set(["eingang", "mcp-upload", ...(isZip ? ["zip"] : []), ...(tags || [])])),
+            documentYear,
+            runOcr: isZip ? false : runOcr
+          }
+        });
+        return structuredJsonContent(documentToolResult(document as IntegrationDocumentLike, {
+          message: "Dokument wurde neutral in den Eingang hochgeladen. Nutze als naechsten Schritt classify_document zur Einsortierung."
+        }));
+      } catch (error) {
+        return structuredJsonContent(uploadToolError(error));
+      }
     }
   );
 
@@ -804,40 +823,44 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
       }
     } as any,
     async ({ tenantProfileId, file, fileBase64, fileBase64Chunks, filename, mimeType, title, categoryName, categoryGroup, createCategoryIfMissing, status, summary, tags, documentYear, runOcr }: any) => {
-      const upload = await resolveUploadPayload(file, fileBase64, fileBase64Chunks, filename, mimeType);
-      const tenant = await portal.json<{ id: string; unitId?: string | null; unit?: { id: string; propertyId?: string | null } | null }>({
-        path: `/api/integrations/v1/tenants/${encodeURIComponent(tenantProfileId)}`
-      });
-      const categoryId = categoryName
-        ? await resolveDocumentCategoryId(portal, categoryName, categoryGroup || "Vermietung", createCategoryIfMissing !== false)
-        : null;
-      const document = await portal.json<IntegrationDocumentLike>({
-        method: "POST",
-        path: "/api/integrations/v1/documents",
-        body: {
-          fileBase64: upload.fileBase64,
-          filename: upload.filename,
-          mimeType: upload.mimeType,
-          title: title || upload.filename,
-          tenantProfileId,
-          unitId: tenant.unitId || tenant.unit?.id || null,
-          propertyId: tenant.unit?.propertyId || null,
+      try {
+        const upload = await resolveUploadPayload(file, fileBase64, fileBase64Chunks, filename, mimeType);
+        const tenant = await portal.json<{ id: string; unitId?: string | null; unit?: { id: string; propertyId?: string | null } | null }>({
+          path: `/api/integrations/v1/tenants/${encodeURIComponent(tenantProfileId)}`
+        });
+        const categoryId = categoryName
+          ? await resolveDocumentCategoryId(portal, categoryName, categoryGroup || "Vermietung", createCategoryIfMissing !== false)
+          : null;
+        const document = await portal.json<IntegrationDocumentLike>({
+          method: "POST",
+          path: "/api/integrations/v1/documents",
+          body: {
+            fileBase64: upload.fileBase64,
+            filename: upload.filename,
+            mimeType: upload.mimeType,
+            title: title || upload.filename,
+            tenantProfileId,
+            unitId: tenant.unitId || tenant.unit?.id || null,
+            propertyId: tenant.unit?.propertyId || null,
+            categoryId,
+            status: status || "AVAILABLE",
+            scope: "TENANT",
+            summary,
+            tags,
+            documentYear,
+            runOcr
+          }
+        });
+        return structuredJsonContent(documentToolResult(document, {
+          categoryName: categoryName || null,
           categoryId,
-          status: status || "AVAILABLE",
-          scope: "TENANT",
-          summary,
-          tags,
-          documentYear,
-          runOcr
-        }
-      });
-      return structuredJsonContent(documentToolResult(document, {
-        categoryName: categoryName || null,
-        categoryId,
-        message: categoryName
-          ? `Dokument wurde beim Mieter abgelegt und der Kategorie '${categoryName}' zugeordnet.`
-          : "Dokument wurde beim Mieter abgelegt."
-      }));
+          message: categoryName
+            ? `Dokument wurde beim Mieter abgelegt und der Kategorie '${categoryName}' zugeordnet.`
+            : "Dokument wurde beim Mieter abgelegt."
+        }));
+      } catch (error) {
+        return structuredJsonContent(uploadToolError(error));
+      }
     }
   );
 
@@ -881,7 +904,7 @@ export function registerPortalTools(server: McpServer, portal: PortalClient) {
         }).passthrough()).optional()
       },
       _meta: {
-        "openai/fileParams": ["file", "files[].file"]
+        "openai/fileParams": ["file"]
       }
     } as any,
     async (args: any) => jsonContent(await portal.json({
@@ -1473,6 +1496,53 @@ function documentToolResult(
   };
 }
 
+function uploadToolError(error: unknown): UploadToolError {
+  const message = error instanceof Error ? error.message : "Upload fehlgeschlagen.";
+  if (error instanceof IncomingFileError) {
+    return { success: false, stage: "resolve_file", error: error.code, message };
+  }
+  if (error instanceof PortalApiError) {
+    const code = portalUploadErrorCode(error);
+    return {
+      success: false,
+      stage: portalUploadErrorStage(code),
+      error: code,
+      message
+    };
+  }
+  return {
+    success: false,
+    stage: "upload",
+    error: "UPLOAD_FAILED",
+    message
+  };
+}
+
+class IncomingFileError extends Error {
+  constructor(readonly code: string, message: string) {
+    super(message);
+  }
+}
+
+function portalUploadErrorCode(error: PortalApiError) {
+  const message = error.message.toLowerCase();
+  if (error.status === 404 && message.includes("mieter")) return "TENANT_NOT_FOUND";
+  if (message.includes("kategorie") || message.includes("category")) return "CATEGORY_RESOLUTION_FAILED";
+  if (message.includes("dateityp")) return "UNSUPPORTED_MIME_TYPE";
+  if (message.includes("gross") || message.includes("large")) return "FILE_TOO_LARGE";
+  if (message.includes("speicher") || message.includes("storage")) return "STORAGE_FAILED";
+  if (error.status >= 500) return "DATABASE_FAILED";
+  return "UPLOAD_FAILED";
+}
+
+function portalUploadErrorStage(code: string) {
+  if (code === "TENANT_NOT_FOUND") return "resolve_tenant";
+  if (code === "CATEGORY_RESOLUTION_FAILED") return "resolve_category";
+  if (code === "STORAGE_FAILED") return "store_file";
+  if (code === "DATABASE_FAILED") return "create_document";
+  return "upload";
+}
+
 type ResolvedUploadPayload = {
   fileBase64: string;
   filename: string;
@@ -1480,12 +1550,21 @@ type ResolvedUploadPayload = {
   size: number;
 };
 
+type UploadToolError = {
+  success: false;
+  stage: string;
+  error: string;
+  message: string;
+};
+
 type UploadedFileLike = {
   path?: string;
   filename?: string;
   name?: string;
+  file_name?: string;
   mimeType?: string;
   type?: string;
+  mime_type?: string;
   data?: string;
   base64?: string;
   fileBase64Chunks?: string[];
@@ -1522,11 +1601,11 @@ async function resolveUploadPayload(
 
   if (file !== undefined && file !== null) {
     if (typeof file !== "object") {
-      throw new Error("Keine gueltige Datei uebergeben.");
+      throw new IncomingFileError("FILE_REFERENCE_NOT_RESOLVABLE", "Die uebergebene ChatGPT-Dateireferenz konnte vom MCP-Server nicht gelesen werden.");
     }
     const uploaded = file as UploadedFileLike;
-    filename = fallbackFilename || uploaded.filename || uploaded.name || filename;
-    mimeType = fallbackMimeType || uploaded.mimeType || uploaded.type || mimeType;
+    filename = fallbackFilename || uploaded.filename || uploaded.name || uploaded.file_name || filename;
+    mimeType = fallbackMimeType || uploaded.mimeType || uploaded.type || uploaded.mime_type || mimeType;
 
     if (uploaded.base64 || uploaded.data) {
       buffer = decodeBase64File(uploaded.base64 || uploaded.data || "");
@@ -1535,11 +1614,11 @@ async function resolveUploadPayload(
     } else if (uploaded.url || uploaded.download_url) {
       buffer = await downloadAllowedFile(uploaded.url || uploaded.download_url || "");
     } else if (uploaded.path) {
-      buffer = await readServerLocalFile(uploaded.path);
+      throw new IncomingFileError("FILE_REFERENCE_NOT_RESOLVABLE", "Lokale Pfade des Clients werden nicht automatisch ins Portal uebertragen. Der ChatGPT-Connector muss den Anhang als File-Parameter materialisieren.");
     } else if (uploaded.fileId || uploaded.file_id) {
-      throw new Error("Datei konnte nicht vom Proxy aufgeloest werden. Bitte Dateiinhalt als file.data/base64 oder fileBase64Chunks uebergeben.");
+      throw new IncomingFileError("FILE_REFERENCE_NOT_RESOLVABLE", "Die uebergebene ChatGPT-Dateireferenz konnte vom MCP-Server nicht gelesen werden.");
     } else {
-      throw new Error("Die Datei enthaelt weder Pfad, Base64-Daten, URL noch aufloesbare File-ID.");
+      throw new IncomingFileError("FILE_REFERENCE_NOT_RESOLVABLE", "Die Datei enthaelt weder Download-URL, Base64-Daten noch eine aufloesbare File-Referenz.");
     }
   } else if (fileBase64) {
     buffer = decodeBase64File(fileBase64);
@@ -1547,9 +1626,9 @@ async function resolveUploadPayload(
     buffer = decodeBase64File(fileBase64Chunks.join(""));
   }
 
-  if (!buffer) throw new Error("Keine Datei uebergeben. Bitte file oder fileBase64 angeben.");
-  if (!buffer.length) throw new Error("Datei ist leer.");
-  if (buffer.length > MAX_UPLOAD_BYTES) throw new Error("Datei ist zu gross. Maximal erlaubt sind 25 MB.");
+  if (!buffer) throw new IncomingFileError("FILE_MISSING", "Keine Datei uebergeben. Bitte file, fileBase64 oder fileBase64Chunks angeben.");
+  if (!buffer.length) throw new IncomingFileError("FILE_MISSING", "Datei ist leer.");
+  if (buffer.length > MAX_UPLOAD_BYTES) throw new IncomingFileError("FILE_TOO_LARGE", "Datei ist zu gross. Maximal erlaubt sind 25 MB.");
 
   filename = sanitizeFilename(filename);
   mimeType = detectMimeType(buffer, filename, mimeType);
@@ -1610,41 +1689,32 @@ async function publicShareUploadBody(args: Record<string, unknown>) {
 
 function decodeBase64File(value: string): Buffer {
   const cleanBase64 = (value.includes(",") ? value.substring(value.indexOf(",") + 1) : value).replace(/\s/g, "");
-  if (!cleanBase64) throw new Error("fileBase64 ist leer.");
-  if (!/^[A-Za-z0-9+/=_-]+$/.test(cleanBase64)) throw new Error("fileBase64 ist ungueltig.");
+  if (!cleanBase64) throw new IncomingFileError("INVALID_BASE64", "fileBase64 ist leer.");
+  if (!/^[A-Za-z0-9+/=_-]+$/.test(cleanBase64)) throw new IncomingFileError("INVALID_BASE64", "fileBase64 ist ungueltig.");
   return Buffer.from(cleanBase64, cleanBase64.includes("-") || cleanBase64.includes("_") ? "base64url" : "base64");
 }
 
-async function readServerLocalFile(filePath: string): Promise<Buffer> {
-  if (filePath.startsWith("/mnt/data/")) {
-    throw new Error("Lokale Pfade des Clients werden nicht automatisch ins Portal übertragen. Bitte file.data/base64 oder fileBase64Chunks übergeben.");
-  }
-  let info;
-  try {
-    info = await stat(filePath);
-  } catch {
-    throw new Error("Lokale Pfade des Clients werden nicht automatisch ins Portal übertragen. Bitte file.data/base64 oder fileBase64Chunks übergeben.");
-  }
-  if (!info.isFile()) {
-    throw new Error("Lokale Pfade des Clients werden nicht automatisch ins Portal übertragen. Bitte file.data/base64 oder fileBase64Chunks übergeben.");
-  }
-  return readFile(filePath);
-}
-
 async function downloadAllowedFile(urlString: string): Promise<Buffer> {
-  const url = new URL(urlString);
-  if (url.protocol !== "https:") throw new Error("Nur HTTPS-Dateien sind erlaubt.");
-  const hostname = url.hostname.toLowerCase();
-  if (hostname === "localhost" || hostname.endsWith(".local") || isPrivateIp(hostname)) {
-    throw new Error("Lokale oder private Hosts sind fuer Datei-Downloads nicht erlaubt.");
+  try {
+    const url = new URL(urlString);
+    if (url.protocol !== "https:" && url.protocol !== "http:") {
+      throw new IncomingFileError("DOWNLOAD_FAILED", "Nur HTTP- oder HTTPS-Dateien sind erlaubt.");
+    }
+    const hostname = url.hostname.toLowerCase();
+    if (hostname === "localhost" || hostname.endsWith(".local") || isPrivateIp(hostname)) {
+      throw new IncomingFileError("DOWNLOAD_FAILED", "Lokale oder private Hosts sind fuer Datei-Downloads nicht erlaubt.");
+    }
+    const response = await fetch(url, { redirect: "error", signal: AbortSignal.timeout(20_000) });
+    if (!response.ok) throw new IncomingFileError("DOWNLOAD_FAILED", `Dateidownload fehlgeschlagen: HTTP ${response.status}`);
+    const declaredLength = Number(response.headers.get("content-length") || "0");
+    if (declaredLength > MAX_UPLOAD_BYTES) throw new IncomingFileError("FILE_TOO_LARGE", "Datei ist zu gross. Maximal erlaubt sind 25 MB.");
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.length > MAX_UPLOAD_BYTES) throw new IncomingFileError("FILE_TOO_LARGE", "Datei ist zu gross. Maximal erlaubt sind 25 MB.");
+    return buffer;
+  } catch (error) {
+    if (error instanceof IncomingFileError) throw error;
+    throw new IncomingFileError("DOWNLOAD_FAILED", "Remote-Datei konnte nicht geladen werden.");
   }
-  const response = await fetch(url, { redirect: "error", signal: AbortSignal.timeout(20_000) });
-  if (!response.ok) throw new Error(`Dateidownload fehlgeschlagen: HTTP ${response.status}`);
-  const declaredLength = Number(response.headers.get("content-length") || "0");
-  if (declaredLength > MAX_UPLOAD_BYTES) throw new Error("Datei ist zu gross. Maximal erlaubt sind 25 MB.");
-  const buffer = Buffer.from(await response.arrayBuffer());
-  if (buffer.length > MAX_UPLOAD_BYTES) throw new Error("Datei ist zu gross. Maximal erlaubt sind 25 MB.");
-  return buffer;
 }
 
 function isPrivateIp(hostname: string) {
@@ -1689,9 +1759,9 @@ function detectMimeType(buffer: Buffer, filename: string, providedMimeType: stri
 }
 
 function validateUploadType(buffer: Buffer, mimeType: string) {
-  if (!ALLOWED_MIME_TYPES.has(mimeType)) throw new Error(`Dateityp nicht erlaubt: ${mimeType}`);
+  if (!ALLOWED_MIME_TYPES.has(mimeType)) throw new IncomingFileError("UNSUPPORTED_MIME_TYPE", `Dateityp nicht erlaubt: ${mimeType}`);
   if (mimeType === "application/pdf" && buffer.subarray(0, 4).toString("latin1") !== "%PDF") {
-    throw new Error("Dateityp nicht erlaubt: PDF-Signatur fehlt.");
+    throw new IncomingFileError("UNSUPPORTED_MIME_TYPE", "Dateityp nicht erlaubt: PDF-Signatur fehlt.");
   }
 }
 
